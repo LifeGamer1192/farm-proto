@@ -1,17 +1,20 @@
-// Logic tests for the colonist's movement. Run with: npm test
+// Logic tests for the colonist carrying out tasks. Run with: npm test
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { Colonist } from '../src/entities/colonist.js';
 import { TileType } from '../src/map/tile.js';
+import { createTask, TaskType } from '../src/tasks.js';
 
+// Build a map from ASCII rows: '.' land, '#' water, '*' land with a plant.
 function makeMap(rows) {
   const tiles = rows.map((line, y) =>
     [...line].map((ch, x) => ({
       x,
       y,
       type: ch === '#' ? TileType.WATER : TileType.LAND,
+      plant: ch === '*' ? { kind: 'wild' } : null,
     })),
   );
   return { cols: rows[0].length, rows: rows.length, tiles };
@@ -23,39 +26,67 @@ function simulate(colonist, map, seconds) {
   for (let i = 0; i < steps; i++) colonist.update(1 / 60, map);
 }
 
-test('a commanded colonist walks to the goal tile', () => {
+test('a move task completes once the colonist arrives', () => {
   const map = makeMap(Array(6).fill('......'));
   const c = new Colonist(0, 0);
-  assert.equal(c.commandTo(map, 5, 4), true);
-  assert.equal(c.state, 'moving');
-  simulate(c, map, 2.5);
+  const task = createTask(TaskType.MOVE, 5, 4);
+  c.assignTask(task, map);
+  assert.equal(task.status, 'active');
+  simulate(c, map, 3);
+  assert.equal(task.status, 'done');
   assert.equal(c.tileX, 5);
   assert.equal(c.tileY, 4);
-  assert.equal(c.state, 'idle');
 });
 
-test('commanding an unreachable tile fails and does not move', () => {
-  const map = makeMap(['...#.', '...#.', '...#.', '...#.']);
+test('a harvest task walks to the plant, works, then completes', () => {
+  const map = makeMap(['......', '...*..', '......']);
   const c = new Colonist(0, 0);
-  assert.equal(c.commandTo(map, 4, 0), false);
+  const task = createTask(TaskType.HARVEST, 3, 1);
+  c.assignTask(task, map);
+  let sawWorking = false;
+  for (let i = 0; i < 180; i++) {
+    c.update(1 / 60, map);
+    if (c.state === 'working') sawWorking = true;
+  }
+  assert.equal(task.status, 'done');
+  assert.ok(sawWorking, 'colonist should pass through the working state');
+  assert.equal(c.tileX, 3);
+  assert.equal(c.tileY, 1);
 });
 
-test('an idle colonist wanders off on its own', () => {
+test('harvesting a tile with no plant fails immediately', () => {
+  const map = makeMap(Array(4).fill('....'));
+  const c = new Colonist(0, 0);
+  const task = createTask(TaskType.HARVEST, 2, 2);
+  c.assignTask(task, map);
+  assert.equal(task.status, 'failed');
+  assert.match(task.outcome, /harvest/i);
+});
+
+test('planting on water fails', () => {
+  const map = makeMap(['..#..', '.....']);
+  const c = new Colonist(0, 0);
+  const task = createTask(TaskType.PLANT, 2, 0);
+  c.assignTask(task, map);
+  assert.equal(task.status, 'failed');
+});
+
+test('a task targeting an unreachable tile fails', () => {
+  const map = makeMap(['..#..', '..#..', '..#..']);
+  const c = new Colonist(0, 0);
+  const task = createTask(TaskType.MOVE, 4, 0);
+  c.assignTask(task, map);
+  assert.equal(task.status, 'failed');
+  assert.match(task.outcome, /unreachable/i);
+});
+
+test('a colonist with no task wanders on its own', () => {
   const map = makeMap(Array(12).fill('............'));
   const c = new Colonist(5, 5);
   let moved = false;
-  const steps = 180; // 3 s
-  for (let i = 0; i < steps; i++) {
+  for (let i = 0; i < 180; i++) {
     c.update(1 / 60, map);
     if (c.state === 'wandering' || c.x !== 5 || c.y !== 5) moved = true;
   }
-  assert.ok(moved, 'colonist should move autonomously when left idle');
-});
-
-test('a command overrides autonomous wandering', () => {
-  const map = makeMap(Array(10).fill('..........'));
-  const c = new Colonist(0, 0);
-  simulate(c, map, 2.5); // let it start wandering
-  assert.equal(c.commandTo(map, 9, 9), true);
-  assert.equal(c.state, 'moving');
+  assert.ok(moved, 'colonist should move autonomously when it has no task');
 });

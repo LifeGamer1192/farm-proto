@@ -1,12 +1,13 @@
-// The colonist: a single character that walks the map.
+// The colonist: a single character that carries out tasks.
 //
-// Two ways to move:
-//   - commandTo()  : the player clicks a tile — a forced move via A*.
-//   - wander()     : when idle, the colonist strolls off on its own.
+// The game assigns one task at a time. The colonist walks to the task's
+// tile, does the work, and marks the task done (or failed). When it has no
+// task it wanders on its own.
 
 import { findPath } from '../core/pathfinder.js';
 import { TileType } from '../map/tile.js';
-import { COLONIST_SPEED, COLONIST_IDLE_WANDER } from '../config.js';
+import { TaskType } from '../tasks.js';
+import { COLONIST_SPEED, COLONIST_IDLE_WANDER, WORK_DURATION } from '../config.js';
 
 const WANDER_RADIUS = 10;
 
@@ -15,8 +16,10 @@ export class Colonist {
     this.x = x; // continuous tile coordinate
     this.y = y;
     this.path = []; // remaining waypoints {x, y}
-    this.state = 'idle'; // 'idle' | 'moving' | 'wandering'
+    this.state = 'idle'; // 'idle' | 'moving' | 'working' | 'wandering'
     this.idleTimer = 0;
+    this.currentTask = null;
+    this.workTimer = 0;
   }
 
   get tileX() {
@@ -25,10 +28,12 @@ export class Colonist {
   get tileY() {
     return Math.round(this.y);
   }
+  get workProgress() {
+    return this.currentTask ? Math.min(1, this.workTimer / WORK_DURATION) : 0;
+  }
 
   // A tile the colonist can safely re-route from: the one it is already
-  // walking toward, or — when idle — the tile it stands on. Re-routing
-  // from here avoids the colonist back-tracking out of a half-walked step.
+  // walking toward, or — when stationary — the tile it stands on.
   _anchor() {
     return this.path.length > 0
       ? { x: this.path[0].x, y: this.path[0].y }
@@ -36,22 +41,40 @@ export class Colonist {
   }
 
   /**
-   * Player command — a forced move to (tx, ty).
-   * @returns {boolean} true if a path was found.
+   * Take on a task: validate it, then route to its target tile.
+   * On failure the task is marked failed with an outcome note.
    */
-  commandTo(map, tx, ty) {
+  assignTask(task, map) {
+    this.currentTask = task;
+    this.workTimer = 0;
+    task.status = 'active';
+
+    const tile = map.tiles[task.y] && map.tiles[task.y][task.x];
+    if (!tile) return this._failTask(task, 'off the map');
+    if (task.type === TaskType.HARVEST && !tile.plant) {
+      return this._failTask(task, 'nothing to harvest');
+    }
+    if (task.type === TaskType.PLANT) {
+      if (tile.type === TileType.WATER) return this._failTask(task, 'cannot plant on water');
+      if (tile.plant) return this._failTask(task, 'tile already occupied');
+    }
+    if (task.type === TaskType.MOVE && tile.type === TileType.WATER) {
+      return this._failTask(task, 'cannot stand on water');
+    }
+
     const anchor = this._anchor();
-    const path = findPath(map, anchor, { x: tx, y: ty });
-    if (!path) return false;
+    const path = findPath(map, anchor, { x: task.x, y: task.y });
+    if (!path) return this._failTask(task, 'unreachable');
     this.path = [anchor, ...path];
     this.state = 'moving';
-    return true;
   }
 
-  /**
-   * Autonomous behaviour — stroll to a random reachable tile nearby.
-   * @returns {boolean} true if the colonist set off.
-   */
+  _failTask(task, why) {
+    task.status = 'failed';
+    task.outcome = why;
+  }
+
+  /** Autonomous behaviour — stroll to a random reachable tile nearby. */
   wander(map) {
     const anchor = { x: this.tileX, y: this.tileY };
     for (let attempt = 0; attempt < 14; attempt++) {
@@ -69,31 +92,61 @@ export class Colonist {
     return false;
   }
 
+  // Advance along the current path by dt seconds.
+  _walk(dt) {
+    let budget = COLONIST_SPEED * dt;
+    while (budget > 0 && this.path.length > 0) {
+      const wp = this.path[0];
+      const dx = wp.x - this.x;
+      const dy = wp.y - this.y;
+      const dist = Math.hypot(dx, dy);
+      if (dist <= budget) {
+        this.x = wp.x;
+        this.y = wp.y;
+        this.path.shift();
+        budget -= dist;
+      } else {
+        this.x += (dx / dist) * budget;
+        this.y += (dy / dist) * budget;
+        budget = 0;
+      }
+    }
+  }
+
   /** Advance by dt seconds. */
   update(dt, map) {
-    if (this.path.length > 0) {
-      let budget = COLONIST_SPEED * dt;
-      while (budget > 0 && this.path.length > 0) {
-        const wp = this.path[0];
-        const dx = wp.x - this.x;
-        const dy = wp.y - this.y;
-        const dist = Math.hypot(dx, dy);
-        if (dist <= budget) {
-          this.x = wp.x;
-          this.y = wp.y;
-          this.path.shift();
-          budget -= dist;
-        } else {
-          this.x += (dx / dist) * budget;
-          this.y += (dy / dist) * budget;
-          budget = 0;
+    const task = this.currentTask;
+    if (task) {
+      // Finished tasks wait here until the game collects them.
+      if (task.status === 'done' || task.status === 'failed') return;
+
+      if (this.path.length > 0) {
+        this.state = 'moving';
+        this._walk(dt);
+      } else if (task.type === TaskType.MOVE) {
+        this.state = 'idle';
+        task.status = 'done';
+      } else {
+        // Arrived: spend WORK_DURATION working the tile.
+        this.state = 'working';
+        this.workTimer += dt;
+        if (this.workTimer >= WORK_DURATION) {
+          task.status = 'done';
         }
       }
+      return;
+    }
+
+    // No task: stroll around while idle.
+    if (this.path.length > 0) {
+      this.state = 'wandering';
+      this._walk(dt);
       if (this.path.length === 0) {
         this.state = 'idle';
         this.idleTimer = 0;
       }
     } else {
+      this.state = 'idle';
       this.idleTimer += dt;
       if (this.idleTimer >= COLONIST_IDLE_WANDER) {
         this.idleTimer = 0;

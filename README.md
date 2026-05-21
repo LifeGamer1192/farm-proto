@@ -26,6 +26,16 @@ and surviving the winter.
   (A* pathfinding, routing around water), and it wanders on its own
   when left idle
 
+### Alpha 3 — a minimal task system
+
+- Wild plants are scattered across the map
+- Three task tools — **Move**, **Harvest**, **Plant** — pick one, then
+  click tiles to queue tasks for the colonist
+- The colonist works through its task queue (FIFO): it walks to each
+  target, spends a moment working, and the task takes effect
+- Tasks are drawn on the map (numbered markers) and a debug panel shows
+  the current task, why it was chosen, resource counts and a task log
+
 ## Development
 
 Requires [Node.js](https://nodejs.org/).

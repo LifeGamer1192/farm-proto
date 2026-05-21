@@ -1,6 +1,7 @@
 import './style.css';
 import { GRID_COLS, GRID_ROWS, TILE_SIZE, DRAG_THRESHOLD, SCROLL_STEP } from './config.js';
 import { hashSeed, randomSeed } from './core/rng.js';
+import { TASK_LABELS } from './tasks.js';
 import { Game } from './game.js';
 
 const canvas = document.getElementById('map');
@@ -10,10 +11,16 @@ const seedInput = document.getElementById('seed');
 const tooltip = document.getElementById('tooltip');
 const mapStatsEl = document.getElementById('map-stats');
 const colonistStatsEl = document.getElementById('colonist-stats');
+const taskStatsEl = document.getElementById('task-stats');
+const taskReasonEl = document.getElementById('task-reason');
+const taskLogEl = document.getElementById('task-log');
 const legendEl = document.getElementById('legend');
 const viewModesEl = document.getElementById('view-modes');
+const toolsEl = document.getElementById('tools');
 
 const PAN_DIRS = { up: [0, -1], down: [0, 1], left: [-1, 0], right: [1, 0] };
+
+let tool = 'move'; // current task tool: move | harvest | plant
 
 // --- legend & stats panels ------------------------------------------------
 
@@ -70,7 +77,8 @@ function updateMapStats() {
 
 const STATE_LABELS = {
   idle: 'Idle',
-  moving: 'Moving (commanded)',
+  moving: 'Moving',
+  working: 'Working',
   wandering: 'Wandering',
 };
 
@@ -80,9 +88,43 @@ function updateColonistStats() {
   renderRows(colonistStatsEl, [
     ['State', STATE_LABELS[c.state] || c.state],
     ['Tile', `(${c.tileX}, ${c.tileY})`],
-    ['Path', `${c.path.length} tiles`],
     ['Camera', `(${Math.round(cam.x)}, ${Math.round(cam.y)})`],
   ]);
+}
+
+function describeTask(task) {
+  return task ? `${TASK_LABELS[task.type]} (${task.x}, ${task.y})` : '—';
+}
+
+function updateTaskPanel() {
+  const c = game.colonist;
+  const task = c.currentTask;
+  let phase = '—';
+  if (task) {
+    phase = c.state === 'working' ? `working ${Math.round(c.workProgress * 100)}%` : 'walking';
+  } else if (c.state === 'wandering') {
+    phase = 'wandering';
+  }
+  renderRows(taskStatsEl, [
+    ['Queued', game.taskQueue.length],
+    ['Current', describeTask(task)],
+    ['Phase', phase],
+    ['Harvested', game.resources.harvested],
+    ['Planted', game.resources.planted],
+  ]);
+  taskReasonEl.textContent = game.lastAssignReason;
+
+  taskLogEl.innerHTML = game.taskLog
+    .map((t) => {
+      const ok = t.status === 'done';
+      const mark = ok ? '✓' : '✗';
+      const cls = ok ? 'log-ok' : 'log-fail';
+      return (
+        `<li class="${cls}">${mark} ${TASK_LABELS[t.type]} ` +
+        `(${t.x}, ${t.y}) — ${t.outcome}</li>`
+      );
+    })
+    .join('');
 }
 
 // --- map lifecycle --------------------------------------------------------
@@ -92,6 +134,7 @@ function newMap(seed) {
   seedInput.value = String(game.seed);
   updateMapStats();
   updateColonistStats();
+  updateTaskPanel();
   updateLegend();
 }
 
@@ -104,7 +147,7 @@ function applySeed() {
   newMap(/^\d+$/.test(raw) ? Number(raw) >>> 0 : hashSeed(raw));
 }
 
-// --- canvas pointer input: drag to pan, tap/click to command -------------
+// --- canvas pointer input: drag to pan, tap/click to queue a task --------
 
 function canvasMetrics() {
   const rect = canvas.getBoundingClientRect();
@@ -128,11 +171,12 @@ function tileAt(clientX, clientY) {
 function showTooltip(clientX, clientY, tile) {
   const t = game.map.tiles[tile.y][tile.x];
   const f = (v) => v.toFixed(3);
+  const plantLine = t.plant ? `<br>plant: ${t.plant.kind}` : '';
   tooltip.hidden = false;
   tooltip.innerHTML =
     `<strong>(${tile.x}, ${tile.y})</strong> ${t.type}<br>` +
     `elevation ${f(t.elevation)}<br>fertility ${f(t.fertility)}<br>` +
-    `moisture ${f(t.moisture)}<br>sunlight ${f(t.sunlight)}`;
+    `moisture ${f(t.moisture)}<br>sunlight ${f(t.sunlight)}${plantLine}`;
   const { rect } = canvasMetrics();
   tooltip.style.left = `${clientX - rect.left + 14}px`;
   tooltip.style.top = `${clientY - rect.top + 14}px`;
@@ -181,7 +225,10 @@ function endPointer(ev) {
   if (activePointer !== ev.pointerId) return;
   if (!dragged) {
     const tile = tileAt(ev.clientX, ev.clientY);
-    if (tile) game.commandColonist(tile.x, tile.y);
+    if (tile) {
+      game.enqueueTask(tool, tile.x, tile.y);
+      updateTaskPanel();
+    }
   }
   activePointer = null;
   dragged = false;
@@ -224,7 +271,6 @@ for (const btn of document.querySelectorAll('.scroll-btn')) {
   const [dx, dy] = PAN_DIRS[btn.dataset.dir];
   const press = (ev) => {
     ev.preventDefault();
-    // A click jumps a discrete step; holding then keeps panning.
     game.camera.pan(dx * SCROLL_STEP, dy * SCROLL_STEP);
     game.panDir = { x: dx, y: dy };
   };
@@ -238,6 +284,15 @@ for (const btn of document.querySelectorAll('.scroll-btn')) {
 }
 
 // --- controls -------------------------------------------------------------
+
+toolsEl.addEventListener('click', (ev) => {
+  const btn = ev.target.closest('button[data-tool]');
+  if (!btn) return;
+  tool = btn.dataset.tool;
+  for (const b of toolsEl.querySelectorAll('button')) {
+    b.classList.toggle('active', b === btn);
+  }
+});
 
 viewModesEl.addEventListener('click', (ev) => {
   const btn = ev.target.closest('button[data-mode]');
@@ -259,9 +314,16 @@ seedInput.addEventListener('keydown', (ev) => {
 document.getElementById('center-colonist').addEventListener('click', () => {
   game.centerOnColonist();
 });
+document.getElementById('clear-tasks').addEventListener('click', () => {
+  game.clearTasks();
+  updateTaskPanel();
+});
 
 // --- start ----------------------------------------------------------------
 
 newMap(randomSeed());
 game.start();
-setInterval(updateColonistStats, 150);
+setInterval(() => {
+  updateColonistStats();
+  updateTaskPanel();
+}, 150);

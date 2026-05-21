@@ -204,6 +204,10 @@ button.primary:hover {
   margin-top: 10px;
 }
 
+#clear-tasks {
+  width: 100%;
+}
+
 .view-modes {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -215,6 +219,59 @@ button.primary:hover {
   color: #11240f;
   border-color: var(--accent);
   font-weight: 600;
+}
+
+.tools {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 6px;
+}
+
+.tools button.active {
+  background: var(--accent);
+  color: #11240f;
+  border-color: var(--accent);
+  font-weight: 600;
+}
+
+.reason-label {
+  margin: 12px 0 4px;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+
+.reason {
+  margin: 0 0 10px;
+  font-size: 0.8rem;
+  line-height: 1.45;
+  color: var(--text);
+}
+
+.task-log {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.task-log li {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.task-log .log-ok {
+  color: #79c98a;
+}
+
+.task-log .log-fail {
+  color: #d98a8a;
 }
 
 .stats {

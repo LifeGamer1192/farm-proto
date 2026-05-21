@@ -1,7 +1,9 @@
-// Canvas 2D rendering: the visible slice of the map (per the camera),
-// the colonist, and its current path.
+// Canvas 2D rendering: the visible slice of the map, plants, queued tasks,
+// the colonist and its path.
 
 import { TileType } from '../map/tile.js';
+import { PlantKind } from '../world.js';
+import { TaskType } from '../tasks.js';
 
 const lerp = (a, b, t) => a + (b - a) * t;
 
@@ -33,6 +35,12 @@ const VIEW_MODES = {
   },
 };
 
+const TASK_COLORS = {
+  [TaskType.MOVE]: '#b9c4d4',
+  [TaskType.HARVEST]: '#e8a23c',
+  [TaskType.PLANT]: '#6fc46f',
+};
+
 export class Renderer {
   /**
    * @param {HTMLCanvasElement} canvas
@@ -45,14 +53,12 @@ export class Renderer {
   }
 
   /**
-   * Draw one frame.
-   * @param {object} map
-   * @param {import('./camera.js').Camera} camera
-   * @param {string} mode      view mode
-   * @param {import('../entities/colonist.js').Colonist} colonist
-   * @param {{x:number,y:number}|null} hover  hovered tile, if any
+   * Draw one frame from a scene description.
+   * @param {object} scene { map, camera, mode, colonist, hover,
+   *                          taskQueue, currentTask }
    */
-  draw(map, camera, mode, colonist, hover) {
+  draw(scene) {
+    const { map, camera, mode, colonist, hover, taskQueue, currentTask } = scene;
     const ctx = this.ctx;
     const ts = this.ts;
     const cw = this.canvas.width;
@@ -65,7 +71,6 @@ export class Renderer {
     const sx = (wx) => (wx - camera.x) * ts;
     const sy = (wy) => (wy - camera.y) * ts;
 
-    // --- tiles (only the visible slice, plus one for the partial edge) ---
     const startCol = Math.floor(camera.x);
     const startRow = Math.floor(camera.y);
     const offX = (camera.x - startCol) * ts;
@@ -73,6 +78,7 @@ export class Renderer {
     const visCols = camera.viewCols + 1;
     const visRows = camera.viewRows + 1;
 
+    // --- tiles ---
     for (let row = 0; row < visRows; row++) {
       const mapY = startRow + row;
       if (mapY < 0 || mapY >= map.rows) continue;
@@ -100,6 +106,29 @@ export class Renderer {
     }
     ctx.stroke();
 
+    // --- plants ---
+    for (let row = 0; row < visRows; row++) {
+      const mapY = startRow + row;
+      if (mapY < 0 || mapY >= map.rows) continue;
+      for (let col = 0; col < visCols; col++) {
+        const mapX = startCol + col;
+        if (mapX < 0 || mapX >= map.cols) continue;
+        const plant = map.tiles[mapY][mapX].plant;
+        if (plant) {
+          this._drawPlant(plant, col * ts - offX + ts / 2, row * ts - offY + ts / 2);
+        }
+      }
+    }
+
+    // --- queued task markers ---
+    for (let i = 0; i < taskQueue.length; i++) {
+      const task = taskQueue[i];
+      this._drawTaskMarker(task, sx(task.x), sy(task.y), false, i + 1);
+    }
+    if (currentTask) {
+      this._drawTaskMarker(currentTask, sx(currentTask.x), sy(currentTask.y), true, 0);
+    }
+
     // --- the colonist's path ---
     if (colonist.path.length > 0) {
       const wandering = colonist.state === 'wandering';
@@ -113,11 +142,6 @@ export class Renderer {
       }
       ctx.stroke();
       ctx.setLineDash([]);
-
-      const dest = colonist.path[colonist.path.length - 1];
-      ctx.strokeStyle = wandering ? 'rgba(206,214,228,0.85)' : '#e8a23c';
-      ctx.lineWidth = 2;
-      ctx.strokeRect(sx(dest.x) + 2, sy(dest.y) + 2, ts - 4, ts - 4);
     }
 
     // --- hovered tile ---
@@ -128,11 +152,74 @@ export class Renderer {
     }
 
     // --- the colonist ---
-    this._drawColonist(sx(colonist.x + 0.5), sy(colonist.y + 0.5));
+    this._drawColonist(colonist, sx(colonist.x + 0.5), sy(colonist.y + 0.5));
+  }
+
+  _drawPlant(plant, cx, cy) {
+    const ctx = this.ctx;
+    const ts = this.ts;
+    if (plant.kind === PlantKind.WILD) {
+      // A small wild bush: three clustered dark-green blobs.
+      const r = ts * 0.15;
+      ctx.fillStyle = '#2e6b34';
+      ctx.strokeStyle = '#19401f';
+      ctx.lineWidth = 1;
+      for (const [ox, oy] of [
+        [-r, r * 0.6],
+        [r, r * 0.6],
+        [0, -r * 0.7],
+      ]) {
+        ctx.beginPath();
+        ctx.arc(cx + ox, cy + oy, r, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+      }
+    } else {
+      // A planted crop: a tidy upright sprout.
+      const h = ts * 0.3;
+      ctx.strokeStyle = '#3f7a2b';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(cx, cy + h * 0.7);
+      ctx.lineTo(cx, cy - h * 0.5);
+      ctx.stroke();
+      ctx.fillStyle = '#86d65c';
+      for (const ox of [-1, 1]) {
+        ctx.beginPath();
+        ctx.ellipse(cx + ox * h * 0.45, cy - h * 0.1, h * 0.4, h * 0.22, 0, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.beginPath();
+      ctx.arc(cx, cy - h * 0.55, h * 0.32, 0, Math.PI * 2);
+      ctx.fillStyle = '#a6e57d';
+      ctx.fill();
+    }
+  }
+
+  _drawTaskMarker(task, x, y, isCurrent, order) {
+    const ctx = this.ctx;
+    const ts = this.ts;
+    const color = TASK_COLORS[task.type] || '#ffffff';
+    if (isCurrent) {
+      ctx.fillStyle = 'rgba(255,255,255,0.10)';
+      ctx.fillRect(x + 2, y + 2, ts - 4, ts - 4);
+      ctx.lineWidth = 3;
+    } else {
+      ctx.lineWidth = 2;
+    }
+    ctx.strokeStyle = color;
+    ctx.strokeRect(x + 2.5, y + 2.5, ts - 5, ts - 5);
+    if (!isCurrent && order > 0 && order <= 30) {
+      ctx.fillStyle = color;
+      ctx.font = '9px system-ui, sans-serif';
+      ctx.textBaseline = 'top';
+      ctx.fillText(String(order), x + 4, y + 4);
+    }
   }
 
   // A small top-down figure: shadow, amber body, lighter head.
-  _drawColonist(cx, cy) {
+  // While working, a progress ring sweeps around it.
+  _drawColonist(colonist, cx, cy) {
     const ctx = this.ctx;
     const r = this.ts * 0.34;
 
@@ -154,5 +241,14 @@ export class Renderer {
     ctx.fillStyle = '#f6cf94';
     ctx.fill();
     ctx.stroke();
+
+    if (colonist.state === 'working') {
+      const start = -Math.PI / 2;
+      ctx.beginPath();
+      ctx.arc(cx, cy, r * 1.5, start, start + colonist.workProgress * Math.PI * 2);
+      ctx.strokeStyle = '#ffe178';
+      ctx.lineWidth = 3;
+      ctx.stroke();
+    }
   }
 }

@@ -31,5 +31,16 @@ export const COLONIST_SPEED = 4.5;
 export const COLONIST_IDLE_WANDER = 1.6;
 
 // Pointer travel (in CSS pixels) beyond which a press counts as a drag
-// (pan the map) rather than a tap (command the colonist).
+// (pan the map) rather than a tap (queue a task).
 export const DRAG_THRESHOLD = 6;
+
+// --- tasks ---------------------------------------------------------------
+
+// Seconds the colonist spends working a harvest or plant task on its tile.
+export const WORK_DURATION = 0.7;
+
+// Fraction of land tiles that start with a wild (harvestable) plant.
+export const WILD_PLANT_CHANCE = 0.07;
+
+// How many finished tasks the debug task log keeps.
+export const TASK_LOG_SIZE = 6;
