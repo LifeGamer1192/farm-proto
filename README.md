@@ -6,17 +6,25 @@ Inspired by colony sims like RimWorld and Dwarf Fortress, this project
 centers on **agriculture and the seasons**: planting crops, stockpiling,
 and surviving the winter.
 
-## Alpha 1
+## Progress
 
-The first milestone renders a randomly generated tile map.
+### Alpha 1 — random map & tile rendering
 
-- 30×30 tile grid drawn on an HTML Canvas
-- A single biome, with water bodies
+- Tile grid drawn on an HTML Canvas, a single biome with water bodies
 - Each tile carries several terrain parameters — elevation, fertility,
   moisture, sunlight — rather than one single "fertility" number, so
   later versions can decide which crops thrive where
 - Switchable views (terrain / fertility / moisture / sunlight),
   per-tile inspection on hover, and a reproducible numeric seed
+
+### Alpha 2 — scrollable map & a colonist
+
+- 100×100 tile map with a scrolling camera viewport
+- Scroll by dragging the map, by on-screen arrows, or with W/A/S/D —
+  works with both mouse and touch
+- One colonist who walks the map: click/tap a tile to send it there
+  (A* pathfinding, routing around water), and it wanders on its own
+  when left idle
 
 ## Development
 

@@ -1,4 +1,5 @@
-// Canvas 2D rendering of the tile map, with selectable view modes.
+// Canvas 2D rendering: the visible slice of the map (per the camera),
+// the colonist, and its current path.
 
 import { TileType } from '../map/tile.js';
 
@@ -16,10 +17,8 @@ function mix(c1, c2, t) {
 const VIEW_MODES = {
   terrain(tile) {
     if (tile.type === TileType.WATER) {
-      // Lower elevation reads as deeper, darker water.
       return mix([92, 152, 200], [28, 66, 122], 1 - tile.elevation);
     }
-    // Land shades from pale dry soil to rich green by fertility.
     return mix([196, 184, 132], [70, 130, 55], tile.fertility);
   },
   fertility(tile) {
@@ -34,8 +33,6 @@ const VIEW_MODES = {
   },
 };
 
-export const VIEW_MODE_NAMES = Object.keys(VIEW_MODES);
-
 export class Renderer {
   /**
    * @param {HTMLCanvasElement} canvas
@@ -44,51 +41,118 @@ export class Renderer {
   constructor(canvas, tileSize) {
     this.canvas = canvas;
     this.ctx = canvas.getContext('2d');
-    this.tileSize = tileSize;
+    this.ts = tileSize;
   }
 
   /**
-   * Draw the whole map in the given view mode.
-   * @param {{cols:number, rows:number, tiles:object[][]}} map
-   * @param {string} mode
+   * Draw one frame.
+   * @param {object} map
+   * @param {import('./camera.js').Camera} camera
+   * @param {string} mode      view mode
+   * @param {import('../entities/colonist.js').Colonist} colonist
+   * @param {{x:number,y:number}|null} hover  hovered tile, if any
    */
-  draw(map, mode = 'terrain') {
-    const colorOf = VIEW_MODES[mode] || VIEW_MODES.terrain;
+  draw(map, camera, mode, colonist, hover) {
     const ctx = this.ctx;
-    const ts = this.tileSize;
+    const ts = this.ts;
+    const cw = this.canvas.width;
+    const ch = this.canvas.height;
+    const colorOf = VIEW_MODES[mode] || VIEW_MODES.terrain;
 
-    ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
-    for (let y = 0; y < map.rows; y++) {
-      for (let x = 0; x < map.cols; x++) {
-        ctx.fillStyle = colorOf(map.tiles[y][x]);
-        ctx.fillRect(x * ts, y * ts, ts, ts);
+    ctx.clearRect(0, 0, cw, ch);
+
+    // World tile -> screen pixel of its top-left corner.
+    const sx = (wx) => (wx - camera.x) * ts;
+    const sy = (wy) => (wy - camera.y) * ts;
+
+    // --- tiles (only the visible slice, plus one for the partial edge) ---
+    const startCol = Math.floor(camera.x);
+    const startRow = Math.floor(camera.y);
+    const offX = (camera.x - startCol) * ts;
+    const offY = (camera.y - startRow) * ts;
+    const visCols = camera.viewCols + 1;
+    const visRows = camera.viewRows + 1;
+
+    for (let row = 0; row < visRows; row++) {
+      const mapY = startRow + row;
+      if (mapY < 0 || mapY >= map.rows) continue;
+      for (let col = 0; col < visCols; col++) {
+        const mapX = startCol + col;
+        if (mapX < 0 || mapX >= map.cols) continue;
+        ctx.fillStyle = colorOf(map.tiles[mapY][mapX]);
+        ctx.fillRect(col * ts - offX, row * ts - offY, ts, ts);
       }
     }
 
-    // Subtle grid lines to keep tiles legible.
+    // --- grid lines ---
     ctx.strokeStyle = 'rgba(0,0,0,0.12)';
     ctx.lineWidth = 1;
     ctx.beginPath();
-    for (let x = 0; x <= map.cols; x++) {
-      ctx.moveTo(x * ts + 0.5, 0);
-      ctx.lineTo(x * ts + 0.5, map.rows * ts);
+    for (let col = 0; col <= visCols; col++) {
+      const x = Math.round(col * ts - offX) + 0.5;
+      ctx.moveTo(x, 0);
+      ctx.lineTo(x, ch);
     }
-    for (let y = 0; y <= map.rows; y++) {
-      ctx.moveTo(0, y * ts + 0.5);
-      ctx.lineTo(map.cols * ts, y * ts + 0.5);
+    for (let row = 0; row <= visRows; row++) {
+      const y = Math.round(row * ts - offY) + 0.5;
+      ctx.moveTo(0, y);
+      ctx.lineTo(cw, y);
     }
     ctx.stroke();
+
+    // --- the colonist's path ---
+    if (colonist.path.length > 0) {
+      const wandering = colonist.state === 'wandering';
+      ctx.strokeStyle = wandering ? 'rgba(206,214,228,0.55)' : 'rgba(232,162,60,0.95)';
+      ctx.lineWidth = wandering ? 2 : 3;
+      ctx.setLineDash(wandering ? [5, 5] : []);
+      ctx.beginPath();
+      ctx.moveTo(sx(colonist.x + 0.5), sy(colonist.y + 0.5));
+      for (const wp of colonist.path) {
+        ctx.lineTo(sx(wp.x + 0.5), sy(wp.y + 0.5));
+      }
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      const dest = colonist.path[colonist.path.length - 1];
+      ctx.strokeStyle = wandering ? 'rgba(206,214,228,0.85)' : '#e8a23c';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(sx(dest.x) + 2, sy(dest.y) + 2, ts - 4, ts - 4);
+    }
+
+    // --- hovered tile ---
+    if (hover) {
+      ctx.strokeStyle = 'rgba(255,255,255,0.85)';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(sx(hover.x) + 1, sy(hover.y) + 1, ts - 2, ts - 2);
+    }
+
+    // --- the colonist ---
+    this._drawColonist(sx(colonist.x + 0.5), sy(colonist.y + 0.5));
   }
 
-  /**
-   * Outline a single tile to give hover feedback.
-   * Call after draw(); it does not redraw the map.
-   */
-  highlight(x, y) {
-    const ts = this.tileSize;
+  // A small top-down figure: shadow, amber body, lighter head.
+  _drawColonist(cx, cy) {
     const ctx = this.ctx;
-    ctx.strokeStyle = 'rgba(255,255,255,0.9)';
+    const r = this.ts * 0.34;
+
+    ctx.fillStyle = 'rgba(0,0,0,0.30)';
+    ctx.beginPath();
+    ctx.ellipse(cx, cy + r * 0.7, r, r * 0.45, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.fillStyle = '#e8a23c';
+    ctx.fill();
     ctx.lineWidth = 2;
-    ctx.strokeRect(x * ts + 1, y * ts + 1, ts - 2, ts - 2);
+    ctx.strokeStyle = '#3a2606';
+    ctx.stroke();
+
+    ctx.beginPath();
+    ctx.arc(cx, cy, r * 0.52, 0, Math.PI * 2);
+    ctx.fillStyle = '#f6cf94';
+    ctx.fill();
+    ctx.stroke();
   }
 }
