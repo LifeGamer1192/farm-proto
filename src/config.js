@@ -42,5 +42,10 @@ export const WORK_DURATION = 0.7;
 // Fraction of land tiles that start with a wild (harvestable) plant.
 export const WILD_PLANT_CHANCE = 0.07;
 
-// How many finished tasks the debug task log keeps.
-export const TASK_LOG_SIZE = 6;
+// How many recent events the activity log keeps.
+export const TASK_LOG_SIZE = 7;
+
+// --- farming -------------------------------------------------------------
+
+// Seconds between the colonist's forced meals (hunger itself comes later).
+export const EAT_INTERVAL = 15;

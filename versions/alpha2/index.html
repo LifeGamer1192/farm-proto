@@ -10,16 +10,15 @@
       rel="icon"
       href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%235fae6b'/><rect x='14.5' y='6' width='3' height='10' rx='1.5' fill='%2311240f'/><circle cx='16' cy='19' r='6.5' fill='%2311240f'/></svg>"
     />
-    <title>Farm Proto — Alpha 4</title>
+    <title>Farm Proto — Alpha 2</title>
+    <script type="module" crossorigin src="./assets/index-DZNmoa8q.js"></script>
+    <link rel="stylesheet" crossorigin href="./assets/index-Bg4qK1E-.css">
   </head>
   <body>
     <div id="app">
       <header class="app-header">
-        <h1>Farm Proto <span class="version">alpha 4</span></h1>
-        <p class="tagline">
-          The farming loop: sow, grow, harvest &amp; eat ·
-          <a id="archive-link" href="./versions/">all versions</a>
-        </p>
+        <h1>Farm Proto <span class="version">alpha 2</span></h1>
+        <p class="tagline">Scrollable map &amp; a colonist that walks</p>
       </header>
 
       <main class="layout">
@@ -33,8 +32,8 @@
             <button class="scroll-btn scroll-right" data-dir="right" type="button" aria-label="Scroll right">▶</button>
           </div>
           <p class="hint">
-            Pick a tool, then click or tap tiles to queue tasks · Sow a crop,
-            wait for it to ripen, then Harvest it · drag, arrows or W/A/S/D to scroll
+            Click or tap a tile to send the colonist there · drag the map,
+            use the arrows, or press W/A/S/D to scroll
           </p>
         </section>
 
@@ -51,45 +50,6 @@
           </div>
 
           <div class="control-group">
-            <span class="label">Tool</span>
-            <div class="tools" id="tools">
-              <button type="button" data-tool="move" class="active">Move</button>
-              <button type="button" data-tool="harvest">Harvest</button>
-              <button type="button" data-tool="sow">Sow</button>
-            </div>
-          </div>
-
-          <div class="control-group">
-            <span class="label">Crop to sow</span>
-            <div class="tools" id="crops">
-              <button type="button" data-crop="wheat" class="active">Wheat</button>
-              <button type="button" data-crop="potato">Potato</button>
-              <button type="button" data-crop="bean">Bean</button>
-            </div>
-          </div>
-
-          <div class="control-group">
-            <span class="label">Colony</span>
-            <dl id="colony-stats" class="stats"></dl>
-            <p class="reason-label">Activity log</p>
-            <ul id="event-log" class="task-log"></ul>
-          </div>
-
-          <div class="control-group">
-            <span class="label">Tasks</span>
-            <dl id="task-stats" class="stats"></dl>
-            <p class="reason-label">Why this task</p>
-            <p id="task-reason" class="reason"></p>
-            <button id="clear-tasks" type="button">Clear queue</button>
-          </div>
-
-          <div class="control-group">
-            <span class="label">Colonist</span>
-            <dl id="colonist-stats" class="stats"></dl>
-            <button id="center-colonist" type="button">Center camera on colonist</button>
-          </div>
-
-          <div class="control-group">
             <span class="label">View</span>
             <div class="view-modes" id="view-modes">
               <button type="button" data-mode="terrain" class="active">Terrain</button>
@@ -97,6 +57,12 @@
               <button type="button" data-mode="moisture">Moisture</button>
               <button type="button" data-mode="sunlight">Sunlight</button>
             </div>
+          </div>
+
+          <div class="control-group">
+            <span class="label">Colonist</span>
+            <dl id="colonist-stats" class="stats"></dl>
+            <button id="center-colonist" type="button">Center camera on colonist</button>
           </div>
 
           <div class="control-group">
@@ -112,6 +78,5 @@
       </main>
     </div>
 
-    <script type="module" src="/src/main.js"></script>
   </body>
 </html>

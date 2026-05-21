@@ -26,6 +26,12 @@ jobs:
       - run: npm ci
       - run: npm test
       - run: npm run build
+      # Ship every archived version under /versions/ and build its index.
+      - name: Assemble version archive
+        run: |
+          mkdir -p dist/versions
+          cp -r versions/* dist/versions/ 2>/dev/null || true
+          node scripts/gen-versions-index.mjs dist/versions
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

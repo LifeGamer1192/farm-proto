@@ -2,6 +2,7 @@ import './style.css';
 import { GRID_COLS, GRID_ROWS, TILE_SIZE, DRAG_THRESHOLD, SCROLL_STEP } from './config.js';
 import { hashSeed, randomSeed } from './core/rng.js';
 import { TASK_LABELS } from './tasks.js';
+import { isRipe } from './crops.js';
 import { Game } from './game.js';
 
 const canvas = document.getElementById('map');
@@ -13,14 +14,23 @@ const mapStatsEl = document.getElementById('map-stats');
 const colonistStatsEl = document.getElementById('colonist-stats');
 const taskStatsEl = document.getElementById('task-stats');
 const taskReasonEl = document.getElementById('task-reason');
-const taskLogEl = document.getElementById('task-log');
+const colonyStatsEl = document.getElementById('colony-stats');
+const logEl = document.getElementById('event-log');
 const legendEl = document.getElementById('legend');
 const viewModesEl = document.getElementById('view-modes');
 const toolsEl = document.getElementById('tools');
+const cropsEl = document.getElementById('crops');
 
 const PAN_DIRS = { up: [0, -1], down: [0, 1], left: [-1, 0], right: [1, 0] };
 
-let tool = 'move'; // current task tool: move | harvest | plant
+let tool = 'move'; // current task tool: move | harvest | sow
+let cropId = 'wheat'; // crop the Sow tool will plant
+
+// Point the "all versions" link up a level when viewing an archived build.
+const archiveLink = document.getElementById('archive-link');
+if (archiveLink && location.pathname.includes('/versions/')) {
+  archiveLink.href = '../';
+}
 
 // --- legend & stats panels ------------------------------------------------
 
@@ -109,21 +119,22 @@ function updateTaskPanel() {
     ['Queued', game.taskQueue.length],
     ['Current', describeTask(task)],
     ['Phase', phase],
-    ['Harvested', game.resources.harvested],
-    ['Planted', game.resources.planted],
   ]);
   taskReasonEl.textContent = game.lastAssignReason;
+}
 
-  taskLogEl.innerHTML = game.taskLog
-    .map((t) => {
-      const ok = t.status === 'done';
-      const mark = ok ? '✓' : '✗';
-      const cls = ok ? 'log-ok' : 'log-fail';
-      return (
-        `<li class="${cls}">${mark} ${TASK_LABELS[t.type]} ` +
-        `(${t.x}, ${t.y}) — ${t.outcome}</li>`
-      );
-    })
+function updateColonyPanel() {
+  const s = game.storage;
+  renderRows(colonyStatsEl, [
+    ['Food stored', game.totalFood],
+    ['Wheat / Potato / Bean', `${s.wheat} / ${s.potato} / ${s.bean}`],
+    ['Forage', s.forage],
+    ['Meals eaten', game.meals.eaten],
+    ['Missed meals', game.meals.missed],
+    ['Next meal', `${Math.ceil(game.nextMealIn)}s`],
+  ]);
+  logEl.innerHTML = game.log
+    .map((e) => `<li class="${e.cls}">${e.icon} ${e.text}</li>`)
     .join('');
 }
 
@@ -135,6 +146,7 @@ function newMap(seed) {
   updateMapStats();
   updateColonistStats();
   updateTaskPanel();
+  updateColonyPanel();
   updateLegend();
 }
 
@@ -168,15 +180,21 @@ function tileAt(clientX, clientY) {
   return { x, y };
 }
 
+function describePlant(plant) {
+  if (!plant) return '';
+  if (plant.kind === 'wild') return '<br>plant: wild';
+  const pct = isRipe(plant) ? 'ripe' : `${Math.round(plant.growth * 100)}%`;
+  return `<br>crop: ${plant.cropId} (${pct})`;
+}
+
 function showTooltip(clientX, clientY, tile) {
   const t = game.map.tiles[tile.y][tile.x];
   const f = (v) => v.toFixed(3);
-  const plantLine = t.plant ? `<br>plant: ${t.plant.kind}` : '';
   tooltip.hidden = false;
   tooltip.innerHTML =
     `<strong>(${tile.x}, ${tile.y})</strong> ${t.type}<br>` +
     `elevation ${f(t.elevation)}<br>fertility ${f(t.fertility)}<br>` +
-    `moisture ${f(t.moisture)}<br>sunlight ${f(t.sunlight)}${plantLine}`;
+    `moisture ${f(t.moisture)}<br>sunlight ${f(t.sunlight)}${describePlant(t.plant)}`;
   const { rect } = canvasMetrics();
   tooltip.style.left = `${clientX - rect.left + 14}px`;
   tooltip.style.top = `${clientY - rect.top + 14}px`;
@@ -226,7 +244,7 @@ function endPointer(ev) {
   if (!dragged) {
     const tile = tileAt(ev.clientX, ev.clientY);
     if (tile) {
-      game.enqueueTask(tool, tile.x, tile.y);
+      game.enqueueTask(tool, tile.x, tile.y, cropId);
       updateTaskPanel();
     }
   }
@@ -285,22 +303,27 @@ for (const btn of document.querySelectorAll('.scroll-btn')) {
 
 // --- controls -------------------------------------------------------------
 
-toolsEl.addEventListener('click', (ev) => {
-  const btn = ev.target.closest('button[data-tool]');
-  if (!btn) return;
-  tool = btn.dataset.tool;
-  for (const b of toolsEl.querySelectorAll('button')) {
+function selectIn(container, btn, attr) {
+  for (const b of container.querySelectorAll('button')) {
     b.classList.toggle('active', b === btn);
   }
+  return btn.dataset[attr];
+}
+
+toolsEl.addEventListener('click', (ev) => {
+  const btn = ev.target.closest('button[data-tool]');
+  if (btn) tool = selectIn(toolsEl, btn, 'tool');
+});
+
+cropsEl.addEventListener('click', (ev) => {
+  const btn = ev.target.closest('button[data-crop]');
+  if (btn) cropId = selectIn(cropsEl, btn, 'crop');
 });
 
 viewModesEl.addEventListener('click', (ev) => {
   const btn = ev.target.closest('button[data-mode]');
   if (!btn) return;
-  game.viewMode = btn.dataset.mode;
-  for (const b of viewModesEl.querySelectorAll('button')) {
-    b.classList.toggle('active', b === btn);
-  }
+  game.viewMode = selectIn(viewModesEl, btn, 'mode');
   updateLegend();
 });
 
@@ -326,4 +349,5 @@ game.start();
 setInterval(() => {
   updateColonistStats();
   updateTaskPanel();
+  updateColonyPanel();
 }, 150);

@@ -45,6 +45,10 @@ body {
   color: var(--muted);
 }
 
+.tagline a {
+  color: var(--accent);
+}
+
 .layout {
   display: flex;
   gap: 20px;
@@ -272,6 +276,14 @@ button.primary:hover {
 
 .task-log .log-fail {
   color: #d98a8a;
+}
+
+.task-log .log-meal {
+  color: #d8c98a;
+}
+
+.task-log .log-warn {
+  color: #e0a766;
 }
 
 .stats {

@@ -29,12 +29,25 @@ and surviving the winter.
 ### Alpha 3 — a minimal task system
 
 - Wild plants are scattered across the map
-- Three task tools — **Move**, **Harvest**, **Plant** — pick one, then
+- Three task tools — **Move**, **Harvest**, **Sow** — pick one, then
   click tiles to queue tasks for the colonist
 - The colonist works through its task queue (FIFO): it walks to each
   target, spends a moment working, and the task takes effect
 - Tasks are drawn on the map (numbered markers) and a debug panel shows
   the current task, why it was chosen, resource counts and a task log
+
+### Alpha 4 — the farming loop
+
+- Three crops (wheat, potato, bean), each with its own growth time and yield
+- **Sow** a crop, watch it grow over time, then **Harvest** it once ripe —
+  harvested crops and foraged wild plants stock the colony's food store
+- The colonist eats from the store on a fixed timer
+- Colony panel shows food storage, meals, and an activity log
+
+## Version archive
+
+Every released version stays playable. The live site links to an
+archive at `/versions/`, with each build at `/versions/alphaN/`.
 
 ## Development
 

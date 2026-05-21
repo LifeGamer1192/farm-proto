@@ -14,6 +14,11 @@ test('createTask produces a queued task with the given target', () => {
   assert.equal(task.outcome, '');
 });
 
+test('a sow task carries the crop id; others default to null', () => {
+  assert.equal(createTask(TaskType.SOW, 1, 2, 'wheat').cropId, 'wheat');
+  assert.equal(createTask(TaskType.MOVE, 0, 0).cropId, null);
+});
+
 test('each task gets a unique id', () => {
   const a = createTask(TaskType.MOVE, 0, 0);
   const b = createTask(TaskType.MOVE, 0, 0);

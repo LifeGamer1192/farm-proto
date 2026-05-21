@@ -1,9 +1,10 @@
-// Canvas 2D rendering: the visible slice of the map, plants, queued tasks,
-// the colonist and its path.
+// Canvas 2D rendering: the visible slice of the map, plants and crops,
+// queued tasks, the colonist and its path.
 
 import { TileType } from '../map/tile.js';
 import { PlantKind } from '../world.js';
 import { TaskType } from '../tasks.js';
+import { getCrop } from '../crops.js';
 
 const lerp = (a, b, t) => a + (b - a) * t;
 
@@ -38,7 +39,7 @@ const VIEW_MODES = {
 const TASK_COLORS = {
   [TaskType.MOVE]: '#b9c4d4',
   [TaskType.HARVEST]: '#e8a23c',
-  [TaskType.PLANT]: '#6fc46f',
+  [TaskType.SOW]: '#6fc46f',
 };
 
 export class Renderer {
@@ -106,7 +107,7 @@ export class Renderer {
     }
     ctx.stroke();
 
-    // --- plants ---
+    // --- plants & crops ---
     for (let row = 0; row < visRows; row++) {
       const mapY = startRow + row;
       if (mapY < 0 || mapY >= map.rows) continue;
@@ -156,43 +157,74 @@ export class Renderer {
   }
 
   _drawPlant(plant, cx, cy) {
+    if (plant.kind === PlantKind.WILD) {
+      this._drawWild(cx, cy);
+    } else {
+      this._drawCrop(plant, cx, cy);
+    }
+  }
+
+  // A small wild bush: three clustered dark-green blobs.
+  _drawWild(cx, cy) {
+    const ctx = this.ctx;
+    const r = this.ts * 0.15;
+    ctx.fillStyle = '#2e6b34';
+    ctx.strokeStyle = '#19401f';
+    ctx.lineWidth = 1;
+    for (const [ox, oy] of [
+      [-r, r * 0.6],
+      [r, r * 0.6],
+      [0, -r * 0.7],
+    ]) {
+      ctx.beginPath();
+      ctx.arc(cx + ox, cy + oy, r, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+    }
+  }
+
+  // A sown crop: a stem that lengthens with growth, and a produce blob
+  // that swells and colors as it ripens. Ripe crops get a bright outline.
+  _drawCrop(plant, cx, cy) {
     const ctx = this.ctx;
     const ts = this.ts;
-    if (plant.kind === PlantKind.WILD) {
-      // A small wild bush: three clustered dark-green blobs.
-      const r = ts * 0.15;
-      ctx.fillStyle = '#2e6b34';
-      ctx.strokeStyle = '#19401f';
-      ctx.lineWidth = 1;
-      for (const [ox, oy] of [
-        [-r, r * 0.6],
-        [r, r * 0.6],
-        [0, -r * 0.7],
-      ]) {
-        ctx.beginPath();
-        ctx.arc(cx + ox, cy + oy, r, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.stroke();
-      }
-    } else {
-      // A planted crop: a tidy upright sprout.
-      const h = ts * 0.3;
-      ctx.strokeStyle = '#3f7a2b';
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.moveTo(cx, cy + h * 0.7);
-      ctx.lineTo(cx, cy - h * 0.5);
-      ctx.stroke();
-      ctx.fillStyle = '#86d65c';
+    const crop = getCrop(plant.cropId);
+    const g = Math.min(1, plant.growth);
+    const ripe = g >= 1;
+
+    const base = cy + ts * 0.3;
+    const stemH = ts * (0.16 + 0.42 * g);
+    const top = base - stemH;
+
+    ctx.strokeStyle = '#3f7a2b';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(cx, base);
+    ctx.lineTo(cx, top);
+    ctx.stroke();
+
+    if (g > 0.2) {
+      ctx.fillStyle = '#5ba23c';
+      const leafY = base - stemH * 0.55;
+      const leafR = ts * 0.13;
       for (const ox of [-1, 1]) {
         ctx.beginPath();
-        ctx.ellipse(cx + ox * h * 0.45, cy - h * 0.1, h * 0.4, h * 0.22, 0, 0, Math.PI * 2);
+        ctx.ellipse(cx + ox * leafR, leafY, leafR, leafR * 0.55, 0, 0, Math.PI * 2);
         ctx.fill();
       }
+    }
+
+    if (g > 0.45) {
+      const r = ts * (0.05 + 0.18 * g);
       ctx.beginPath();
-      ctx.arc(cx, cy - h * 0.55, h * 0.32, 0, Math.PI * 2);
-      ctx.fillStyle = '#a6e57d';
+      ctx.arc(cx, top, r, 0, Math.PI * 2);
+      ctx.fillStyle = ripe ? crop.ripeColor : crop.color;
       ctx.fill();
+      if (ripe) {
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+      }
     }
   }
 

@@ -5,6 +5,7 @@ dist/
 # Local-only planning notes and editor/agent config — not for the public repo.
 proto-plan/
 .claude/
+README_WORK.md
 
 # Logs and OS cruft
 *.log

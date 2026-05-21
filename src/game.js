@@ -1,6 +1,7 @@
-// The game: owns the map, camera, colonist and task queue, and runs the
-// frame loop. It hands the colonist one task at a time and applies the
-// effect of each finished task.
+// The game: owns the map, camera, colonist, task queue, crops and food
+// store, and runs the frame loop. It hands the colonist one task at a
+// time, applies the effect of each finished task, grows sown crops, and
+// feeds the colonist at a fixed interval.
 
 import {
   GRID_COLS,
@@ -10,6 +11,7 @@ import {
   TILE_SIZE,
   CAMERA_SPEED,
   TASK_LOG_SIZE,
+  EAT_INTERVAL,
 } from './config.js';
 import { generateMap, mapStats } from './map/mapGenerator.js';
 import { TileType } from './map/tile.js';
@@ -18,6 +20,9 @@ import { Renderer } from './render/renderer.js';
 import { Colonist } from './entities/colonist.js';
 import { TaskType, TASK_LABELS, createTask } from './tasks.js';
 import { scatterPlants, PlantKind } from './world.js';
+import { getCrop } from './crops.js';
+
+const FOOD_TYPES = ['forage', 'wheat', 'potato', 'bean'];
 
 export class Game {
   constructor(canvas) {
@@ -37,8 +42,11 @@ export class Game {
     this.stats = null;
 
     this.taskQueue = [];
-    this.resources = { harvested: 0, planted: 0 };
-    this.taskLog = []; // recent finished tasks, newest first
+    this.crops = []; // sown crops still growing or ripe
+    this.storage = { forage: 0, wheat: 0, potato: 0, bean: 0 };
+    this.meals = { eaten: 0, missed: 0 };
+    this.eatTimer = 0;
+    this.log = []; // recent events, newest first
     this.lastAssignReason = '';
 
     this._loop = this._loop.bind(this);
@@ -47,6 +55,14 @@ export class Game {
 
   get seed() {
     return this.map.seed;
+  }
+
+  get totalFood() {
+    return FOOD_TYPES.reduce((sum, t) => sum + this.storage[t], 0);
+  }
+
+  get nextMealIn() {
+    return Math.max(0, EAT_INTERVAL - this.eatTimer);
   }
 
   /** Generate a fresh map, scatter plants, and place the colonist. */
@@ -60,8 +76,11 @@ export class Game {
     this.camera.centerOn(spawn.x + 0.5, spawn.y + 0.5);
 
     this.taskQueue = [];
-    this.resources = { harvested: 0, planted: 0 };
-    this.taskLog = [];
+    this.crops = [];
+    this.storage = { forage: 0, wheat: 0, potato: 0, bean: 0 };
+    this.meals = { eaten: 0, missed: 0 };
+    this.eatTimer = 0;
+    this.log = [];
     this.lastAssignReason = 'No tasks queued yet.';
     this.hover = null;
   }
@@ -86,19 +105,23 @@ export class Game {
   }
 
   /**
-   * Queue a task of the given tool type at a tile, if it makes sense there.
+   * Queue a task at a tile, if it makes sense there.
+   * @param {string} type    TaskType
+   * @param {number} x
+   * @param {number} y
+   * @param {?string} cropId crop to sow (SOW only)
    * @returns {boolean} true if a task was queued.
    */
-  enqueueTask(type, x, y) {
+  enqueueTask(type, x, y, cropId = null) {
     const row = this.map.tiles[y];
     const tile = row && row[x];
     if (!tile) return false;
     if (type === TaskType.MOVE && tile.type === TileType.WATER) return false;
     if (type === TaskType.HARVEST && !tile.plant) return false;
-    if (type === TaskType.PLANT && (tile.type === TileType.WATER || tile.plant)) {
+    if (type === TaskType.SOW && (tile.type === TileType.WATER || tile.plant)) {
       return false;
     }
-    this.taskQueue.push(createTask(type, x, y));
+    this.taskQueue.push(createTask(type, x, y, cropId));
     return true;
   }
 
@@ -111,24 +134,41 @@ export class Game {
     this.camera.centerOn(this.colonist.x + 0.5, this.colonist.y + 0.5);
   }
 
+  _pushLog(entry) {
+    this.log.unshift(entry);
+    if (this.log.length > TASK_LOG_SIZE) this.log.pop();
+  }
+
   _logTask(task) {
-    this.taskLog.unshift(task);
-    if (this.taskLog.length > TASK_LOG_SIZE) this.taskLog.pop();
+    const where = `${TASK_LABELS[task.type]} (${task.x}, ${task.y})`;
+    if (task.status === 'done') {
+      this._pushLog({ icon: '✓', text: `${where} — ${task.outcome}`, cls: 'log-ok' });
+    } else {
+      this._pushLog({ icon: '✗', text: `${where} — ${task.outcome}`, cls: 'log-fail' });
+    }
   }
 
   // Apply the world effect of a task the colonist has completed.
   _applyTaskEffect(task) {
     const tile = this.map.tiles[task.y][task.x];
     if (task.type === TaskType.HARVEST) {
-      if (tile.plant) {
-        tile.plant = null;
-        this.resources.harvested++;
+      const plant = tile.plant;
+      if (plant && plant.kind === PlantKind.CROP) {
+        const crop = getCrop(plant.cropId);
+        this.storage[plant.cropId] += crop.yield;
+        task.outcome = `${crop.label} +${crop.yield}`;
+        const i = this.crops.indexOf(plant);
+        if (i >= 0) this.crops.splice(i, 1);
+      } else if (plant) {
+        this.storage.forage += 1;
+        task.outcome = 'foraged +1';
       }
-      task.outcome = 'harvested';
-    } else if (task.type === TaskType.PLANT) {
-      tile.plant = { kind: PlantKind.CROP };
-      this.resources.planted++;
-      task.outcome = 'planted';
+      tile.plant = null;
+    } else if (task.type === TaskType.SOW) {
+      const crop = { kind: PlantKind.CROP, cropId: task.cropId, growth: 0, x: task.x, y: task.y };
+      tile.plant = crop;
+      this.crops.push(crop);
+      task.outcome = `sowed ${getCrop(task.cropId).label}`;
     } else {
       task.outcome = 'arrived';
     }
@@ -163,6 +203,37 @@ export class Game {
     }
   }
 
+  // Advance every growing crop toward ripeness.
+  _growCrops(dt) {
+    for (const crop of this.crops) {
+      if (crop.growth < 1) {
+        crop.growth = Math.min(1, crop.growth + dt / getCrop(crop.cropId).growthTime);
+      }
+    }
+  }
+
+  // Feed the colonist on a fixed timer (hunger as a stat arrives later).
+  _updateEating(dt) {
+    this.eatTimer += dt;
+    if (this.eatTimer < EAT_INTERVAL) return;
+    this.eatTimer -= EAT_INTERVAL;
+
+    let pick = null;
+    for (const t of FOOD_TYPES) {
+      if (this.storage[t] > 0 && (pick === null || this.storage[t] > this.storage[pick])) {
+        pick = t;
+      }
+    }
+    if (pick) {
+      this.storage[pick] -= 1;
+      this.meals.eaten += 1;
+      this._pushLog({ icon: '🍴', text: `Colonist ate ${pick}`, cls: 'log-meal' });
+    } else {
+      this.meals.missed += 1;
+      this._pushLog({ icon: '⚠', text: 'No food — colonist went hungry', cls: 'log-warn' });
+    }
+  }
+
   // Combined pan direction from on-screen arrows and held WASD keys.
   _panVector() {
     let dx = this.panDir.x;
@@ -181,6 +252,8 @@ export class Game {
     }
     this._updateTasks();
     this.colonist.update(dt, this.map);
+    this._growCrops(dt);
+    this._updateEating(dt);
   }
 
   render() {

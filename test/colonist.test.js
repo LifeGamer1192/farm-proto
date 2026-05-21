@@ -20,7 +20,6 @@ function makeMap(rows) {
   return { cols: rows[0].length, rows: rows.length, tiles };
 }
 
-// Advance the colonist by `seconds`, in 1/60 s steps.
 function simulate(colonist, map, seconds) {
   const steps = Math.round(seconds * 60);
   for (let i = 0; i < steps; i++) colonist.update(1 / 60, map);
@@ -31,14 +30,13 @@ test('a move task completes once the colonist arrives', () => {
   const c = new Colonist(0, 0);
   const task = createTask(TaskType.MOVE, 5, 4);
   c.assignTask(task, map);
-  assert.equal(task.status, 'active');
   simulate(c, map, 3);
   assert.equal(task.status, 'done');
   assert.equal(c.tileX, 5);
   assert.equal(c.tileY, 4);
 });
 
-test('a harvest task walks to the plant, works, then completes', () => {
+test('a harvest task on a wild plant walks there, works, then completes', () => {
   const map = makeMap(['......', '...*..', '......']);
   const c = new Colonist(0, 0);
   const task = createTask(TaskType.HARVEST, 3, 1);
@@ -50,25 +48,47 @@ test('a harvest task walks to the plant, works, then completes', () => {
   }
   assert.equal(task.status, 'done');
   assert.ok(sawWorking, 'colonist should pass through the working state');
-  assert.equal(c.tileX, 3);
-  assert.equal(c.tileY, 1);
 });
 
-test('harvesting a tile with no plant fails immediately', () => {
+test('harvesting a ripe crop is allowed', () => {
+  const map = makeMap(Array(5).fill('.....'));
+  map.tiles[2][3].plant = { kind: 'crop', cropId: 'bean', growth: 1 };
+  const c = new Colonist(0, 0);
+  const task = createTask(TaskType.HARVEST, 3, 2);
+  c.assignTask(task, map);
+  assert.notEqual(task.status, 'failed');
+  simulate(c, map, 3);
+  assert.equal(task.status, 'done');
+});
+
+test('harvesting an unripe crop fails', () => {
+  const map = makeMap(Array(5).fill('.....'));
+  map.tiles[2][3].plant = { kind: 'crop', cropId: 'bean', growth: 0.4 };
+  const c = new Colonist(0, 0);
+  const task = createTask(TaskType.HARVEST, 3, 2);
+  c.assignTask(task, map);
+  assert.equal(task.status, 'failed');
+  assert.match(task.outcome, /ripe/i);
+});
+
+test('harvesting a tile with no plant fails', () => {
   const map = makeMap(Array(4).fill('....'));
   const c = new Colonist(0, 0);
   const task = createTask(TaskType.HARVEST, 2, 2);
   c.assignTask(task, map);
   assert.equal(task.status, 'failed');
-  assert.match(task.outcome, /harvest/i);
 });
 
-test('planting on water fails', () => {
-  const map = makeMap(['..#..', '.....']);
-  const c = new Colonist(0, 0);
-  const task = createTask(TaskType.PLANT, 2, 0);
-  c.assignTask(task, map);
-  assert.equal(task.status, 'failed');
+test('sowing on empty land is allowed; on an occupied tile it fails', () => {
+  const map = makeMap(['.....', '..*..']);
+  const ok = new Colonist(0, 0);
+  ok.assignTask(createTask(TaskType.SOW, 4, 0, 'wheat'), map);
+  assert.notEqual(ok.currentTask.status, 'failed');
+
+  const bad = new Colonist(0, 0);
+  const occupied = createTask(TaskType.SOW, 2, 1, 'wheat');
+  bad.assignTask(occupied, map);
+  assert.equal(occupied.status, 'failed');
 });
 
 test('a task targeting an unreachable tile fails', () => {

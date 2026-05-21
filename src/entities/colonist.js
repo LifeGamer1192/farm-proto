@@ -7,6 +7,7 @@
 import { findPath } from '../core/pathfinder.js';
 import { TileType } from '../map/tile.js';
 import { TaskType } from '../tasks.js';
+import { isRipe } from '../crops.js';
 import { COLONIST_SPEED, COLONIST_IDLE_WANDER, WORK_DURATION } from '../config.js';
 
 const WANDER_RADIUS = 10;
@@ -51,11 +52,15 @@ export class Colonist {
 
     const tile = map.tiles[task.y] && map.tiles[task.y][task.x];
     if (!tile) return this._failTask(task, 'off the map');
-    if (task.type === TaskType.HARVEST && !tile.plant) {
-      return this._failTask(task, 'nothing to harvest');
+
+    if (task.type === TaskType.HARVEST) {
+      if (!tile.plant) return this._failTask(task, 'nothing to harvest');
+      if (tile.plant.kind === 'crop' && !isRipe(tile.plant)) {
+        return this._failTask(task, 'crop not ripe yet');
+      }
     }
-    if (task.type === TaskType.PLANT) {
-      if (tile.type === TileType.WATER) return this._failTask(task, 'cannot plant on water');
+    if (task.type === TaskType.SOW) {
+      if (tile.type === TileType.WATER) return this._failTask(task, 'cannot sow on water');
       if (tile.plant) return this._failTask(task, 'tile already occupied');
     }
     if (task.type === TaskType.MOVE && tile.type === TileType.WATER) {
