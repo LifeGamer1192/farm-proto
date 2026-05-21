@@ -1,0 +1,13 @@
+node_modules/
+dist/
+.vite/
+
+# Local-only planning notes and editor/agent config — not for the public repo.
+proto-plan/
+.claude/
+
+# Logs and OS cruft
+*.log
+npm-debug.log*
+.DS_Store
+Thumbs.db

@@ -1,0 +1,16 @@
+{
+  "name": "farm-proto",
+  "private": true,
+  "version": "0.1.0-alpha.1",
+  "description": "A farming-focused colony simulation game (alpha prototype).",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "test": "node --test"
+  },
+  "devDependencies": {
+    "vite": "^8.0.14"
+  }
+}
