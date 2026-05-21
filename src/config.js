@@ -17,8 +17,12 @@ export const WATER_LEVEL = 0.4;
 export const MIN_WATER_FRACTION = 0.08;
 export const MOISTURE_RANGE = 6;
 
-// Camera panning speed in tiles per second (keys / on-screen arrows).
+// Camera panning speed in tiles per second while a key / arrow is held.
 export const CAMERA_SPEED = 22;
+
+// Tiles the camera jumps on a single click/tap of an on-screen scroll arrow
+// (holding the arrow then keeps panning continuously at CAMERA_SPEED).
+export const SCROLL_STEP = 4;
 
 // Colonist walking speed in tiles per second.
 export const COLONIST_SPEED = 4.5;

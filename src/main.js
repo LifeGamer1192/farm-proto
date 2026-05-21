@@ -1,5 +1,5 @@
 import './style.css';
-import { GRID_COLS, GRID_ROWS, TILE_SIZE, DRAG_THRESHOLD } from './config.js';
+import { GRID_COLS, GRID_ROWS, TILE_SIZE, DRAG_THRESHOLD, SCROLL_STEP } from './config.js';
 import { hashSeed, randomSeed } from './core/rng.js';
 import { Game } from './game.js';
 
@@ -224,6 +224,8 @@ for (const btn of document.querySelectorAll('.scroll-btn')) {
   const [dx, dy] = PAN_DIRS[btn.dataset.dir];
   const press = (ev) => {
     ev.preventDefault();
+    // A click jumps a discrete step; holding then keeps panning.
+    game.camera.pan(dx * SCROLL_STEP, dy * SCROLL_STEP);
     game.panDir = { x: dx, y: dy };
   };
   const release = () => {
