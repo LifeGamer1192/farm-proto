@@ -107,29 +107,38 @@ body {
   filter: grayscale(0.7);
 }
 
-/* Tips panel — a short list of gameplay hints. */
-.tips-list {
-  list-style: none;
-  margin: 4px 0 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  font-size: 0.78rem;
-  line-height: 1.4;
-  color: var(--muted);
+/* Tips panel — one random tip with a coloured category tag. */
+.tip-box {
+  margin: 4px 0 8px;
+  font-size: 0.8rem;
+  line-height: 1.5;
+  color: var(--text);
 }
 
-.tips-list li {
-  position: relative;
-  padding-left: 14px;
+.tip-cat {
+  display: inline-block;
+  font-size: 0.64rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: 600;
+  color: #11240f;
+  padding: 1px 6px;
+  border-radius: 8px;
+  margin-right: 6px;
 }
 
-.tips-list li::before {
-  content: '▸';
-  position: absolute;
-  left: 0;
-  color: var(--accent);
+.tip-cat-spec {
+  background: #6fae6b;
+}
+.tip-cat-genetics {
+  background: #7fb0d8;
+}
+.tip-cat-plant {
+  background: #d8b25a;
+}
+
+.tip-next {
+  width: 100%;
 }
 
 /* On-screen scroll arrows, overlaid on the canvas edges. */

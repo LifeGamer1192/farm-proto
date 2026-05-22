@@ -178,6 +178,15 @@ and surviving the winter.
   each crop, beside its gameplay-gene bars
 - Hovering a crop describes its look (shape, leaf and surface)
 
+### Alpha 15 — a pool of tips
+
+- The Tips panel now draws from a pool of about a hundred one-line
+  tips, shown one at a time and rotated on a timer or with a Next button
+- Tips come in three kinds, each with a coloured tag: **Game** (how this
+  game works), **Genetics** (general heredity knowledge — Mendel, alleles,
+  selective breeding) and **Plants** (crop and wild-plant lore)
+- Every tip is written in both English and Japanese
+
 ## Version archive
 
 Every released version stays playable. The live site links to an

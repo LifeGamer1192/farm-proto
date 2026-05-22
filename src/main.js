@@ -20,6 +20,7 @@ import {
 import { tempGrowthFactor, sunGrowthFactor } from './season.js';
 import { t, setLang, getLang } from './i18n.js';
 import { Game, STOCKPILE_ITEMS } from './game.js';
+import { TIPS, randomTipIndex } from './tips.js';
 
 const canvas = document.getElementById('map');
 const game = new Game(canvas);
@@ -57,7 +58,9 @@ const pausedBadge = $('paused-badge');
 const targetAllBtn = $('target-all');
 const cropPanelEl = $('crop-panel');
 const structurePanelEl = $('structure-panel');
-const tipsEl = $('tips');
+const tipCatEl = $('tip-cat');
+const tipTextEl = $('tip-text');
+const tipNextEl = $('tip-next');
 
 const PAN_DIRS = { up: [0, -1], down: [0, 1], left: [-1, 0], right: [1, 0] };
 
@@ -216,12 +219,17 @@ function updateCropButtons() {
   }
 }
 
-// The static list of gameplay tips, in the current language.
-const TIP_COUNT = 8;
-function updateTipsPanel() {
-  let html = '';
-  for (let i = 1; i <= TIP_COUNT; i++) html += `<li>${t('tips.' + i)}</li>`;
-  tipsEl.innerHTML = html;
+// A single random tip from the pool, rotated on a timer or the Next button.
+let tipIndex = randomTipIndex();
+function showTip() {
+  const tip = TIPS[tipIndex];
+  tipCatEl.textContent = t('tipcat.' + tip.cat);
+  tipCatEl.className = 'tip-cat tip-cat-' + tip.cat;
+  tipTextEl.textContent = getLang() === 'ja' ? tip.ja : tip.en;
+}
+function nextTip() {
+  tipIndex = randomTipIndex(tipIndex);
+  showTip();
 }
 
 // Seed stock: each crop's seeds bucketed by quality rank (★).
@@ -337,7 +345,7 @@ function applyI18n() {
   for (const b of structuresEl.querySelectorAll('button[data-structure]')) {
     b.title = t('hint.structure.' + b.dataset.structure);
   }
-  updateTipsPanel();
+  showTip();
   document.documentElement.lang = getLang();
   refreshPanels();
   updatePauseBtn();
@@ -780,6 +788,9 @@ targetAllBtn.addEventListener('click', () => {
 });
 
 // --- start ----------------------------------------------------------------
+
+tipNextEl.addEventListener('click', nextTip);
+setInterval(nextTip, 45000); // a fresh tip every so often
 
 newMap(randomSeed());
 applyI18n();
