@@ -47,6 +47,15 @@ and surviving the winter.
 - Colony panel shows food storage, meals, and an activity log
 - Game speed control (5 steps) and map zoom (3 steps)
 
+### Alpha 5 — seasons & temperature
+
+- A game clock with four seasons making up each year
+- Temperature and daylight follow a yearly cycle; crop growth speed
+  depends on both — crops are dormant in the winter cold
+- A Season panel shows the date, temperature and daylight; transient
+  popups explain tools and announce season changes, keeping the normal
+  screen uncluttered
+
 ## Version archive
 
 Every released version stays playable. The live site links to an

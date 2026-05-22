@@ -75,11 +75,22 @@ body {
   touch-action: none;
 }
 
-.hint {
-  margin: 8px 2px 0;
-  color: var(--muted);
-  font-size: 0.8rem;
-  line-height: 1.4;
+/* Transient hint popup shown below the canvas on tool/season changes. */
+.toast {
+  margin: 10px 0 0;
+  background: rgba(12, 15, 20, 0.94);
+  border: 1px solid var(--accent);
+  color: var(--text);
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 0.84rem;
+  line-height: 1.45;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.toast.show {
+  opacity: 1;
 }
 
 /* On-screen scroll arrows, overlaid on the canvas edges. */

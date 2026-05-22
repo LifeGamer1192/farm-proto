@@ -107,6 +107,12 @@ export class Renderer {
     }
     ctx.stroke();
 
+    // --- seasonal tint (a faint wash over the terrain) ---
+    if (scene.seasonTint) {
+      ctx.fillStyle = scene.seasonTint;
+      ctx.fillRect(0, 0, cw, ch);
+    }
+
     // --- plants & crops ---
     for (let row = 0; row < visRows; row++) {
       const mapY = startRow + row;

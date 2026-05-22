@@ -3,6 +3,7 @@ import { GRID_COLS, GRID_ROWS, DRAG_THRESHOLD, SCROLL_STEP } from './config.js';
 import { hashSeed, randomSeed } from './core/rng.js';
 import { TASK_LABELS } from './tasks.js';
 import { isRipe, cropSuitability, survivalChance, getCrop } from './crops.js';
+import { SEASON_LABELS, SEASON_NOTE, tempGrowthFactor, sunGrowthFactor } from './season.js';
 import { Game } from './game.js';
 
 const canvas = document.getElementById('map');
@@ -22,6 +23,8 @@ const toolsEl = document.getElementById('tools');
 const cropsEl = document.getElementById('crops');
 const speedsEl = document.getElementById('speeds');
 const zoomsEl = document.getElementById('zooms');
+const envStatsEl = document.getElementById('env-stats');
+const toastEl = document.getElementById('toast');
 
 const PAN_DIRS = { up: [0, -1], down: [0, 1], left: [-1, 0], right: [1, 0] };
 
@@ -33,6 +36,34 @@ const archiveLink = document.getElementById('archive-link');
 if (archiveLink && location.pathname.includes('/versions/')) {
   archiveLink.href = '../';
 }
+
+// --- transient hint popups (toast) ---------------------------------------
+
+const TOOL_HINTS = {
+  move: 'Move tool — click a tile and the colonist walks there.',
+  harvest:
+    'Harvest tool — click a ripe crop, wild plant or dead husk to gather or clear it.',
+  sow: 'Sow tool — click tiles to plant the chosen crop. It grows over time; harvest it once ripe.',
+};
+const CROP_HINTS = {
+  wheat: 'Wheat — moderate growth, yields 4 food.',
+  potato: 'Potato — slow to grow, yields 7 food.',
+  bean: 'Bean — quick to grow, yields 2 food.',
+};
+
+let toastTimer = null;
+function showToast(text) {
+  toastEl.textContent = text;
+  toastEl.hidden = false;
+  void toastEl.offsetWidth; // reflow so the fade-in transition runs
+  toastEl.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => toastEl.classList.remove('show'), 5500);
+}
+// Once the fade-out finishes, drop the toast out of the layout.
+toastEl.addEventListener('transitionend', () => {
+  if (!toastEl.classList.contains('show')) toastEl.hidden = true;
+});
 
 // --- legend & stats panels ------------------------------------------------
 
@@ -141,6 +172,17 @@ function updateColonyPanel() {
     .join('');
 }
 
+function updateEnvPanel() {
+  const e = game.environment;
+  renderRows(envStatsEl, [
+    ['Year', e.year],
+    ['Season', `${SEASON_LABELS[e.seasonIndex]} · day ${e.day}`],
+    ['Temperature', `${Math.round(e.temperature)}°C`],
+    ['Daylight', `${Math.round(e.daylight * 100)}%`],
+    ['Season growth', `${Math.round(tempGrowthFactor(e.temperature) * 100)}%`],
+  ]);
+}
+
 // --- map lifecycle --------------------------------------------------------
 
 function newMap(seed) {
@@ -150,6 +192,7 @@ function newMap(seed) {
   updateColonistStats();
   updateTaskPanel();
   updateColonyPanel();
+  updateEnvPanel();
   updateLegend();
 }
 
@@ -200,6 +243,14 @@ function sowHint(tile) {
   return `<br>sow ${cropId}: ~${Math.round(chance * 100)}% to survive`;
 }
 
+// How fast a crop grows on this tile now (temperature × the tile's sunlight).
+function growthHint(tile) {
+  if (tile.type === 'water') return '';
+  const e = game.environment;
+  const rate = tempGrowthFactor(e.temperature) * sunGrowthFactor(tile.sunlight, e.daylight);
+  return `<br>crop growth here ~${Math.round(rate * 100)}%`;
+}
+
 function showTooltip(clientX, clientY, tile) {
   const t = game.map.tiles[tile.y][tile.x];
   const f = (v) => v.toFixed(3);
@@ -208,7 +259,7 @@ function showTooltip(clientX, clientY, tile) {
     `<strong>(${tile.x}, ${tile.y})</strong> ${t.type}<br>` +
     `elevation ${f(t.elevation)}<br>fertility ${f(t.fertility)}<br>` +
     `moisture ${f(t.moisture)}<br>sunlight ${f(t.sunlight)}` +
-    `${describePlant(t.plant)}${sowHint(t)}`;
+    `${describePlant(t.plant)}${growthHint(t)}${sowHint(t)}`;
   const { rect } = canvasMetrics();
   tooltip.style.left = `${clientX - rect.left + 14}px`;
   tooltip.style.top = `${clientY - rect.top + 14}px`;
@@ -326,12 +377,16 @@ function selectIn(container, btn, attr) {
 
 toolsEl.addEventListener('click', (ev) => {
   const btn = ev.target.closest('button[data-tool]');
-  if (btn) tool = selectIn(toolsEl, btn, 'tool');
+  if (!btn) return;
+  tool = selectIn(toolsEl, btn, 'tool');
+  showToast(TOOL_HINTS[tool]);
 });
 
 cropsEl.addEventListener('click', (ev) => {
   const btn = ev.target.closest('button[data-crop]');
-  if (btn) cropId = selectIn(cropsEl, btn, 'crop');
+  if (!btn) return;
+  cropId = selectIn(cropsEl, btn, 'crop');
+  showToast(CROP_HINTS[cropId]);
 });
 
 speedsEl.addEventListener('click', (ev) => {
@@ -374,8 +429,12 @@ document.getElementById('clear-tasks').addEventListener('click', () => {
 
 newMap(randomSeed());
 game.start();
+showToast('Pick a tool, then click map tiles to set the colonist tasks. Drag or use the arrows to scroll.');
 setInterval(() => {
   updateColonistStats();
   updateTaskPanel();
   updateColonyPanel();
+  updateEnvPanel();
+  const season = game.consumeSeasonChange();
+  if (season) showToast(SEASON_NOTE[season]);
 }, 150);

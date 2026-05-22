@@ -27,6 +27,14 @@ import { Colonist } from './entities/colonist.js';
 import { TaskType, TASK_LABELS, createTask } from './tasks.js';
 import { scatterPlants, PlantKind } from './world.js';
 import { getCrop, cropSuitability, survivalChance } from './crops.js';
+import {
+  clockInfo,
+  temperatureAt,
+  daylightAt,
+  tempGrowthFactor,
+  sunGrowthFactor,
+  SEASON_TINT,
+} from './season.js';
 
 const FOOD_TYPES = ['forage', 'wheat', 'potato', 'bean'];
 
@@ -59,6 +67,10 @@ export class Game {
     this.eatTimer = 0;
     this.log = []; // recent events, newest first
     this.lastAssignReason = '';
+
+    this.clock = 0; // elapsed sim-seconds — drives the seasons
+    this.environment = null; // {year, season, day, temperature, daylight, ...}
+    this._seasonEvent = null; // a season name when the season just changed
 
     this._loop = this._loop.bind(this);
     this._lastTime = 0;
@@ -107,6 +119,9 @@ export class Game {
     this.log = [];
     this.lastAssignReason = 'No tasks queued yet.';
     this.hover = null;
+    this.clock = 0;
+    this._seasonEvent = null;
+    this._updateEnvironment();
   }
 
   // Nearest land tile to the map center (outward ring search).
@@ -164,6 +179,21 @@ export class Game {
 
   centerOnColonist() {
     this.camera.centerOn(this.colonist.x + 0.5, this.colonist.y + 0.5);
+  }
+
+  // Recompute the calendar and weather from the clock.
+  _updateEnvironment() {
+    const info = clockInfo(this.clock);
+    info.temperature = temperatureAt(info.yearProgress);
+    info.daylight = daylightAt(info.yearProgress);
+    this.environment = info;
+  }
+
+  /** Return the season name if it changed since the last call, else null. */
+  consumeSeasonChange() {
+    const s = this._seasonEvent;
+    this._seasonEvent = null;
+    return s;
   }
 
   _pushLog(entry) {
@@ -255,10 +285,18 @@ export class Game {
   }
 
   // Advance every growing crop; doomed ones wither before they ripen.
+  // Growth speed depends on temperature and on each tile's sunlight.
   _growCrops(dt) {
+    const env = this.environment;
+    const tempFactor = tempGrowthFactor(env.temperature);
     for (let i = this.crops.length - 1; i >= 0; i--) {
       const crop = this.crops[i];
-      crop.growth = Math.min(1, crop.growth + dt / getCrop(crop.cropId).growthTime);
+      const tile = this.map.tiles[crop.y][crop.x];
+      const rate = tempFactor * sunGrowthFactor(tile.sunlight, env.daylight);
+      crop.growth = Math.min(
+        1,
+        crop.growth + (dt / getCrop(crop.cropId).growthTime) * rate,
+      );
       if (crop.doomed && crop.growth >= crop.witherAt) {
         // A weak crop has failed — it stays as a husk to be cleared.
         crop.withered = true;
@@ -314,6 +352,12 @@ export class Game {
     }
     // The simulation runs at the chosen game speed.
     const simDt = realDt * this.speed;
+    this.clock += simDt;
+    const prevSeason = this.environment.seasonIndex;
+    this._updateEnvironment();
+    if (this.environment.seasonIndex !== prevSeason) {
+      this._seasonEvent = this.environment.season;
+    }
     this._updateTasks();
     this.colonist.update(simDt, this.map);
     this._growCrops(simDt);
@@ -330,6 +374,7 @@ export class Game {
       taskQueue: this.taskQueue,
       currentTask: this.colonist.currentTask,
       tileSize: this.tileSize,
+      seasonTint: SEASON_TINT[this.environment.season],
     });
   }
 
