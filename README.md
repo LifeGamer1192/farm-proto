@@ -148,6 +148,21 @@ and surviving the winter.
 - A new **Variety codex** panel tracks the best variety bred for each
   crop, gene by gene, against the origin strain
 
+### Alpha 13 — visual pass & a clearer interface
+
+- A visual overhaul of everything but the crops: **textured terrain**
+  with grassy speckles and sandy shorelines, **colonists** that face the
+  way they walk, a redrawn **wild boar**, and rebuilt **structures**
+- The stockpile is now a proper **warehouse** — renamed and redrawn as a
+  plank-walled barn
+- Tool-linked panels: the **Crop** picker shows only with the Sow tool,
+  the **Structure** picker only with Build — a crop you have no seed of
+  is greyed out
+- When an order cannot be placed, an **error message** explains why
+  (e.g. sowing with no seed in stock names the missing seed)
+- **Hover hints** on every tool button, and a new **Tips** panel of
+  gameplay pointers
+
 ## Version archive
 
 Every released version stays playable. The live site links to an

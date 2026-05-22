@@ -94,6 +94,44 @@ body {
   opacity: 1;
 }
 
+/* Error toast — a failed order, with the blocking condition explained. */
+.toast.error {
+  border-color: #d2603a;
+  background: rgba(40, 16, 12, 0.95);
+  color: #f4c9bb;
+}
+
+/* A tool/crop option that is currently unavailable (e.g. crop out of seed). */
+.tools button.disabled-opt {
+  opacity: 0.42;
+  filter: grayscale(0.7);
+}
+
+/* Tips panel — a short list of gameplay hints. */
+.tips-list {
+  list-style: none;
+  margin: 4px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 0.78rem;
+  line-height: 1.4;
+  color: var(--muted);
+}
+
+.tips-list li {
+  position: relative;
+  padding-left: 14px;
+}
+
+.tips-list li::before {
+  content: '▸';
+  position: absolute;
+  left: 0;
+  color: var(--accent);
+}
+
 /* On-screen scroll arrows, overlaid on the canvas edges. */
 .scroll-btn {
   position: absolute;

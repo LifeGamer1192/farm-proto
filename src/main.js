@@ -54,6 +54,9 @@ const envStatsEl = $('env-stats');
 const pauseBtn = $('pause-btn');
 const pausedBadge = $('paused-badge');
 const targetAllBtn = $('target-all');
+const cropPanelEl = $('crop-panel');
+const structurePanelEl = $('structure-panel');
+const tipsEl = $('tips');
 
 const PAN_DIRS = { up: [0, -1], down: [0, 1], left: [-1, 0], right: [1, 0] };
 
@@ -69,8 +72,9 @@ if (archiveLink && location.pathname.includes('/versions/')) {
 // --- transient hint popups (toast) ---------------------------------------
 
 let toastTimer = null;
-function showToast(text) {
+function showToast(text, isError = false) {
   toastEl.textContent = text;
+  toastEl.classList.toggle('error', isError);
   toastEl.hidden = false;
   void toastEl.offsetWidth; // reflow so the fade-in transition runs
   toastEl.classList.add('show');
@@ -198,6 +202,27 @@ function updateColonyStats() {
   ]);
 }
 
+// Show the crop / structure picker only for the tool that uses it.
+function updateToolPanels() {
+  cropPanelEl.hidden = tool !== 'sow';
+  structurePanelEl.hidden = tool !== 'build';
+}
+
+// Grey out a crop the colony has no seed of — it cannot be sown.
+function updateCropButtons() {
+  for (const btn of cropsEl.querySelectorAll('button[data-crop]')) {
+    btn.classList.toggle('disabled-opt', game.seedCount(btn.dataset.crop) === 0);
+  }
+}
+
+// The static list of gameplay tips, in the current language.
+const TIP_COUNT = 8;
+function updateTipsPanel() {
+  let html = '';
+  for (let i = 1; i <= TIP_COUNT; i++) html += `<li>${t('tips.' + i)}</li>`;
+  tipsEl.innerHTML = html;
+}
+
 // Seed stock: each crop's seeds bucketed by quality rank (★).
 function updateSeedPanel() {
   seedStockEl.innerHTML = CROP_IDS.map((id) => {
@@ -282,6 +307,7 @@ function refreshPanels() {
   updateTaskPanel();
   updateColonyStats();
   updateSeedPanel();
+  updateCropButtons();
   updateCodexPanel();
   updateLog();
   updateEnvPanel();
@@ -294,6 +320,17 @@ function applyI18n() {
   for (const el of document.querySelectorAll('[data-i18n]')) {
     el.textContent = t(el.dataset.i18n);
   }
+  // Hover hints on the tool / crop / structure buttons.
+  for (const b of toolsEl.querySelectorAll('button[data-tool]')) {
+    b.title = t('hint.task.' + b.dataset.tool);
+  }
+  for (const b of cropsEl.querySelectorAll('button[data-crop]')) {
+    b.title = t('hint.crop.' + b.dataset.crop);
+  }
+  for (const b of structuresEl.querySelectorAll('button[data-structure]')) {
+    b.title = t('hint.structure.' + b.dataset.structure);
+  }
+  updateTipsPanel();
   document.documentElement.lang = getLang();
   refreshPanels();
   updatePauseBtn();
@@ -424,17 +461,30 @@ let lastX = 0;
 let lastY = 0;
 const paintedTiles = new Set();
 
+// An order error is shown at most once per pointer gesture (a click or a
+// paint drag), so a long drag over bad tiles does not flood the toast.
+let gestureErrorShown = false;
+
+function showOrderError(key) {
+  const params = key === 'err.noSeed' ? { crop: t('crop.' + cropId) } : undefined;
+  showToast(`⚠ ${t(key, params)}`, true);
+}
+
 function placeTask(pos) {
   if (tool === 'cancel') {
     game.cancelTasksAt(pos.x, pos.y);
     updateTaskPanel();
     return;
   }
-  game.enqueueTask(tool, pos.x, pos.y, {
+  const err = game.enqueueTask(tool, pos.x, pos.y, {
     cropId,
     structure,
     assignee: game.selectedColonist,
   });
+  if (err && !gestureErrorShown) {
+    gestureErrorShown = true;
+    showOrderError(err);
+  }
   updateTaskPanel();
 }
 
@@ -451,6 +501,7 @@ function paintTile(clientX, clientY) {
 canvas.addEventListener('pointerdown', (ev) => {
   activePointer = ev.pointerId;
   dragged = false;
+  gestureErrorShown = false;
   downX = lastX = ev.clientX;
   downY = lastY = ev.clientY;
   canvas.setPointerCapture(ev.pointerId);
@@ -580,6 +631,7 @@ toolsEl.addEventListener('click', (ev) => {
   const btn = ev.target.closest('button[data-tool]');
   if (!btn) return;
   tool = selectIn(toolsEl, btn, 'tool');
+  updateToolPanels();
   showToast(t('hint.task.' + tool));
 });
 
@@ -718,6 +770,7 @@ targetAllBtn.addEventListener('click', () => {
 
 newMap(randomSeed());
 applyI18n();
+updateToolPanels();
 game.start();
 showToast(t('hint.welcome'));
 setInterval(() => {
@@ -725,6 +778,7 @@ setInterval(() => {
   updateTaskPanel();
   updateColonyStats();
   updateSeedPanel();
+  updateCropButtons();
   updateCodexPanel();
   updateLog();
   updateEnvPanel();

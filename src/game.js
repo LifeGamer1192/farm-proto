@@ -512,53 +512,57 @@ export class Game {
    * Queue a work task at a tile, if it makes sense there.
    * @param {object} [opts] cropId (SOW), structure (BUILD), assignee (a
    *   colonist name, or null to address the whole colony).
+   * @returns {?string} null on success, or an 'err.*' i18n key explaining
+   *   why the order could not be placed.
    */
   enqueueTask(type, x, y, opts = {}) {
     const tile = this.map.tiles[y] && this.map.tiles[y][x];
-    if (!tile) return false;
+    if (!tile) return 'err.offMap';
     const assignee = opts.assignee || null;
     if (type === TaskType.MOVE) {
-      if (tile.type === TileType.WATER) return false;
+      if (tile.type === TileType.WATER) return 'err.onWater';
       if (assignee) {
         this.taskQueue.push(createTask(TaskType.MOVE, x, y, { assignee }));
       } else {
         // "All colonists" + Move: send every colonist to the tile.
-        if (this.colonists.length === 0) return false;
+        if (this.colonists.length === 0) return 'err.noColonist';
         for (const c of this.colonists) {
           this.taskQueue.push(createTask(TaskType.MOVE, x, y, { assignee: c.name }));
         }
       }
-      return true;
+      return null;
     }
-    if (type === TaskType.HARVEST && !tile.plant) return false;
+    if (type === TaskType.HARVEST && !tile.plant) return 'err.noPlant';
     if (type === TaskType.SOW) {
-      if (tile.type === TileType.WATER || tile.plant) return false;
+      if (tile.type === TileType.WATER) return 'err.onWater';
+      if (tile.plant) return 'err.occupied';
       // Each sow spends one seed — refuse the order if none can be spared.
-      if (!this.canSow(opts.cropId)) return false;
+      if (!this.canSow(opts.cropId)) return 'err.noSeed';
     }
-    if (type === TaskType.TILL && tile.type === TileType.WATER) return false;
+    if (type === TaskType.TILL && tile.type === TileType.WATER) return 'err.onWater';
     if (type === TaskType.WATER) {
       const p = tile.plant;
-      if (!p || p.kind !== PlantKind.CROP || p.withered) return false;
+      if (!p || p.kind !== PlantKind.CROP || p.withered) return 'err.noCrop';
     }
-    if (type === TaskType.COOK && tile.structure !== 'hearth') return false;
+    if (type === TaskType.COOK && tile.structure !== 'hearth') return 'err.noHearth';
     if (type === TaskType.BUILD) {
-      if (tile.type === TileType.WATER || tile.plant || tile.structure) return false;
+      if (tile.type === TileType.WATER) return 'err.onWater';
+      if (tile.plant || tile.structure) return 'err.occupied';
       this.taskQueue.push(
         createTask(TaskType.BUILD, x, y, { structure: opts.structure || 'fence', assignee }),
       );
-      return true;
+      return null;
     }
     if (type === TaskType.HUNT) {
       const animal = this._animalNear(x, y, 1.6);
-      if (!animal) return false;
+      if (!animal) return 'err.noAnimal';
       this.taskQueue.push(
         createTask(TaskType.HUNT, animal.tileX, animal.tileY, { animalId: animal.id, assignee }),
       );
-      return true;
+      return null;
     }
     this.taskQueue.push(createTask(type, x, y, { cropId: opts.cropId || null, assignee }));
-    return true;
+    return null;
   }
 
   clearTasks() {

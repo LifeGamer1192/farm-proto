@@ -9,6 +9,14 @@ import { phenotype } from '../genetics.js';
 
 const lerp = (a, b, t) => a + (b - a) * t;
 
+// Deterministic 0..1 pseudo-noise for a tile — stable across frames, so
+// terrain texture does not shimmer.
+function tileHash(x, y) {
+  let h = (Math.imul(x | 0, 374761393) + Math.imul(y | 0, 668265263)) | 0;
+  h = Math.imul(h ^ (h >>> 13), 1274126177);
+  return ((h >>> 0) % 1000) / 1000;
+}
+
 // Rotate a hex colour's hue by `deg` degrees — gives crops their genetic
 // fruit colour (the hue gene). Saturation and lightness are kept.
 function hueShift(hex, deg) {
@@ -101,6 +109,7 @@ export class Renderer {
     const cw = this.canvas.width;
     const ch = this.canvas.height;
     const colorOf = VIEW_MODES[mode] || VIEW_MODES.terrain;
+    const detailed = mode === 'terrain' && ts >= 14;
 
     ctx.clearRect(0, 0, cw, ch);
 
@@ -114,7 +123,7 @@ export class Renderer {
     const visCols = camera.viewCols + 1;
     const visRows = camera.viewRows + 1;
 
-    // --- tiles (with tilled-soil furrows) ---
+    // --- tiles (with terrain texture and tilled-soil furrows) ---
     for (let row = 0; row < visRows; row++) {
       const mapY = startRow + row;
       if (mapY < 0 || mapY >= map.rows) continue;
@@ -126,6 +135,7 @@ export class Renderer {
         const py = row * ts - offY;
         ctx.fillStyle = colorOf(tile);
         ctx.fillRect(px, py, ts, ts);
+        if (detailed) this._terrainDetail(tile, map, mapX, mapY, px, py);
         if (tile.tilled && tile.type === TileType.LAND) {
           ctx.strokeStyle = 'rgba(60,40,20,0.45)';
           ctx.lineWidth = 1;
@@ -141,7 +151,7 @@ export class Renderer {
     }
 
     // --- grid lines ---
-    ctx.strokeStyle = 'rgba(0,0,0,0.12)';
+    ctx.strokeStyle = 'rgba(0,0,0,0.10)';
     ctx.lineWidth = 1;
     ctx.beginPath();
     for (let col = 0; col <= visCols; col++) {
@@ -162,7 +172,7 @@ export class Renderer {
       ctx.fillRect(0, 0, cw, ch);
     }
 
-    // --- structures (fences, huts, stockpiles) ---
+    // --- structures (fences, huts, warehouses, hearths) ---
     for (let row = 0; row < visRows; row++) {
       const mapY = startRow + row;
       if (mapY < 0 || mapY >= map.rows) continue;
@@ -239,80 +249,166 @@ export class Renderer {
     }
   }
 
+  // Texture overlaid on a terrain tile: grass speckles and sandy shores on
+  // land, glinting ripples on water.
+  _terrainDetail(tile, map, mx, my, px, py) {
+    const ctx = this.ctx;
+    const ts = this.ts;
+    if (tile.type === TileType.WATER) {
+      ctx.fillStyle = 'rgba(255,255,255,0.10)';
+      const n = tileHash(mx, my);
+      ctx.fillRect(px + ts * 0.16, py + ts * (0.28 + n * 0.4), ts * 0.34, 1.5);
+      ctx.fillRect(px + ts * 0.52, py + ts * (0.5 + n * 0.3), ts * 0.24, 1.5);
+      return;
+    }
+    // Grass speckles — two dark, one light, at stable positions.
+    const dot = Math.max(1.6, ts * 0.1);
+    for (let i = 0; i < 3; i++) {
+      const sxp = px + ts * (0.14 + tileHash(mx * 3 + i, my * 5 + 1) * 0.7);
+      const syp = py + ts * (0.14 + tileHash(mx + 2, my * 2 + i * 7) * 0.7);
+      ctx.fillStyle = i === 2 ? 'rgba(250,250,205,0.16)' : 'rgba(38,30,14,0.16)';
+      ctx.fillRect(sxp, syp, dot, dot);
+    }
+    // Sandy band where land meets water.
+    const rows = map.tiles;
+    ctx.fillStyle = 'rgba(228,212,152,0.5)';
+    const w = Math.max(1.6, ts * 0.13);
+    if (rows[my - 1] && rows[my - 1][mx] && rows[my - 1][mx].type === TileType.WATER) {
+      ctx.fillRect(px, py, ts, w);
+    }
+    if (rows[my + 1] && rows[my + 1][mx] && rows[my + 1][mx].type === TileType.WATER) {
+      ctx.fillRect(px, py + ts - w, ts, w);
+    }
+    if (rows[my][mx - 1] && rows[my][mx - 1].type === TileType.WATER) {
+      ctx.fillRect(px, py, w, ts);
+    }
+    if (rows[my][mx + 1] && rows[my][mx + 1].type === TileType.WATER) {
+      ctx.fillRect(px + ts - w, py, w, ts);
+    }
+  }
+
   // A built structure, drawn from the tile's top-left corner (px, py).
   _drawStructure(structure, px, py, hearthsLit) {
     const ctx = this.ctx;
     const ts = this.ts;
+
     if (structure === 'hearth') {
       const mx = px + ts * 0.5;
-      const my = py + ts * 0.5;
-      ctx.fillStyle = '#6f6f6f'; // ring of stones
+      const my = py + ts * 0.52;
+      if (hearthsLit) {
+        const glow = ctx.createRadialGradient(mx, my, ts * 0.08, mx, my, ts * 0.62);
+        glow.addColorStop(0, 'rgba(255,170,60,0.5)');
+        glow.addColorStop(1, 'rgba(255,170,60,0)');
+        ctx.fillStyle = glow;
+        ctx.fillRect(px - ts * 0.3, py - ts * 0.3, ts * 1.6, ts * 1.6);
+      }
+      // Ring of individual stones.
+      ctx.strokeStyle = '#4a4a4a';
+      ctx.lineWidth = 1;
+      for (let i = 0; i < 8; i++) {
+        const ang = (i / 8) * Math.PI * 2;
+        ctx.fillStyle = i % 2 ? '#888' : '#6f6f6f';
+        ctx.beginPath();
+        ctx.arc(mx + Math.cos(ang) * ts * 0.32, my + Math.sin(ang) * ts * 0.32, ts * 0.1, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+      }
+      ctx.fillStyle = '#221c18'; // ash pit
       ctx.beginPath();
-      ctx.arc(mx, my, ts * 0.36, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.fillStyle = '#2a2420'; // ash pit
-      ctx.beginPath();
-      ctx.arc(mx, my, ts * 0.24, 0, Math.PI * 2);
+      ctx.arc(mx, my, ts * 0.21, 0, Math.PI * 2);
       ctx.fill();
       ctx.strokeStyle = '#7a5230'; // crossed logs
       ctx.lineWidth = 2.5;
       ctx.beginPath();
-      ctx.moveTo(px + ts * 0.32, py + ts * 0.64);
-      ctx.lineTo(px + ts * 0.68, py + ts * 0.36);
-      ctx.moveTo(px + ts * 0.32, py + ts * 0.36);
-      ctx.lineTo(px + ts * 0.68, py + ts * 0.64);
+      ctx.moveTo(mx - ts * 0.16, my + ts * 0.12);
+      ctx.lineTo(mx + ts * 0.16, my - ts * 0.12);
+      ctx.moveTo(mx - ts * 0.16, my - ts * 0.12);
+      ctx.lineTo(mx + ts * 0.16, my + ts * 0.12);
       ctx.stroke();
       if (hearthsLit) {
-        ctx.fillStyle = '#ef9f2e'; // flame
-        ctx.beginPath();
-        ctx.moveTo(mx, py + ts * 0.24);
-        ctx.lineTo(px + ts * 0.64, py + ts * 0.56);
-        ctx.lineTo(px + ts * 0.36, py + ts * 0.56);
-        ctx.closePath();
-        ctx.fill();
-        ctx.fillStyle = '#f7d54a';
-        ctx.beginPath();
-        ctx.moveTo(mx, py + ts * 0.38);
-        ctx.lineTo(px + ts * 0.58, py + ts * 0.56);
-        ctx.lineTo(px + ts * 0.42, py + ts * 0.56);
-        ctx.closePath();
-        ctx.fill();
+        for (const [w, h, col] of [
+          [0.2, 0.52, '#e8590f'],
+          [0.13, 0.38, '#f59a1e'],
+          [0.07, 0.22, '#ffd751'],
+        ]) {
+          ctx.fillStyle = col;
+          ctx.beginPath();
+          ctx.moveTo(mx, my - ts * h);
+          ctx.quadraticCurveTo(mx + ts * w, my - ts * h * 0.3, mx, my + ts * 0.04);
+          ctx.quadraticCurveTo(mx - ts * w, my - ts * h * 0.3, mx, my - ts * h);
+          ctx.fill();
+        }
       }
       return;
     }
+
     if (structure === 'stockpile') {
-      ctx.fillStyle = 'rgba(190,160,95,0.35)';
-      ctx.fillRect(px + 1, py + 1, ts - 2, ts - 2);
-      ctx.strokeStyle = '#b9923f';
-      ctx.lineWidth = 1.5;
-      ctx.setLineDash([4, 3]);
-      ctx.strokeRect(px + 2.5, py + 2.5, ts - 5, ts - 5);
-      ctx.setLineDash([]);
-      ctx.fillStyle = '#a9762f';
-      ctx.fillRect(px + ts * 0.34, py + ts * 0.34, ts * 0.32, ts * 0.32);
-      ctx.strokeStyle = '#6e4a18';
+      // A warehouse — a plank-walled barn with a gabled roof and a wide door.
+      const ix = px + ts * 0.5;
+      ctx.fillStyle = '#bd8e52';
+      ctx.fillRect(px + ts * 0.16, py + ts * 0.42, ts * 0.68, ts * 0.42);
+      ctx.strokeStyle = '#5e3f1c';
+      ctx.lineWidth = 1.4;
+      ctx.strokeRect(px + ts * 0.16, py + ts * 0.42, ts * 0.68, ts * 0.42);
+      ctx.strokeStyle = 'rgba(94,63,28,0.4)'; // plank lines
       ctx.lineWidth = 1;
-      ctx.strokeRect(px + ts * 0.34, py + ts * 0.34, ts * 0.32, ts * 0.32);
+      ctx.beginPath();
+      ctx.moveTo(px + ts * 0.16, py + ts * 0.56);
+      ctx.lineTo(px + ts * 0.84, py + ts * 0.56);
+      ctx.moveTo(px + ts * 0.16, py + ts * 0.7);
+      ctx.lineTo(px + ts * 0.84, py + ts * 0.7);
+      ctx.stroke();
+      ctx.fillStyle = '#7a4f24'; // gabled roof
+      ctx.beginPath();
+      ctx.moveTo(px + ts * 0.09, py + ts * 0.44);
+      ctx.lineTo(px + ts * 0.5, py + ts * 0.19);
+      ctx.lineTo(px + ts * 0.91, py + ts * 0.44);
+      ctx.closePath();
+      ctx.fill();
+      ctx.strokeStyle = '#3f2a12';
+      ctx.lineWidth = 1.4;
+      ctx.stroke();
+      ctx.fillStyle = '#6e4a22'; // double door
+      ctx.fillRect(ix - ts * 0.15, py + ts * 0.54, ts * 0.3, ts * 0.3);
+      ctx.strokeStyle = '#3f2a12';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(ix - ts * 0.15, py + ts * 0.54, ts * 0.3, ts * 0.3);
+      ctx.beginPath();
+      ctx.moveTo(ix, py + ts * 0.54);
+      ctx.lineTo(ix, py + ts * 0.84);
+      ctx.stroke();
       return;
     }
+
     if (structure === 'hut') {
-      ctx.fillStyle = '#caa06a';
-      ctx.fillRect(px + ts * 0.22, py + ts * 0.4, ts * 0.56, ts * 0.42);
-      ctx.lineWidth = 1.5;
+      ctx.fillStyle = '#caa06a'; // body
+      ctx.fillRect(px + ts * 0.26, py + ts * 0.44, ts * 0.48, ts * 0.38);
+      ctx.lineWidth = 1.4;
       ctx.strokeStyle = '#5a3a1e';
-      ctx.strokeRect(px + ts * 0.22, py + ts * 0.4, ts * 0.56, ts * 0.42);
-      ctx.fillStyle = '#8a4f2c';
+      ctx.strokeRect(px + ts * 0.26, py + ts * 0.44, ts * 0.48, ts * 0.38);
+      ctx.fillStyle = '#8a4f2c'; // roof
       ctx.beginPath();
-      ctx.moveTo(px + ts * 0.12, py + ts * 0.42);
-      ctx.lineTo(px + ts * 0.5, py + ts * 0.13);
-      ctx.lineTo(px + ts * 0.88, py + ts * 0.42);
+      ctx.moveTo(px + ts * 0.16, py + ts * 0.46);
+      ctx.lineTo(px + ts * 0.5, py + ts * 0.14);
+      ctx.lineTo(px + ts * 0.84, py + ts * 0.46);
       ctx.closePath();
       ctx.fill();
       ctx.stroke();
-      ctx.fillStyle = '#5a3a1e';
+      ctx.strokeStyle = 'rgba(255,222,170,0.45)'; // roof highlight
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(px + ts * 0.5, py + ts * 0.14);
+      ctx.lineTo(px + ts * 0.31, py + ts * 0.45);
+      ctx.stroke();
+      ctx.fillStyle = '#4a3018'; // door
       ctx.fillRect(px + ts * 0.43, py + ts * 0.58, ts * 0.14, ts * 0.24);
+      ctx.fillStyle = '#e8c873'; // lit window
+      ctx.fillRect(px + ts * 0.6, py + ts * 0.52, ts * 0.1, ts * 0.1);
+      ctx.strokeStyle = '#5a3a1e';
+      ctx.strokeRect(px + ts * 0.6, py + ts * 0.52, ts * 0.1, ts * 0.1);
       return;
     }
+
     // fence — corner posts joined by crossed rails.
     ctx.strokeStyle = '#9a7042';
     ctx.lineWidth = 2;
@@ -456,20 +552,33 @@ export class Renderer {
     }
   }
 
-  // A small top-down figure; a progress ring while it works. `selected`
-  // marks the colonist the player's work orders are currently directed at.
+  // A small top-down figure that faces the way it walks; a progress ring
+  // while it works. `selected` marks the colonist work orders go to.
   _drawColonist(colonist, cx, cy, selected) {
     const ctx = this.ctx;
-    const r = this.ts * 0.34;
+    const r = this.ts * 0.33;
 
-    ctx.fillStyle = 'rgba(0,0,0,0.30)';
+    // Facing — toward the next path waypoint, else downward.
+    let fx = 0;
+    let fy = 1;
+    if (colonist.path.length > 0) {
+      const dx = colonist.path[0].x - colonist.x;
+      const dy = colonist.path[0].y - colonist.y;
+      const m = Math.hypot(dx, dy);
+      if (m > 0.01) {
+        fx = dx / m;
+        fy = dy / m;
+      }
+    }
+
+    ctx.fillStyle = 'rgba(0,0,0,0.28)';
     ctx.beginPath();
-    ctx.ellipse(cx, cy + r * 0.7, r, r * 0.45, 0, 0, Math.PI * 2);
+    ctx.ellipse(cx, cy + r * 0.8, r * 0.95, r * 0.4, 0, 0, Math.PI * 2);
     ctx.fill();
 
     if (selected) {
       ctx.beginPath();
-      ctx.arc(cx, cy, r * 1.32, 0, Math.PI * 2);
+      ctx.arc(cx, cy, r * 1.4, 0, Math.PI * 2);
       ctx.strokeStyle = '#7fd4ff';
       ctx.lineWidth = 2.5;
       ctx.setLineDash([4, 3]);
@@ -477,17 +586,38 @@ export class Renderer {
       ctx.setLineDash([]);
     }
 
+    // Feet — two dots set across the facing direction.
+    ctx.fillStyle = '#3a2606';
+    for (const s of [-1, 1]) {
+      ctx.beginPath();
+      ctx.arc(
+        cx + fx * r * 0.5 - fy * s * r * 0.42,
+        cy + fy * r * 0.5 + fx * s * r * 0.42,
+        r * 0.2,
+        0,
+        Math.PI * 2,
+      );
+      ctx.fill();
+    }
+
+    // Body — a rounded torso with a soft top-down highlight.
+    const grad = ctx.createRadialGradient(cx - r * 0.3, cy - r * 0.3, r * 0.2, cx, cy, r);
+    grad.addColorStop(0, '#f3c277');
+    grad.addColorStop(1, '#c47f1e');
     ctx.beginPath();
     ctx.arc(cx, cy, r, 0, Math.PI * 2);
-    ctx.fillStyle = '#e8a23c';
+    ctx.fillStyle = grad;
     ctx.fill();
-    ctx.lineWidth = 2;
+    ctx.lineWidth = 1.6;
     ctx.strokeStyle = '#3a2606';
     ctx.stroke();
 
+    // Head — offset toward the facing direction.
+    const hx = cx + fx * r * 0.36;
+    const hy = cy + fy * r * 0.36;
     ctx.beginPath();
-    ctx.arc(cx, cy, r * 0.52, 0, Math.PI * 2);
-    ctx.fillStyle = '#f6cf94';
+    ctx.arc(hx, hy, r * 0.52, 0, Math.PI * 2);
+    ctx.fillStyle = '#f7d6a0';
     ctx.fill();
     ctx.stroke();
 
@@ -524,39 +654,94 @@ export class Renderer {
     }
   }
 
-  // A wild boar: a dark, low oval body with a blunt snout.
+  // A wild boar: a bristled body on stubby legs, with a snout and a tusk.
   _drawAnimal(cx, cy) {
     const ctx = this.ctx;
     const ts = this.ts;
-    const rx = ts * 0.36;
-    const ry = ts * 0.24;
+    const rx = ts * 0.34;
+    const ry = ts * 0.22;
 
-    ctx.fillStyle = 'rgba(0,0,0,0.30)';
+    ctx.fillStyle = 'rgba(0,0,0,0.28)';
     ctx.beginPath();
-    ctx.ellipse(cx, cy + ry * 0.7, rx, ry * 0.5, 0, 0, Math.PI * 2);
+    ctx.ellipse(cx, cy + ry * 0.85, rx * 1.05, ry * 0.5, 0, 0, Math.PI * 2);
     ctx.fill();
 
+    // Legs.
+    ctx.strokeStyle = '#2c2014';
+    ctx.lineWidth = Math.max(1.6, ts * 0.07);
+    for (const lx of [-0.55, -0.2, 0.25, 0.6]) {
+      ctx.beginPath();
+      ctx.moveTo(cx + rx * lx, cy + ry * 0.35);
+      ctx.lineTo(cx + rx * lx, cy + ry * 1.05);
+      ctx.stroke();
+    }
+
+    // Tail.
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(cx - rx * 0.95, cy - ry * 0.1);
+    ctx.quadraticCurveTo(cx - rx * 1.3, cy - ry * 0.15, cx - rx * 1.12, cy + ry * 0.4);
+    ctx.stroke();
+
+    // Body.
+    const grad = ctx.createLinearGradient(cx, cy - ry, cx, cy + ry);
+    grad.addColorStop(0, '#7d6450');
+    grad.addColorStop(1, '#4f3d2c');
     ctx.beginPath();
     ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
-    ctx.fillStyle = '#6b5440';
+    ctx.fillStyle = grad;
     ctx.fill();
-    ctx.lineWidth = 2;
+    ctx.lineWidth = 1.8;
     ctx.strokeStyle = '#2c2014';
     ctx.stroke();
 
-    // Snout.
+    // Bristle ridge.
+    ctx.strokeStyle = '#33271a';
+    ctx.lineWidth = 1.3;
     ctx.beginPath();
-    ctx.arc(cx + rx * 0.85, cy, ry * 0.5, 0, Math.PI * 2);
-    ctx.fillStyle = '#4a3829';
-    ctx.fill();
+    for (let i = 0; i <= 4; i++) {
+      const bx = cx + rx * (-0.55 + (i / 4) * 0.85);
+      ctx.moveTo(bx, cy - ry * 0.72);
+      ctx.lineTo(bx, cy - ry * 1.08);
+    }
     ctx.stroke();
 
-    // Bristle ridge.
-    ctx.strokeStyle = '#3a2c1e';
-    ctx.lineWidth = 1.5;
+    // Ear.
+    ctx.fillStyle = '#4f3d2c';
     ctx.beginPath();
-    ctx.moveTo(cx - rx * 0.5, cy - ry * 0.7);
-    ctx.lineTo(cx + rx * 0.3, cy - ry * 0.7);
+    ctx.moveTo(cx + rx * 0.32, cy - ry * 0.65);
+    ctx.lineTo(cx + rx * 0.52, cy - ry * 1.15);
+    ctx.lineTo(cx + rx * 0.62, cy - ry * 0.55);
+    ctx.closePath();
+    ctx.fill();
+
+    // Snout.
+    ctx.beginPath();
+    ctx.arc(cx + rx * 0.92, cy + ry * 0.1, ry * 0.5, 0, Math.PI * 2);
+    ctx.fillStyle = '#3a2c1f';
+    ctx.fill();
+    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = '#2c2014';
     ctx.stroke();
+    ctx.fillStyle = '#1a130c'; // nostrils
+    for (const ny of [-0.16, 0.16]) {
+      ctx.beginPath();
+      ctx.arc(cx + rx * 1.03, cy + ry * 0.1 + ny * ry, 0.8 + ts * 0.022, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // Tusk.
+    ctx.strokeStyle = '#e8e0cf';
+    ctx.lineWidth = 1.6;
+    ctx.beginPath();
+    ctx.moveTo(cx + rx * 0.78, cy + ry * 0.3);
+    ctx.lineTo(cx + rx * 0.96, cy + ry * 0.52);
+    ctx.stroke();
+
+    // Eye.
+    ctx.fillStyle = '#120d08';
+    ctx.beginPath();
+    ctx.arc(cx + rx * 0.4, cy - ry * 0.22, 0.9 + ts * 0.03, 0, Math.PI * 2);
+    ctx.fill();
   }
 }
