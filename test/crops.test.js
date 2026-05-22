@@ -61,3 +61,8 @@ test('survival chance rises with suitability and stays in 0..1', () => {
   // Initial strains are weak: even ideal soil is not a sure thing.
   assert.ok(high < 0.75);
 });
+
+test('a tilled-soil bonus raises the survival chance', () => {
+  assert.ok(survivalChance(0.5, 0.15) > survivalChance(0.5));
+  assert.ok(survivalChance(1, 0.15) <= 1);
+});

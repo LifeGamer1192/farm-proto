@@ -1,19 +1,31 @@
-// Colony tasks: the unit of work the colonist carries out.
+// Colony tasks: the unit of work a colonist carries out.
 //
-// A task is plain data. The colonist (entities/colonist.js) executes it and
-// the game (game.js) queues tasks and applies their effects.
+// A task is plain data. Colonists (entities/colonist.js) execute tasks and
+// the game (game.js) queues work tasks, assigns them, and applies effects.
+//
+// Work tasks are placed by the player with the tools. Personal tasks
+// (eat/rest/leisure/sleep) are chosen by a colonist's own priority AI.
 
 export const TaskType = {
-  MOVE: 'move', // walk to a tile
-  HARVEST: 'harvest', // walk to a plant/ripe crop and gather it
-  SOW: 'sow', // walk to an empty tile and sow a crop
+  MOVE: 'move',
+  HARVEST: 'harvest',
+  SOW: 'sow',
+  TILL: 'till',
+  WATER: 'water',
+  EAT: 'eat',
+  REST: 'rest',
+  LEISURE: 'leisure',
+  SLEEP: 'sleep',
 };
 
-export const TASK_LABELS = {
-  move: 'Move',
-  harvest: 'Harvest',
-  sow: 'Sow',
-};
+// Task types the player places with the on-screen tools.
+export const WORK_TYPES = [
+  TaskType.MOVE,
+  TaskType.HARVEST,
+  TaskType.SOW,
+  TaskType.TILL,
+  TaskType.WATER,
+];
 
 let nextId = 1;
 
@@ -31,6 +43,7 @@ export function createTask(type, x, y, cropId = null) {
     y,
     cropId,
     status: 'queued', // 'queued' | 'active' | 'done' | 'failed'
-    outcome: '', // short human-readable result or failure note
+    outcome: '', // an i18n outcome key ('out.*'), set when the task resolves
+    outcomeData: null, // params for the outcome string (crop / n)
   };
 }

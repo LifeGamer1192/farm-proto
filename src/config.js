@@ -57,5 +57,24 @@ export const TASK_LOG_SIZE = 7;
 
 // --- farming -------------------------------------------------------------
 
-// Seconds between the colonist's forced meals (hunger itself comes later).
+// Seconds between a colonist's meals (hunger as a stat arrives later).
 export const EAT_INTERVAL = 15;
+
+// --- colonists -----------------------------------------------------------
+
+export const COLONIST_COUNT = 4;
+export const COLONIST_NAMES = ['Ada', 'Bo', 'Cy', 'Dot'];
+
+// Work-phase durations (sim-seconds) for personal tasks.
+export const EAT_DURATION = 1.2;
+export const REST_DURATION = 3;
+export const SLEEP_DURATION = 7;
+
+// --- till & water --------------------------------------------------------
+
+// Bonus added to a crop's survival chance when sown on tilled soil.
+export const TILL_SURVIVAL_BONUS = 0.15;
+
+// Sim-seconds a watered crop keeps its boost, and the growth multiplier.
+export const WATER_DURATION = 45;
+export const WATER_GROWTH_BONUS = 1.5;

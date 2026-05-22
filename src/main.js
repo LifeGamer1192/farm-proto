@@ -1,55 +1,50 @@
 import './style.css';
-import { GRID_COLS, GRID_ROWS, DRAG_THRESHOLD, SCROLL_STEP } from './config.js';
+import {
+  GRID_COLS,
+  GRID_ROWS,
+  DRAG_THRESHOLD,
+  SCROLL_STEP,
+  TILL_SURVIVAL_BONUS,
+} from './config.js';
 import { hashSeed, randomSeed } from './core/rng.js';
-import { TASK_LABELS } from './tasks.js';
 import { isRipe, cropSuitability, survivalChance, getCrop } from './crops.js';
-import { SEASON_LABELS, SEASON_NOTE, tempGrowthFactor, sunGrowthFactor } from './season.js';
+import { tempGrowthFactor, sunGrowthFactor } from './season.js';
+import { t, setLang, getLang } from './i18n.js';
 import { Game } from './game.js';
 
 const canvas = document.getElementById('map');
 const game = new Game(canvas);
 
-const seedInput = document.getElementById('seed');
-const tooltip = document.getElementById('tooltip');
-const mapStatsEl = document.getElementById('map-stats');
-const colonistStatsEl = document.getElementById('colonist-stats');
-const taskStatsEl = document.getElementById('task-stats');
-const taskReasonEl = document.getElementById('task-reason');
-const colonyStatsEl = document.getElementById('colony-stats');
-const logEl = document.getElementById('event-log');
-const legendEl = document.getElementById('legend');
-const viewModesEl = document.getElementById('view-modes');
-const toolsEl = document.getElementById('tools');
-const cropsEl = document.getElementById('crops');
-const speedsEl = document.getElementById('speeds');
-const zoomsEl = document.getElementById('zooms');
-const envStatsEl = document.getElementById('env-stats');
-const toastEl = document.getElementById('toast');
+const $ = (id) => document.getElementById(id);
+const seedInput = $('seed');
+const tooltip = $('tooltip');
+const toastEl = $('toast');
+const mapStatsEl = $('map-stats');
+const colonistsEl = $('colonist-stats');
+const taskStatsEl = $('task-stats');
+const taskReasonEl = $('task-reason');
+const colonyStatsEl = $('colony-stats');
+const logEl = $('event-log');
+const legendEl = $('legend');
+const viewModesEl = $('view-modes');
+const toolsEl = $('tools');
+const cropsEl = $('crops');
+const speedsEl = $('speeds');
+const zoomsEl = $('zooms');
+const langsEl = $('langs');
+const envStatsEl = $('env-stats');
 
 const PAN_DIRS = { up: [0, -1], down: [0, 1], left: [-1, 0], right: [1, 0] };
 
-let tool = 'move'; // current task tool: move | harvest | sow
-let cropId = 'wheat'; // crop the Sow tool will plant
+let tool = 'move';
+let cropId = 'wheat';
 
-// Point the "all versions" link up a level when viewing an archived build.
-const archiveLink = document.getElementById('archive-link');
+const archiveLink = $('archive-link');
 if (archiveLink && location.pathname.includes('/versions/')) {
   archiveLink.href = '../';
 }
 
 // --- transient hint popups (toast) ---------------------------------------
-
-const TOOL_HINTS = {
-  move: 'Move tool — click a tile and the colonist walks there.',
-  harvest:
-    'Harvest tool — click a ripe crop, wild plant or dead husk to gather or clear it.',
-  sow: 'Sow tool — click tiles to plant the chosen crop. It grows over time; harvest it once ripe.',
-};
-const CROP_HINTS = {
-  wheat: 'Wheat — moderate growth, yields 4 food.',
-  potato: 'Potato — slow to grow, yields 7 food.',
-  bean: 'Bean — quick to grow, yields 2 food.',
-};
 
 let toastTimer = null;
 function showToast(text) {
@@ -60,31 +55,30 @@ function showToast(text) {
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => toastEl.classList.remove('show'), 5500);
 }
-// Once the fade-out finishes, drop the toast out of the layout.
 toastEl.addEventListener('transitionend', () => {
   if (!toastEl.classList.contains('show')) toastEl.hidden = true;
 });
 
-// --- legend & stats panels ------------------------------------------------
+// --- panels ---------------------------------------------------------------
 
 const LEGENDS = {
   terrain: [
-    ['#5c98c8', 'Water'],
-    ['#c4b884', 'Poor soil'],
-    ['#468237', 'Rich soil'],
+    ['#5c98c8', 'legend.water'],
+    ['#c4b884', 'legend.poorSoil'],
+    ['#468237', 'legend.richSoil'],
   ],
   fertility: [
-    ['#3c3228', 'Low'],
-    ['#78e66e', 'High'],
-    ['#2d343f', 'Water (n/a)'],
+    ['#3c3228', 'legend.low'],
+    ['#78e66e', 'legend.high'],
+    ['#2d343f', 'legend.waterNA'],
   ],
   moisture: [
-    ['#c8aa78', 'Dry'],
-    ['#286ec8', 'Wet'],
+    ['#c8aa78', 'legend.dry'],
+    ['#286ec8', 'legend.wet'],
   ],
   sunlight: [
-    ['#191e2d', 'Shade'],
-    ['#ffe178', 'Bright'],
+    ['#191e2d', 'legend.shade'],
+    ['#ffe178', 'legend.bright'],
   ],
 };
 
@@ -97,8 +91,8 @@ function renderRows(el, rows) {
 function updateLegend() {
   legendEl.innerHTML = (LEGENDS[game.viewMode] || [])
     .map(
-      ([color, label]) =>
-        `<span class="swatch"><i style="background:${color}"></i>${label}</span>`,
+      ([color, key]) =>
+        `<span class="swatch"><i style="background:${color}"></i>${t(key)}</span>`,
     )
     .join('');
 }
@@ -108,64 +102,41 @@ function updateMapStats() {
   const pct = (v) => `${(v * 100).toFixed(1)}%`;
   const num = (v) => v.toFixed(3);
   renderRows(mapStatsEl, [
-    ['Seed', game.seed],
-    ['Size', `${GRID_COLS}×${GRID_ROWS}`],
-    ['Water', `${s.water} (${pct(s.waterFraction)})`],
-    ['Land', s.land],
-    ['Avg fertility', num(s.avgFertility)],
-    ['Avg moisture', num(s.avgMoisture)],
-    ['Avg sunlight', num(s.avgSunlight)],
+    [t('stat.seed'), game.seed],
+    [t('stat.size'), `${GRID_COLS}×${GRID_ROWS}`],
+    [t('stat.water'), `${s.water} (${pct(s.waterFraction)})`],
+    [t('stat.land'), s.land],
+    [t('stat.avgFertility'), num(s.avgFertility)],
+    [t('stat.avgMoisture'), num(s.avgMoisture)],
+    [t('stat.avgSunlight'), num(s.avgSunlight)],
+    [t('stat.camera'), `(${Math.round(game.camera.x)}, ${Math.round(game.camera.y)})`],
   ]);
 }
 
-const STATE_LABELS = {
-  idle: 'Idle',
-  moving: 'Moving',
-  working: 'Working',
-  wandering: 'Wandering',
-};
-
-function updateColonistStats() {
-  const c = game.colonist;
-  const cam = game.camera;
-  renderRows(colonistStatsEl, [
-    ['State', STATE_LABELS[c.state] || c.state],
-    ['Tile', `(${c.tileX}, ${c.tileY})`],
-    ['Camera', `(${Math.round(cam.x)}, ${Math.round(cam.y)})`],
-  ]);
-}
-
-function describeTask(task) {
-  return task ? `${TASK_LABELS[task.type]} (${task.x}, ${task.y})` : '—';
+function updateColonistsPanel() {
+  renderRows(
+    colonistsEl,
+    game.colonists.map((c) => [c.name, t('state.' + c.state)]),
+  );
 }
 
 function updateTaskPanel() {
-  const c = game.colonist;
-  const task = c.currentTask;
-  let phase = '—';
-  if (task) {
-    phase = c.state === 'working' ? `working ${Math.round(c.workProgress * 100)}%` : 'walking';
-  } else if (c.state === 'wandering') {
-    phase = 'wandering';
-  }
   renderRows(taskStatsEl, [
-    ['Queued', game.taskQueue.length],
-    ['Current', describeTask(task)],
-    ['Phase', phase],
+    [t('stat.queued'), game.taskQueue.length],
+    [t('stat.busy'), `${game.busyColonists} / ${game.colonists.length}`],
   ]);
   taskReasonEl.textContent = game.lastAssignReason;
 }
 
-function updateColonyPanel() {
+function updateColonyStats() {
   const s = game.storage;
   renderRows(colonyStatsEl, [
-    ['Food stored', game.totalFood],
-    ['Wheat / Potato / Bean', `${s.wheat} / ${s.potato} / ${s.bean}`],
-    ['Forage', s.forage],
-    ['Crops lost', game.cropsLost],
-    ['Meals eaten', game.meals.eaten],
-    ['Missed meals', game.meals.missed],
-    ['Next meal', `${Math.ceil(game.nextMealIn)}s`],
+    [t('stat.foodStored'), game.totalFood],
+    [t('stat.harvest'), `${s.wheat} / ${s.potato} / ${s.bean}`],
+    [t('stat.forage'), s.forage],
+    [t('stat.cropsLost'), game.cropsLost],
+    [t('stat.meals'), game.meals.eaten],
+    [t('stat.missed'), game.meals.missed],
   ]);
   logEl.innerHTML = game.log
     .map((e) => `<li class="${e.cls}">${e.icon} ${e.text}</li>`)
@@ -175,12 +146,31 @@ function updateColonyPanel() {
 function updateEnvPanel() {
   const e = game.environment;
   renderRows(envStatsEl, [
-    ['Year', e.year],
-    ['Season', `${SEASON_LABELS[e.seasonIndex]} · day ${e.day}`],
-    ['Temperature', `${Math.round(e.temperature)}°C`],
-    ['Daylight', `${Math.round(e.daylight * 100)}%`],
-    ['Season growth', `${Math.round(tempGrowthFactor(e.temperature) * 100)}%`],
+    [t('stat.year'), e.year],
+    [t('stat.season'), `${t('season.' + e.season)} · ${t('val.day', { n: e.day })}`],
+    [t('stat.temperature'), `${Math.round(e.temperature)}°C`],
+    [t('stat.daylight'), `${Math.round(e.daylight * 100)}%`],
+    [t('stat.seasonGrowth'), `${Math.round(tempGrowthFactor(e.temperature) * 100)}%`],
   ]);
+}
+
+function refreshPanels() {
+  updateMapStats();
+  updateColonistsPanel();
+  updateTaskPanel();
+  updateColonyStats();
+  updateEnvPanel();
+  updateLegend();
+}
+
+// --- i18n -----------------------------------------------------------------
+
+function applyI18n() {
+  for (const el of document.querySelectorAll('[data-i18n]')) {
+    el.textContent = t(el.dataset.i18n);
+  }
+  document.documentElement.lang = getLang();
+  refreshPanels();
 }
 
 // --- map lifecycle --------------------------------------------------------
@@ -188,12 +178,7 @@ function updateEnvPanel() {
 function newMap(seed) {
   game.newMap(seed);
   seedInput.value = String(game.seed);
-  updateMapStats();
-  updateColonistStats();
-  updateTaskPanel();
-  updateColonyPanel();
-  updateEnvPanel();
-  updateLegend();
+  refreshPanels();
 }
 
 function applySeed() {
@@ -205,15 +190,11 @@ function applySeed() {
   newMap(/^\d+$/.test(raw) ? Number(raw) >>> 0 : hashSeed(raw));
 }
 
-// --- canvas pointer input: drag to pan, tap/click to queue a task --------
+// --- canvas pointer input -------------------------------------------------
 
 function canvasMetrics() {
   const rect = canvas.getBoundingClientRect();
-  return {
-    rect,
-    scaleX: canvas.width / rect.width,
-    scaleY: canvas.height / rect.height,
-  };
+  return { rect, scaleX: canvas.width / rect.width, scaleY: canvas.height / rect.height };
 }
 
 function tileAt(clientX, clientY) {
@@ -228,38 +209,38 @@ function tileAt(clientX, clientY) {
 
 function describePlant(plant) {
   if (!plant) return '';
-  if (plant.kind === 'wild') return '<br>plant: wild';
+  if (plant.kind === 'wild') return `<br>${t('tip.plantWild')}`;
   let status;
-  if (plant.withered) status = 'withered';
-  else if (isRipe(plant)) status = 'ripe';
+  if (plant.withered) status = t('tip.withered');
+  else if (isRipe(plant)) status = t('tip.ripe');
   else status = `${Math.round(plant.growth * 100)}%`;
-  return `<br>crop: ${plant.cropId} (${status})`;
+  return `<br>${t('tip.crop', { crop: t('crop.' + plant.cropId), status })}`;
 }
 
-// With the Sow tool active, hint how likely the chosen crop is to survive.
-function sowHint(tile) {
-  if (tool !== 'sow' || tile.type === 'water' || tile.plant) return '';
-  const chance = survivalChance(cropSuitability(getCrop(cropId), tile));
-  return `<br>sow ${cropId}: ~${Math.round(chance * 100)}% to survive`;
-}
-
-// How fast a crop grows on this tile now (temperature × the tile's sunlight).
 function growthHint(tile) {
   if (tile.type === 'water') return '';
   const e = game.environment;
   const rate = tempGrowthFactor(e.temperature) * sunGrowthFactor(tile.sunlight, e.daylight);
-  return `<br>crop growth here ~${Math.round(rate * 100)}%`;
+  return `<br>${t('tip.growthHere', { n: Math.round(rate * 100) })}`;
 }
 
-function showTooltip(clientX, clientY, tile) {
-  const t = game.map.tiles[tile.y][tile.x];
+function sowHint(tile) {
+  if (tool !== 'sow' || tile.type === 'water' || tile.plant) return '';
+  const bonus = tile.tilled ? TILL_SURVIVAL_BONUS : 0;
+  const chance = survivalChance(cropSuitability(getCrop(cropId), tile), bonus);
+  return `<br>${t('tip.sowHere', { crop: t('crop.' + cropId), n: Math.round(chance * 100) })}`;
+}
+
+function showTooltip(clientX, clientY, pos) {
+  const tl = game.map.tiles[pos.y][pos.x];
   const f = (v) => v.toFixed(3);
+  const tilled = tl.tilled ? `<br>${t('tip.tilled')}` : '';
   tooltip.hidden = false;
   tooltip.innerHTML =
-    `<strong>(${tile.x}, ${tile.y})</strong> ${t.type}<br>` +
-    `elevation ${f(t.elevation)}<br>fertility ${f(t.fertility)}<br>` +
-    `moisture ${f(t.moisture)}<br>sunlight ${f(t.sunlight)}` +
-    `${describePlant(t.plant)}${growthHint(t)}${sowHint(t)}`;
+    `<strong>(${pos.x}, ${pos.y})</strong> ${t('tile.' + tl.type)}<br>` +
+    `${t('tip.elevation')} ${f(tl.elevation)}<br>${t('tip.fertility')} ${f(tl.fertility)}<br>` +
+    `${t('tip.moisture')} ${f(tl.moisture)}<br>${t('tip.sunlight')} ${f(tl.sunlight)}` +
+    `${tilled}${describePlant(tl.plant)}${growthHint(tl)}${sowHint(tl)}`;
   const { rect } = canvasMetrics();
   tooltip.style.left = `${clientX - rect.left + 14}px`;
   tooltip.style.top = `${clientY - rect.top + 14}px`;
@@ -297,9 +278,9 @@ canvas.addEventListener('pointermove', (ev) => {
       lastY = ev.clientY;
     }
   } else if (ev.pointerType === 'mouse') {
-    const tile = tileAt(ev.clientX, ev.clientY);
-    game.hover = tile;
-    if (tile) showTooltip(ev.clientX, ev.clientY, tile);
+    const pos = tileAt(ev.clientX, ev.clientY);
+    game.hover = pos;
+    if (pos) showTooltip(ev.clientX, ev.clientY, pos);
     else tooltip.hidden = true;
   }
 });
@@ -307,9 +288,9 @@ canvas.addEventListener('pointermove', (ev) => {
 function endPointer(ev) {
   if (activePointer !== ev.pointerId) return;
   if (!dragged) {
-    const tile = tileAt(ev.clientX, ev.clientY);
-    if (tile) {
-      game.enqueueTask(tool, tile.x, tile.y, cropId);
+    const pos = tileAt(ev.clientX, ev.clientY);
+    if (pos) {
+      game.enqueueTask(tool, pos.x, pos.y, cropId);
       updateTaskPanel();
     }
   }
@@ -340,9 +321,7 @@ window.addEventListener('keydown', (ev) => {
     ev.preventDefault();
   }
 });
-window.addEventListener('keyup', (ev) => {
-  game.keys.delete(ev.key.toLowerCase());
-});
+window.addEventListener('keyup', (ev) => game.keys.delete(ev.key.toLowerCase()));
 window.addEventListener('blur', () => {
   game.keys.clear();
   game.panDir = { x: 0, y: 0 };
@@ -379,14 +358,14 @@ toolsEl.addEventListener('click', (ev) => {
   const btn = ev.target.closest('button[data-tool]');
   if (!btn) return;
   tool = selectIn(toolsEl, btn, 'tool');
-  showToast(TOOL_HINTS[tool]);
+  showToast(t('hint.task.' + tool));
 });
 
 cropsEl.addEventListener('click', (ev) => {
   const btn = ev.target.closest('button[data-crop]');
   if (!btn) return;
   cropId = selectIn(cropsEl, btn, 'crop');
-  showToast(CROP_HINTS[cropId]);
+  showToast(t('hint.crop.' + cropId));
 });
 
 speedsEl.addEventListener('click', (ev) => {
@@ -410,17 +389,20 @@ viewModesEl.addEventListener('click', (ev) => {
   updateLegend();
 });
 
-document.getElementById('regenerate').addEventListener('click', () => {
-  newMap(randomSeed());
+langsEl.addEventListener('click', (ev) => {
+  const btn = ev.target.closest('button[data-lang]');
+  if (!btn) return;
+  setLang(selectIn(langsEl, btn, 'lang'));
+  applyI18n();
 });
-document.getElementById('apply-seed').addEventListener('click', applySeed);
+
+$('regenerate').addEventListener('click', () => newMap(randomSeed()));
+$('apply-seed').addEventListener('click', applySeed);
 seedInput.addEventListener('keydown', (ev) => {
   if (ev.key === 'Enter') applySeed();
 });
-document.getElementById('center-colonist').addEventListener('click', () => {
-  game.centerOnColonist();
-});
-document.getElementById('clear-tasks').addEventListener('click', () => {
+$('center-colonist').addEventListener('click', () => game.centerOnColonist());
+$('clear-tasks').addEventListener('click', () => {
   game.clearTasks();
   updateTaskPanel();
 });
@@ -428,13 +410,15 @@ document.getElementById('clear-tasks').addEventListener('click', () => {
 // --- start ----------------------------------------------------------------
 
 newMap(randomSeed());
+applyI18n();
 game.start();
-showToast('Pick a tool, then click map tiles to set the colonist tasks. Drag or use the arrows to scroll.');
+showToast(t('hint.welcome'));
 setInterval(() => {
-  updateColonistStats();
+  updateColonistsPanel();
   updateTaskPanel();
-  updateColonyPanel();
+  updateColonyStats();
   updateEnvPanel();
+  updateMapStats();
   const season = game.consumeSeasonChange();
-  if (season) showToast(SEASON_NOTE[season]);
+  if (season) showToast(t('note.' + season));
 }, 150);

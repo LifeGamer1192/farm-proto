@@ -56,6 +56,14 @@ and surviving the winter.
   popups explain tools and announce season changes, keeping the normal
   screen uncluttered
 
+### Alpha 6 — colonists, autonomy & languages
+
+- Several colonists share one work queue; each runs a small priority AI —
+  it eats when due, takes queued work, or rests / strolls / sleeps
+- Two new tools: **Till** (tilled soil helps crops survive) and **Water**
+  (watered crops grow faster for a while)
+- The interface can switch between English and Japanese
+
 ## Version archive
 
 Every released version stays playable. The live site links to an

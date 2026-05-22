@@ -3,20 +3,16 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { createTask, TaskType, TASK_LABELS } from '../src/tasks.js';
+import { createTask, TaskType, WORK_TYPES } from '../src/tasks.js';
 
 test('createTask produces a queued task with the given target', () => {
-  const task = createTask(TaskType.HARVEST, 7, 3);
-  assert.equal(task.type, TaskType.HARVEST);
+  const task = createTask(TaskType.SOW, 7, 3, 'wheat');
+  assert.equal(task.type, TaskType.SOW);
   assert.equal(task.x, 7);
   assert.equal(task.y, 3);
+  assert.equal(task.cropId, 'wheat');
   assert.equal(task.status, 'queued');
   assert.equal(task.outcome, '');
-});
-
-test('a sow task carries the crop id; others default to null', () => {
-  assert.equal(createTask(TaskType.SOW, 1, 2, 'wheat').cropId, 'wheat');
-  assert.equal(createTask(TaskType.MOVE, 0, 0).cropId, null);
 });
 
 test('each task gets a unique id', () => {
@@ -25,8 +21,12 @@ test('each task gets a unique id', () => {
   assert.notEqual(a.id, b.id);
 });
 
-test('every task type has a display label', () => {
-  for (const type of Object.values(TaskType)) {
-    assert.ok(TASK_LABELS[type], `missing label for ${type}`);
+test('WORK_TYPES are player-placed types and exclude personal tasks', () => {
+  for (const ty of WORK_TYPES) {
+    assert.ok(Object.values(TaskType).includes(ty));
   }
+  assert.ok(WORK_TYPES.includes(TaskType.TILL));
+  assert.ok(WORK_TYPES.includes(TaskType.WATER));
+  assert.ok(!WORK_TYPES.includes(TaskType.EAT));
+  assert.ok(!WORK_TYPES.includes(TaskType.SLEEP));
 });

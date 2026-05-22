@@ -1,14 +1,13 @@
-// Canvas 2D rendering: the visible slice of the map, plants and crops,
-// queued tasks, the colonist and its path.
+// Canvas 2D rendering: the visible slice of the map, tilled soil, plants
+// and crops, queued tasks, and the colonists with their paths.
 
 import { TileType } from '../map/tile.js';
 import { PlantKind } from '../world.js';
-import { TaskType } from '../tasks.js';
+import { TaskType, WORK_TYPES } from '../tasks.js';
 import { getCrop } from '../crops.js';
 
 const lerp = (a, b, t) => a + (b - a) * t;
 
-// Linearly blend two [r,g,b] colors into a CSS rgb() string.
 function mix(c1, c2, t) {
   const r = Math.round(lerp(c1[0], c2[0], t));
   const g = Math.round(lerp(c1[1], c2[1], t));
@@ -16,7 +15,6 @@ function mix(c1, c2, t) {
   return `rgb(${r},${g},${b})`;
 }
 
-// Each view mode maps a tile to a fill color.
 const VIEW_MODES = {
   terrain(tile) {
     if (tile.type === TileType.WATER) {
@@ -40,26 +38,20 @@ const TASK_COLORS = {
   [TaskType.MOVE]: '#b9c4d4',
   [TaskType.HARVEST]: '#e8a23c',
   [TaskType.SOW]: '#6fc46f',
+  [TaskType.TILL]: '#b98a52',
+  [TaskType.WATER]: '#5ba8d8',
 };
 
 export class Renderer {
-  /**
-   * @param {HTMLCanvasElement} canvas
-   */
   constructor(canvas) {
     this.canvas = canvas;
     this.ctx = canvas.getContext('2d');
-    this.ts = 20; // current tile size; set from the scene each frame (zoom)
+    this.ts = 20;
   }
 
-  /**
-   * Draw one frame from a scene description.
-   * @param {object} scene { map, camera, mode, colonist, hover,
-   *                          taskQueue, currentTask, tileSize }
-   */
   draw(scene) {
-    const { map, camera, mode, colonist, hover, taskQueue, currentTask } = scene;
-    this.ts = scene.tileSize; // map zoom
+    const { map, camera, mode, colonists, hover, taskQueue } = scene;
+    this.ts = scene.tileSize;
     const ctx = this.ctx;
     const ts = this.ts;
     const cw = this.canvas.width;
@@ -68,7 +60,6 @@ export class Renderer {
 
     ctx.clearRect(0, 0, cw, ch);
 
-    // World tile -> screen pixel of its top-left corner.
     const sx = (wx) => (wx - camera.x) * ts;
     const sy = (wy) => (wy - camera.y) * ts;
 
@@ -79,15 +70,29 @@ export class Renderer {
     const visCols = camera.viewCols + 1;
     const visRows = camera.viewRows + 1;
 
-    // --- tiles ---
+    // --- tiles (with tilled-soil furrows) ---
     for (let row = 0; row < visRows; row++) {
       const mapY = startRow + row;
       if (mapY < 0 || mapY >= map.rows) continue;
       for (let col = 0; col < visCols; col++) {
         const mapX = startCol + col;
         if (mapX < 0 || mapX >= map.cols) continue;
-        ctx.fillStyle = colorOf(map.tiles[mapY][mapX]);
-        ctx.fillRect(col * ts - offX, row * ts - offY, ts, ts);
+        const tile = map.tiles[mapY][mapX];
+        const px = col * ts - offX;
+        const py = row * ts - offY;
+        ctx.fillStyle = colorOf(tile);
+        ctx.fillRect(px, py, ts, ts);
+        if (tile.tilled && tile.type === TileType.LAND) {
+          ctx.strokeStyle = 'rgba(60,40,20,0.45)';
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          for (let f = 1; f <= 3; f++) {
+            const fy = py + (ts * f) / 4;
+            ctx.moveTo(px + 2, fy);
+            ctx.lineTo(px + ts - 2, fy);
+          }
+          ctx.stroke();
+        }
       }
     }
 
@@ -107,7 +112,7 @@ export class Renderer {
     }
     ctx.stroke();
 
-    // --- seasonal tint (a faint wash over the terrain) ---
+    // --- seasonal tint ---
     if (scene.seasonTint) {
       ctx.fillStyle = scene.seasonTint;
       ctx.fillRect(0, 0, cw, ch);
@@ -122,31 +127,36 @@ export class Renderer {
         if (mapX < 0 || mapX >= map.cols) continue;
         const plant = map.tiles[mapY][mapX].plant;
         if (plant) {
-          this._drawPlant(plant, col * ts - offX + ts / 2, row * ts - offY + ts / 2);
+          const cx = col * ts - offX + ts / 2;
+          const cy = row * ts - offY + ts / 2;
+          const watered = plant.kind === PlantKind.CROP && scene.clock < plant.wateredUntil;
+          this._drawPlant(plant, cx, cy, watered);
         }
       }
     }
 
-    // --- queued task markers ---
+    // --- task markers: queued tasks, then each colonist's active work ---
     for (let i = 0; i < taskQueue.length; i++) {
       const task = taskQueue[i];
       this._drawTaskMarker(task, sx(task.x), sy(task.y), false, i + 1);
     }
-    if (currentTask) {
-      this._drawTaskMarker(currentTask, sx(currentTask.x), sy(currentTask.y), true, 0);
+    for (const c of colonists) {
+      const task = c.currentTask;
+      if (task && WORK_TYPES.includes(task.type)) {
+        this._drawTaskMarker(task, sx(task.x), sy(task.y), true, 0);
+      }
     }
 
-    // --- the colonist's path ---
-    if (colonist.path.length > 0) {
-      const wandering = colonist.state === 'wandering';
-      ctx.strokeStyle = wandering ? 'rgba(206,214,228,0.55)' : 'rgba(232,162,60,0.95)';
-      ctx.lineWidth = wandering ? 2 : 3;
-      ctx.setLineDash(wandering ? [5, 5] : []);
+    // --- colonist paths ---
+    for (const c of colonists) {
+      if (c.path.length === 0) continue;
+      const strolling = c.state === 'strolling';
+      ctx.strokeStyle = strolling ? 'rgba(206,214,228,0.5)' : 'rgba(232,162,60,0.9)';
+      ctx.lineWidth = strolling ? 2 : 3;
+      ctx.setLineDash(strolling ? [5, 5] : []);
       ctx.beginPath();
-      ctx.moveTo(sx(colonist.x + 0.5), sy(colonist.y + 0.5));
-      for (const wp of colonist.path) {
-        ctx.lineTo(sx(wp.x + 0.5), sy(wp.y + 0.5));
-      }
+      ctx.moveTo(sx(c.x + 0.5), sy(c.y + 0.5));
+      for (const wp of c.path) ctx.lineTo(sx(wp.x + 0.5), sy(wp.y + 0.5));
       ctx.stroke();
       ctx.setLineDash([]);
     }
@@ -158,19 +168,20 @@ export class Renderer {
       ctx.strokeRect(sx(hover.x) + 1, sy(hover.y) + 1, ts - 2, ts - 2);
     }
 
-    // --- the colonist ---
-    this._drawColonist(colonist, sx(colonist.x + 0.5), sy(colonist.y + 0.5));
-  }
-
-  _drawPlant(plant, cx, cy) {
-    if (plant.kind === PlantKind.WILD) {
-      this._drawWild(cx, cy);
-    } else {
-      this._drawCrop(plant, cx, cy);
+    // --- colonists ---
+    for (const c of colonists) {
+      this._drawColonist(c, sx(c.x + 0.5), sy(c.y + 0.5));
     }
   }
 
-  // A small wild bush: three clustered dark-green blobs.
+  _drawPlant(plant, cx, cy, watered) {
+    if (plant.kind === PlantKind.WILD) {
+      this._drawWild(cx, cy);
+    } else {
+      this._drawCrop(plant, cx, cy, watered);
+    }
+  }
+
   _drawWild(cx, cy) {
     const ctx = this.ctx;
     const r = this.ts * 0.15;
@@ -189,7 +200,6 @@ export class Renderer {
     }
   }
 
-  // A withered crop: a drooping brown husk.
   _drawWithered(cx, cy) {
     const ctx = this.ctx;
     const ts = this.ts;
@@ -206,9 +216,7 @@ export class Renderer {
     ctx.fill();
   }
 
-  // A sown crop: a stem that lengthens with growth, and a produce blob
-  // that swells and colors as it ripens. Ripe crops get a bright outline.
-  _drawCrop(plant, cx, cy) {
+  _drawCrop(plant, cx, cy, watered) {
     if (plant.withered) {
       this._drawWithered(cx, cy);
       return;
@@ -253,6 +261,13 @@ export class Renderer {
         ctx.stroke();
       }
     }
+
+    if (watered) {
+      ctx.fillStyle = '#5ba8d8';
+      ctx.beginPath();
+      ctx.arc(cx + ts * 0.26, cy - ts * 0.24, ts * 0.07, 0, Math.PI * 2);
+      ctx.fill();
+    }
   }
 
   _drawTaskMarker(task, x, y, isCurrent, order) {
@@ -276,8 +291,7 @@ export class Renderer {
     }
   }
 
-  // A small top-down figure: shadow, amber body, lighter head.
-  // While working, a progress ring sweeps around it.
+  // A small top-down figure; a progress ring while it works.
   _drawColonist(colonist, cx, cy) {
     const ctx = this.ctx;
     const r = this.ts * 0.34;
@@ -301,7 +315,7 @@ export class Renderer {
     ctx.fill();
     ctx.stroke();
 
-    if (colonist.state === 'working') {
+    if (colonist.workProgress > 0) {
       const start = -Math.PI / 2;
       ctx.beginPath();
       ctx.arc(cx, cy, r * 1.5, start, start + colonist.workProgress * Math.PI * 2);

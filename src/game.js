@@ -1,10 +1,10 @@
-// The game: owns the map, camera, colonist, task queue, crops and food
-// store, and runs the frame loop. It hands the colonist one task at a
-// time, applies the effect of each finished task, grows sown crops, and
-// feeds the colonist at a fixed interval.
+// The game: owns the map, camera, colonists, task queue, crops and food
+// store, and runs the frame loop.
 //
-// Game speed scales the simulation only (not camera panning). Map zoom
-// changes the tile size, and thus how many tiles fit on the fixed canvas.
+// Several colonists share one work queue. Each colonist runs a small
+// priority AI: eat when due, else take queued work, else do a personal
+// task (rest / leisure / sleep). Game speed scales the simulation; map
+// zoom changes the tile size.
 
 import {
   GRID_COLS,
@@ -18,13 +18,18 @@ import {
   CAMERA_SPEED,
   TASK_LOG_SIZE,
   EAT_INTERVAL,
+  COLONIST_COUNT,
+  COLONIST_NAMES,
+  TILL_SURVIVAL_BONUS,
+  WATER_DURATION,
+  WATER_GROWTH_BONUS,
 } from './config.js';
 import { generateMap, mapStats } from './map/mapGenerator.js';
 import { TileType } from './map/tile.js';
 import { Camera } from './render/camera.js';
 import { Renderer } from './render/renderer.js';
 import { Colonist } from './entities/colonist.js';
-import { TaskType, TASK_LABELS, createTask } from './tasks.js';
+import { TaskType, WORK_TYPES, createTask } from './tasks.js';
 import { scatterPlants, PlantKind } from './world.js';
 import { getCrop, cropSuitability, survivalChance } from './crops.js';
 import {
@@ -35,6 +40,7 @@ import {
   sunGrowthFactor,
   SEASON_TINT,
 } from './season.js';
+import { t } from './i18n.js';
 
 const FOOD_TYPES = ['forage', 'wheat', 'potato', 'bean'];
 
@@ -46,8 +52,8 @@ export class Game {
     this.renderer = new Renderer(canvas);
 
     this.viewMode = 'terrain';
-    this.panDir = { x: 0, y: 0 }; // from on-screen arrows
-    this.keys = new Set(); // held WASD keys
+    this.panDir = { x: 0, y: 0 };
+    this.keys = new Set();
     this.hover = null;
 
     this.zoomIndex = DEFAULT_ZOOM;
@@ -56,21 +62,20 @@ export class Game {
 
     this.map = null;
     this.camera = null;
-    this.colonist = null;
+    this.colonists = [];
     this.stats = null;
 
     this.taskQueue = [];
-    this.crops = []; // sown crops still growing or ripe
+    this.crops = [];
     this.storage = { forage: 0, wheat: 0, potato: 0, bean: 0 };
     this.meals = { eaten: 0, missed: 0 };
-    this.cropsLost = 0; // crops that withered before harvest
-    this.eatTimer = 0;
-    this.log = []; // recent events, newest first
+    this.cropsLost = 0;
+    this.log = [];
     this.lastAssignReason = '';
 
-    this.clock = 0; // elapsed sim-seconds — drives the seasons
-    this.environment = null; // {year, season, day, temperature, daylight, ...}
-    this._seasonEvent = null; // a season name when the season just changed
+    this.clock = 0;
+    this.environment = null;
+    this._seasonEvent = null;
 
     this._loop = this._loop.bind(this);
     this._lastTime = 0;
@@ -79,20 +84,20 @@ export class Game {
   get seed() {
     return this.map.seed;
   }
-
   get speed() {
     return SPEED_LEVELS[this.speedIndex];
   }
-
   get totalFood() {
-    return FOOD_TYPES.reduce((sum, t) => sum + this.storage[t], 0);
+    return FOOD_TYPES.reduce((sum, ft) => sum + this.storage[ft], 0);
+  }
+  // Colonists not currently on a personal idle task.
+  get busyColonists() {
+    return this.colonists.filter((c) => {
+      const ty = c.currentTask && c.currentTask.type;
+      return WORK_TYPES.includes(ty);
+    }).length;
   }
 
-  get nextMealIn() {
-    return Math.max(0, EAT_INTERVAL - this.eatTimer);
-  }
-
-  // How many tiles fit across / down the canvas at the current zoom.
   _viewCols() {
     return Math.round(CANVAS_W / this.tileSize);
   }
@@ -100,85 +105,66 @@ export class Game {
     return Math.round(CANVAS_H / this.tileSize);
   }
 
-  /** Generate a fresh map, scatter plants, and place the colonist. */
+  /** Generate a fresh map, scatter plants, and place the colonists. */
   newMap(seed) {
     this.map = generateMap(GRID_COLS, GRID_ROWS, seed);
     scatterPlants(this.map);
     this.stats = mapStats(this.map);
     this.camera = new Camera(this._viewCols(), this._viewRows(), GRID_COLS, GRID_ROWS);
-    const spawn = this._findSpawn();
-    this.colonist = new Colonist(spawn.x, spawn.y);
-    this.camera.centerOn(spawn.x + 0.5, spawn.y + 0.5);
+
+    const spawns = this._findSpawns(COLONIST_COUNT);
+    this.colonists = spawns.map(
+      (s, i) => new Colonist(s.x, s.y, COLONIST_NAMES[i] || `C${i + 1}`),
+    );
+    this.camera.centerOn(spawns[0].x + 0.5, spawns[0].y + 0.5);
 
     this.taskQueue = [];
     this.crops = [];
     this.storage = { forage: 0, wheat: 0, potato: 0, bean: 0 };
     this.meals = { eaten: 0, missed: 0 };
-    this.cropsLost = 0; // crops that withered before harvest
-    this.eatTimer = 0;
+    this.cropsLost = 0;
     this.log = [];
-    this.lastAssignReason = 'No tasks queued yet.';
+    this.lastAssignReason = t('reason.start');
     this.hover = null;
     this.clock = 0;
     this._seasonEvent = null;
     this._updateEnvironment();
   }
 
-  // Nearest land tile to the map center (outward ring search).
-  _findSpawn() {
+  // The n nearest land tiles to the map center.
+  _findSpawns(n) {
     const cx = (this.map.cols / 2) | 0;
     const cy = (this.map.rows / 2) | 0;
+    const spawns = [];
     const maxR = Math.max(this.map.cols, this.map.rows);
-    for (let r = 0; r <= maxR; r++) {
-      for (let dy = -r; dy <= r; dy++) {
-        for (let dx = -r; dx <= r; dx++) {
+    for (let r = 0; r <= maxR && spawns.length < n; r++) {
+      for (let dy = -r; dy <= r && spawns.length < n; dy++) {
+        for (let dx = -r; dx <= r && spawns.length < n; dx++) {
           if (Math.abs(dx) !== r && Math.abs(dy) !== r) continue;
           const x = cx + dx;
           const y = cy + dy;
           if (x < 0 || y < 0 || x >= this.map.cols || y >= this.map.rows) continue;
-          if (this.map.tiles[y][x].type === TileType.LAND) return { x, y };
+          if (this.map.tiles[y][x].type === TileType.LAND) spawns.push({ x, y });
         }
       }
     }
-    return { x: cx, y: cy };
+    while (spawns.length < n) spawns.push({ x: cx, y: cy });
+    return spawns;
   }
 
-  /** Set the game-speed level (index into SPEED_LEVELS). */
   setSpeed(index) {
     this.speedIndex = Math.max(0, Math.min(SPEED_LEVELS.length - 1, index));
   }
 
-  /** Set the map-zoom level (index into ZOOM_LEVELS). */
   setZoom(index) {
     this.zoomIndex = Math.max(0, Math.min(ZOOM_LEVELS.length - 1, index));
     this.tileSize = ZOOM_LEVELS[this.zoomIndex].tile;
     this.camera.resize(this._viewCols(), this._viewRows());
   }
 
-  /**
-   * Queue a task at a tile, if it makes sense there.
-   * @returns {boolean} true if a task was queued.
-   */
-  enqueueTask(type, x, y, cropId = null) {
-    const row = this.map.tiles[y];
-    const tile = row && row[x];
-    if (!tile) return false;
-    if (type === TaskType.MOVE && tile.type === TileType.WATER) return false;
-    if (type === TaskType.HARVEST && !tile.plant) return false;
-    if (type === TaskType.SOW && (tile.type === TileType.WATER || tile.plant)) {
-      return false;
-    }
-    this.taskQueue.push(createTask(type, x, y, cropId));
-    return true;
-  }
-
-  clearTasks() {
-    this.taskQueue = [];
-    this.lastAssignReason = 'Task queue cleared.';
-  }
-
   centerOnColonist() {
-    this.camera.centerOn(this.colonist.x + 0.5, this.colonist.y + 0.5);
+    const c = this.colonists[0];
+    if (c) this.camera.centerOn(c.x + 0.5, c.y + 0.5);
   }
 
   // Recompute the calendar and weather from the clock.
@@ -189,11 +175,31 @@ export class Game {
     this.environment = info;
   }
 
-  /** Return the season name if it changed since the last call, else null. */
   consumeSeasonChange() {
     const s = this._seasonEvent;
     this._seasonEvent = null;
     return s;
+  }
+
+  /** Queue a work task at a tile, if it makes sense there. */
+  enqueueTask(type, x, y, cropId = null) {
+    const tile = this.map.tiles[y] && this.map.tiles[y][x];
+    if (!tile) return false;
+    if (type === TaskType.MOVE && tile.type === TileType.WATER) return false;
+    if (type === TaskType.HARVEST && !tile.plant) return false;
+    if (type === TaskType.SOW && (tile.type === TileType.WATER || tile.plant)) return false;
+    if (type === TaskType.TILL && tile.type === TileType.WATER) return false;
+    if (type === TaskType.WATER) {
+      const p = tile.plant;
+      if (!p || p.kind !== PlantKind.CROP || p.withered) return false;
+    }
+    this.taskQueue.push(createTask(type, x, y, cropId));
+    return true;
+  }
+
+  clearTasks() {
+    this.taskQueue = [];
+    this.lastAssignReason = t('reason.cleared');
   }
 
   _pushLog(entry) {
@@ -201,41 +207,77 @@ export class Game {
     if (this.log.length > TASK_LOG_SIZE) this.log.pop();
   }
 
-  _logTask(task) {
-    const where = `${TASK_LABELS[task.type]} (${task.x}, ${task.y})`;
-    if (task.status === 'done') {
-      this._pushLog({ icon: '✓', text: `${where} — ${task.outcome}`, cls: 'log-ok' });
+  _outcomeText(task) {
+    const params = {};
+    const d = task.outcomeData;
+    if (d) {
+      if (d.crop) params.crop = t('crop.' + d.crop);
+      if (d.n !== undefined) params.n = d.n;
+    }
+    return t('out.' + (task.outcome || 'arrived'), params);
+  }
+
+  // Log only the player's work tasks; personal tasks would flood the log.
+  _logWorkTask(task) {
+    if (!WORK_TYPES.includes(task.type)) return;
+    const where = `${t('task.' + task.type)} (${task.x}, ${task.y})`;
+    const text = `${where} — ${this._outcomeText(task)}`;
+    this._pushLog({
+      icon: task.status === 'done' ? '✓' : '✗',
+      text,
+      cls: task.status === 'done' ? 'log-ok' : 'log-fail',
+    });
+  }
+
+  // Feed a colonist from the shared store (called when an eat task ends).
+  _feed(colonist) {
+    colonist.eatTimer = 0;
+    let pick = null;
+    for (const ft of FOOD_TYPES) {
+      if (this.storage[ft] > 0 && (pick === null || this.storage[ft] > this.storage[pick])) {
+        pick = ft;
+      }
+    }
+    if (pick) {
+      this.storage[pick] -= 1;
+      this.meals.eaten += 1;
+      this._pushLog({ icon: '🍴', text: t('log.ate', { name: colonist.name }), cls: 'log-meal' });
     } else {
-      this._pushLog({ icon: '✗', text: `${where} — ${task.outcome}`, cls: 'log-fail' });
+      this.meals.missed += 1;
+      this._pushLog({
+        icon: '⚠',
+        text: t('log.hungry', { name: colonist.name }),
+        cls: 'log-warn',
+      });
     }
   }
 
-  // Apply the world effect of a task the colonist has completed.
-  _applyTaskEffect(task) {
+  // Apply the world effect of a completed task.
+  _applyTaskEffect(task, colonist) {
     const tile = this.map.tiles[task.y][task.x];
     if (task.type === TaskType.HARVEST) {
       const plant = tile.plant;
       if (plant && plant.kind === PlantKind.CROP) {
         if (plant.withered) {
-          task.outcome = 'cleared dead crop';
+          task.outcome = 'cleared';
         } else {
           const crop = getCrop(plant.cropId);
           this.storage[plant.cropId] += crop.yield;
-          task.outcome = `${crop.label} +${crop.yield}`;
+          task.outcome = 'harvested';
+          task.outcomeData = { crop: plant.cropId, n: crop.yield };
         }
         const i = this.crops.indexOf(plant);
         if (i >= 0) this.crops.splice(i, 1);
       } else if (plant) {
         this.storage.forage += 1;
-        task.outcome = 'foraged +1';
+        task.outcome = 'foraged';
       }
       tile.plant = null;
     } else if (task.type === TaskType.SOW) {
-      // Initial crops are weak: roll once whether this one survives, from
-      // how well the tile suits it. A doomed crop withers partway to ripe.
       const cropDef = getCrop(task.cropId);
       const suitability = cropSuitability(cropDef, tile);
-      const doomed = Math.random() >= survivalChance(suitability);
+      const bonus = tile.tilled ? TILL_SURVIVAL_BONUS : 0;
+      const doomed = Math.random() >= survivalChance(suitability, bonus);
       const crop = {
         kind: PlantKind.CROP,
         cropId: task.cropId,
@@ -246,94 +288,113 @@ export class Game {
         doomed,
         witherAt: doomed ? 0.3 + Math.random() * 0.5 : 1,
         withered: false,
+        wateredUntil: 0,
       };
       tile.plant = crop;
       this.crops.push(crop);
-      task.outcome = `sowed ${cropDef.label}`;
+      task.outcome = 'sowed';
+      task.outcomeData = { crop: task.cropId };
+    } else if (task.type === TaskType.TILL) {
+      tile.tilled = true;
+      task.outcome = 'tilled';
+    } else if (task.type === TaskType.WATER) {
+      const p = tile.plant;
+      if (p && p.kind === PlantKind.CROP && !p.withered) {
+        p.wateredUntil = this.clock + WATER_DURATION;
+      }
+      task.outcome = 'watered';
+    } else if (task.type === TaskType.EAT) {
+      this._feed(colonist);
     } else {
       task.outcome = 'arrived';
     }
   }
 
-  // Collect a finished task and hand the colonist the next one.
-  _updateTasks() {
-    const c = this.colonist;
-
-    if (c.currentTask && (c.currentTask.status === 'done' || c.currentTask.status === 'failed')) {
-      if (c.currentTask.status === 'done') this._applyTaskEffect(c.currentTask);
-      this._logTask(c.currentTask);
-      c.currentTask = null;
+  // Priority AI: decide a colonist's next task.
+  _assignColonist(colonist) {
+    if (colonist.eatTimer >= EAT_INTERVAL) {
+      return createTask(TaskType.EAT, colonist.tileX, colonist.tileY);
     }
-
-    // Assign the next task, skipping any that fail validation outright.
-    let guard = 0;
-    while (!c.currentTask && this.taskQueue.length > 0 && guard++ < 64) {
+    if (this.taskQueue.length > 0) {
       const task = this.taskQueue.shift();
-      this.lastAssignReason =
-        `Picked ${TASK_LABELS[task.type]} (${task.x}, ${task.y}): ` +
-        `first in queue, ${this.taskQueue.length} still waiting (FIFO order).`;
-      c.assignTask(task, this.map);
-      if (c.currentTask && c.currentTask.status === 'failed') {
-        this._logTask(c.currentTask);
-        c.currentTask = null;
+      this.lastAssignReason = t('reason.queued', {
+        task: t('task.' + task.type),
+        x: task.x,
+        y: task.y,
+      });
+      return task;
+    }
+    return this._idleTask(colonist);
+  }
+
+  // A personal idle task — rest, sleep, or stroll to a nearby tile.
+  _idleTask(colonist) {
+    const r = Math.random();
+    if (r < 0.12) return createTask(TaskType.SLEEP, colonist.tileX, colonist.tileY);
+    if (r < 0.4) return createTask(TaskType.REST, colonist.tileX, colonist.tileY);
+    for (let i = 0; i < 14; i++) {
+      const tx = colonist.tileX + Math.floor((Math.random() * 2 - 1) * 9);
+      const ty = colonist.tileY + Math.floor((Math.random() * 2 - 1) * 9);
+      const row = this.map.tiles[ty];
+      if (row && row[tx] && row[tx].type === TileType.LAND) {
+        return createTask(TaskType.LEISURE, tx, ty);
       }
     }
+    return createTask(TaskType.REST, colonist.tileX, colonist.tileY);
+  }
 
-    if (!c.currentTask && this.taskQueue.length === 0) {
-      this.lastAssignReason = 'No tasks queued — the colonist wanders on its own.';
+  _updateColonists(dt) {
+    for (const c of this.colonists) {
+      const task = c.currentTask;
+      if (task && (task.status === 'done' || task.status === 'failed')) {
+        if (task.status === 'done') this._applyTaskEffect(task, c);
+        this._logWorkTask(task);
+        c.currentTask = null;
+      }
+      if (!c.currentTask) {
+        c.assignTask(this._assignColonist(c), this.map);
+        if (c.currentTask && c.currentTask.status === 'failed') {
+          this._logWorkTask(c.currentTask);
+          c.currentTask = null;
+        }
+      }
+      c.update(dt);
+    }
+    if (this.taskQueue.length === 0 && this.busyColonists === 0) {
+      this.lastAssignReason = t('reason.idle');
     }
   }
 
   // Advance every growing crop; doomed ones wither before they ripen.
-  // Growth speed depends on temperature and on each tile's sunlight.
   _growCrops(dt) {
     const env = this.environment;
     const tempFactor = tempGrowthFactor(env.temperature);
     for (let i = this.crops.length - 1; i >= 0; i--) {
       const crop = this.crops[i];
       const tile = this.map.tiles[crop.y][crop.x];
-      const rate = tempFactor * sunGrowthFactor(tile.sunlight, env.daylight);
+      let rate = tempFactor * sunGrowthFactor(tile.sunlight, env.daylight);
+      if (this.clock < crop.wateredUntil) rate *= WATER_GROWTH_BONUS;
       crop.growth = Math.min(
         1,
         crop.growth + (dt / getCrop(crop.cropId).growthTime) * rate,
       );
       if (crop.doomed && crop.growth >= crop.witherAt) {
-        // A weak crop has failed — it stays as a husk to be cleared.
         crop.withered = true;
         this.crops.splice(i, 1);
         this.cropsLost += 1;
         this._pushLog({
           icon: '✗',
-          text: `${getCrop(crop.cropId).label} (${crop.x}, ${crop.y}) withered`,
+          text: t('log.withered', {
+            crop: t('crop.' + crop.cropId),
+            x: crop.x,
+            y: crop.y,
+          }),
           cls: 'log-fail',
         });
       }
     }
   }
 
-  // Feed the colonist on a fixed timer (hunger as a stat arrives later).
-  _updateEating(dt) {
-    this.eatTimer += dt;
-    if (this.eatTimer < EAT_INTERVAL) return;
-    this.eatTimer -= EAT_INTERVAL;
-
-    let pick = null;
-    for (const t of FOOD_TYPES) {
-      if (this.storage[t] > 0 && (pick === null || this.storage[t] > this.storage[pick])) {
-        pick = t;
-      }
-    }
-    if (pick) {
-      this.storage[pick] -= 1;
-      this.meals.eaten += 1;
-      this._pushLog({ icon: '🍴', text: `Colonist ate ${pick}`, cls: 'log-meal' });
-    } else {
-      this.meals.missed += 1;
-      this._pushLog({ icon: '⚠', text: 'No food — colonist went hungry', cls: 'log-warn' });
-    }
-  }
-
-  // Combined pan direction from on-screen arrows and held WASD keys.
   _panVector() {
     let dx = this.panDir.x;
     let dy = this.panDir.y;
@@ -345,12 +406,10 @@ export class Game {
   }
 
   update(realDt) {
-    // Camera panning uses real time — it must not speed up with the game.
     const { dx, dy } = this._panVector();
     if (dx !== 0 || dy !== 0) {
       this.camera.pan(dx * CAMERA_SPEED * realDt, dy * CAMERA_SPEED * realDt);
     }
-    // The simulation runs at the chosen game speed.
     const simDt = realDt * this.speed;
     this.clock += simDt;
     const prevSeason = this.environment.seasonIndex;
@@ -358,10 +417,8 @@ export class Game {
     if (this.environment.seasonIndex !== prevSeason) {
       this._seasonEvent = this.environment.season;
     }
-    this._updateTasks();
-    this.colonist.update(simDt, this.map);
+    this._updateColonists(simDt);
     this._growCrops(simDt);
-    this._updateEating(simDt);
   }
 
   render() {
@@ -369,17 +426,16 @@ export class Game {
       map: this.map,
       camera: this.camera,
       mode: this.viewMode,
-      colonist: this.colonist,
+      colonists: this.colonists,
       hover: this.hover,
       taskQueue: this.taskQueue,
-      currentTask: this.colonist.currentTask,
       tileSize: this.tileSize,
       seasonTint: SEASON_TINT[this.environment.season],
+      clock: this.clock,
     });
   }
 
   _loop(time) {
-    // Clamp dt so a backgrounded tab doesn't produce a huge jump.
     const dt = Math.min((time - this._lastTime) / 1000, 0.05);
     this._lastTime = time;
     this.update(dt);

@@ -64,8 +64,11 @@ export function cropSuitability(crop, tile) {
 /**
  * Chance (0..1) that a freshly sown crop survives to ripeness.
  * Initial crop strains are weak — even ideal soil only carries about half
- * to harvest. Later versions (quality/genetics) will improve this.
+ * to harvest. Tilled soil adds a bonus. Later versions (quality/genetics)
+ * will improve the base odds.
+ * @param {number} suitability  0..1 soil match
+ * @param {number} [bonus]      extra survival (e.g. from tilled soil)
  */
-export function survivalChance(suitability) {
-  return clamp01(0.15 + suitability * 0.42);
+export function survivalChance(suitability, bonus = 0) {
+  return clamp01(0.15 + suitability * 0.42 + bonus);
 }
