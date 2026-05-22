@@ -183,9 +183,30 @@ export class Renderer {
     }
   }
 
+  // A withered crop: a drooping brown husk.
+  _drawWithered(cx, cy) {
+    const ctx = this.ctx;
+    const ts = this.ts;
+    ctx.strokeStyle = '#6b5535';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(cx, cy + ts * 0.28);
+    ctx.lineTo(cx, cy + ts * 0.02);
+    ctx.lineTo(cx + ts * 0.13, cy - ts * 0.05);
+    ctx.stroke();
+    ctx.fillStyle = '#7a6038';
+    ctx.beginPath();
+    ctx.ellipse(cx + ts * 0.13, cy - ts * 0.03, ts * 0.1, ts * 0.06, 0.6, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
   // A sown crop: a stem that lengthens with growth, and a produce blob
   // that swells and colors as it ripens. Ripe crops get a bright outline.
   _drawCrop(plant, cx, cy) {
+    if (plant.withered) {
+      this._drawWithered(cx, cy);
+      return;
+    }
     const ctx = this.ctx;
     const ts = this.ts;
     const crop = getCrop(plant.cropId);

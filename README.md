@@ -41,6 +41,8 @@ and surviving the winter.
 - Three crops (wheat, potato, bean), each with its own growth time and yield
 - **Sow** a crop, watch it grow over time, then **Harvest** it once ripe —
   harvested crops and foraged wild plants stock the colony's food store
+- Sown crops can wither before ripening: the initial strains are weak, and
+  how well a tile's soil suits the crop decides its odds of survival
 - The colonist eats from the store on a fixed timer
 - Colony panel shows food storage, meals, and an activity log
 - Game speed control (5 steps) and map zoom (3 steps)

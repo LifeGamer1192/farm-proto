@@ -2,7 +2,7 @@ import './style.css';
 import { GRID_COLS, GRID_ROWS, DRAG_THRESHOLD, SCROLL_STEP } from './config.js';
 import { hashSeed, randomSeed } from './core/rng.js';
 import { TASK_LABELS } from './tasks.js';
-import { isRipe } from './crops.js';
+import { isRipe, cropSuitability, survivalChance, getCrop } from './crops.js';
 import { Game } from './game.js';
 
 const canvas = document.getElementById('map');
@@ -131,6 +131,7 @@ function updateColonyPanel() {
     ['Food stored', game.totalFood],
     ['Wheat / Potato / Bean', `${s.wheat} / ${s.potato} / ${s.bean}`],
     ['Forage', s.forage],
+    ['Crops lost', game.cropsLost],
     ['Meals eaten', game.meals.eaten],
     ['Missed meals', game.meals.missed],
     ['Next meal', `${Math.ceil(game.nextMealIn)}s`],
@@ -185,8 +186,18 @@ function tileAt(clientX, clientY) {
 function describePlant(plant) {
   if (!plant) return '';
   if (plant.kind === 'wild') return '<br>plant: wild';
-  const pct = isRipe(plant) ? 'ripe' : `${Math.round(plant.growth * 100)}%`;
-  return `<br>crop: ${plant.cropId} (${pct})`;
+  let status;
+  if (plant.withered) status = 'withered';
+  else if (isRipe(plant)) status = 'ripe';
+  else status = `${Math.round(plant.growth * 100)}%`;
+  return `<br>crop: ${plant.cropId} (${status})`;
+}
+
+// With the Sow tool active, hint how likely the chosen crop is to survive.
+function sowHint(tile) {
+  if (tool !== 'sow' || tile.type === 'water' || tile.plant) return '';
+  const chance = survivalChance(cropSuitability(getCrop(cropId), tile));
+  return `<br>sow ${cropId}: ~${Math.round(chance * 100)}% to survive`;
 }
 
 function showTooltip(clientX, clientY, tile) {
@@ -196,7 +207,8 @@ function showTooltip(clientX, clientY, tile) {
   tooltip.innerHTML =
     `<strong>(${tile.x}, ${tile.y})</strong> ${t.type}<br>` +
     `elevation ${f(t.elevation)}<br>fertility ${f(t.fertility)}<br>` +
-    `moisture ${f(t.moisture)}<br>sunlight ${f(t.sunlight)}${describePlant(t.plant)}`;
+    `moisture ${f(t.moisture)}<br>sunlight ${f(t.sunlight)}` +
+    `${describePlant(t.plant)}${sowHint(t)}`;
   const { rect } = canvasMetrics();
   tooltip.style.left = `${clientX - rect.left + 14}px`;
   tooltip.style.top = `${clientY - rect.top + 14}px`;

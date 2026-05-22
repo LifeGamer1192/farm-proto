@@ -26,7 +26,7 @@ import { Renderer } from './render/renderer.js';
 import { Colonist } from './entities/colonist.js';
 import { TaskType, TASK_LABELS, createTask } from './tasks.js';
 import { scatterPlants, PlantKind } from './world.js';
-import { getCrop } from './crops.js';
+import { getCrop, cropSuitability, survivalChance } from './crops.js';
 
 const FOOD_TYPES = ['forage', 'wheat', 'potato', 'bean'];
 
@@ -55,6 +55,7 @@ export class Game {
     this.crops = []; // sown crops still growing or ripe
     this.storage = { forage: 0, wheat: 0, potato: 0, bean: 0 };
     this.meals = { eaten: 0, missed: 0 };
+    this.cropsLost = 0; // crops that withered before harvest
     this.eatTimer = 0;
     this.log = []; // recent events, newest first
     this.lastAssignReason = '';
@@ -101,6 +102,7 @@ export class Game {
     this.crops = [];
     this.storage = { forage: 0, wheat: 0, potato: 0, bean: 0 };
     this.meals = { eaten: 0, missed: 0 };
+    this.cropsLost = 0; // crops that withered before harvest
     this.eatTimer = 0;
     this.log = [];
     this.lastAssignReason = 'No tasks queued yet.';
@@ -184,9 +186,13 @@ export class Game {
     if (task.type === TaskType.HARVEST) {
       const plant = tile.plant;
       if (plant && plant.kind === PlantKind.CROP) {
-        const crop = getCrop(plant.cropId);
-        this.storage[plant.cropId] += crop.yield;
-        task.outcome = `${crop.label} +${crop.yield}`;
+        if (plant.withered) {
+          task.outcome = 'cleared dead crop';
+        } else {
+          const crop = getCrop(plant.cropId);
+          this.storage[plant.cropId] += crop.yield;
+          task.outcome = `${crop.label} +${crop.yield}`;
+        }
         const i = this.crops.indexOf(plant);
         if (i >= 0) this.crops.splice(i, 1);
       } else if (plant) {
@@ -195,10 +201,25 @@ export class Game {
       }
       tile.plant = null;
     } else if (task.type === TaskType.SOW) {
-      const crop = { kind: PlantKind.CROP, cropId: task.cropId, growth: 0, x: task.x, y: task.y };
+      // Initial crops are weak: roll once whether this one survives, from
+      // how well the tile suits it. A doomed crop withers partway to ripe.
+      const cropDef = getCrop(task.cropId);
+      const suitability = cropSuitability(cropDef, tile);
+      const doomed = Math.random() >= survivalChance(suitability);
+      const crop = {
+        kind: PlantKind.CROP,
+        cropId: task.cropId,
+        growth: 0,
+        x: task.x,
+        y: task.y,
+        suitability,
+        doomed,
+        witherAt: doomed ? 0.3 + Math.random() * 0.5 : 1,
+        withered: false,
+      };
       tile.plant = crop;
       this.crops.push(crop);
-      task.outcome = `sowed ${getCrop(task.cropId).label}`;
+      task.outcome = `sowed ${cropDef.label}`;
     } else {
       task.outcome = 'arrived';
     }
@@ -233,11 +254,21 @@ export class Game {
     }
   }
 
-  // Advance every growing crop toward ripeness.
+  // Advance every growing crop; doomed ones wither before they ripen.
   _growCrops(dt) {
-    for (const crop of this.crops) {
-      if (crop.growth < 1) {
-        crop.growth = Math.min(1, crop.growth + dt / getCrop(crop.cropId).growthTime);
+    for (let i = this.crops.length - 1; i >= 0; i--) {
+      const crop = this.crops[i];
+      crop.growth = Math.min(1, crop.growth + dt / getCrop(crop.cropId).growthTime);
+      if (crop.doomed && crop.growth >= crop.witherAt) {
+        // A weak crop has failed — it stays as a husk to be cleared.
+        crop.withered = true;
+        this.crops.splice(i, 1);
+        this.cropsLost += 1;
+        this._pushLog({
+          icon: '✗',
+          text: `${getCrop(crop.cropId).label} (${crop.x}, ${crop.y}) withered`,
+          cls: 'log-fail',
+        });
       }
     }
   }

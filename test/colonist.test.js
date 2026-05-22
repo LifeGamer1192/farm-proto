@@ -71,6 +71,17 @@ test('harvesting an unripe crop fails', () => {
   assert.match(task.outcome, /ripe/i);
 });
 
+test('a withered crop can be harvested (to clear the husk)', () => {
+  const map = makeMap(Array(5).fill('.....'));
+  map.tiles[2][3].plant = { kind: 'crop', cropId: 'bean', growth: 0.6, withered: true };
+  const c = new Colonist(0, 0);
+  const task = createTask(TaskType.HARVEST, 3, 2);
+  c.assignTask(task, map);
+  assert.notEqual(task.status, 'failed');
+  simulate(c, map, 3);
+  assert.equal(task.status, 'done');
+});
+
 test('harvesting a tile with no plant fails', () => {
   const map = makeMap(Array(4).fill('....'));
   const c = new Colonist(0, 0);

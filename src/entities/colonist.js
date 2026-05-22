@@ -55,7 +55,9 @@ export class Colonist {
 
     if (task.type === TaskType.HARVEST) {
       if (!tile.plant) return this._failTask(task, 'nothing to harvest');
-      if (tile.plant.kind === 'crop' && !isRipe(tile.plant)) {
+      const p = tile.plant;
+      // A withered crop can still be harvested — that just clears the husk.
+      if (p.kind === 'crop' && !p.withered && !isRipe(p)) {
         return this._failTask(task, 'crop not ripe yet');
       }
     }
