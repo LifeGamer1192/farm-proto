@@ -2,13 +2,19 @@
 // store, and runs the frame loop. It hands the colonist one task at a
 // time, applies the effect of each finished task, grows sown crops, and
 // feeds the colonist at a fixed interval.
+//
+// Game speed scales the simulation only (not camera panning). Map zoom
+// changes the tile size, and thus how many tiles fit on the fixed canvas.
 
 import {
   GRID_COLS,
   GRID_ROWS,
-  VIEW_COLS,
-  VIEW_ROWS,
-  TILE_SIZE,
+  CANVAS_W,
+  CANVAS_H,
+  ZOOM_LEVELS,
+  DEFAULT_ZOOM,
+  SPEED_LEVELS,
+  DEFAULT_SPEED,
   CAMERA_SPEED,
   TASK_LOG_SIZE,
   EAT_INTERVAL,
@@ -27,14 +33,18 @@ const FOOD_TYPES = ['forage', 'wheat', 'potato', 'bean'];
 export class Game {
   constructor(canvas) {
     this.canvas = canvas;
-    canvas.width = VIEW_COLS * TILE_SIZE;
-    canvas.height = VIEW_ROWS * TILE_SIZE;
-    this.renderer = new Renderer(canvas, TILE_SIZE);
+    canvas.width = CANVAS_W;
+    canvas.height = CANVAS_H;
+    this.renderer = new Renderer(canvas);
 
     this.viewMode = 'terrain';
     this.panDir = { x: 0, y: 0 }; // from on-screen arrows
     this.keys = new Set(); // held WASD keys
     this.hover = null;
+
+    this.zoomIndex = DEFAULT_ZOOM;
+    this.tileSize = ZOOM_LEVELS[DEFAULT_ZOOM].tile;
+    this.speedIndex = DEFAULT_SPEED;
 
     this.map = null;
     this.camera = null;
@@ -57,6 +67,10 @@ export class Game {
     return this.map.seed;
   }
 
+  get speed() {
+    return SPEED_LEVELS[this.speedIndex];
+  }
+
   get totalFood() {
     return FOOD_TYPES.reduce((sum, t) => sum + this.storage[t], 0);
   }
@@ -65,12 +79,20 @@ export class Game {
     return Math.max(0, EAT_INTERVAL - this.eatTimer);
   }
 
+  // How many tiles fit across / down the canvas at the current zoom.
+  _viewCols() {
+    return Math.round(CANVAS_W / this.tileSize);
+  }
+  _viewRows() {
+    return Math.round(CANVAS_H / this.tileSize);
+  }
+
   /** Generate a fresh map, scatter plants, and place the colonist. */
   newMap(seed) {
     this.map = generateMap(GRID_COLS, GRID_ROWS, seed);
     scatterPlants(this.map);
     this.stats = mapStats(this.map);
-    this.camera = new Camera(VIEW_COLS, VIEW_ROWS, GRID_COLS, GRID_ROWS);
+    this.camera = new Camera(this._viewCols(), this._viewRows(), GRID_COLS, GRID_ROWS);
     const spawn = this._findSpawn();
     this.colonist = new Colonist(spawn.x, spawn.y);
     this.camera.centerOn(spawn.x + 0.5, spawn.y + 0.5);
@@ -104,12 +126,20 @@ export class Game {
     return { x: cx, y: cy };
   }
 
+  /** Set the game-speed level (index into SPEED_LEVELS). */
+  setSpeed(index) {
+    this.speedIndex = Math.max(0, Math.min(SPEED_LEVELS.length - 1, index));
+  }
+
+  /** Set the map-zoom level (index into ZOOM_LEVELS). */
+  setZoom(index) {
+    this.zoomIndex = Math.max(0, Math.min(ZOOM_LEVELS.length - 1, index));
+    this.tileSize = ZOOM_LEVELS[this.zoomIndex].tile;
+    this.camera.resize(this._viewCols(), this._viewRows());
+  }
+
   /**
    * Queue a task at a tile, if it makes sense there.
-   * @param {string} type    TaskType
-   * @param {number} x
-   * @param {number} y
-   * @param {?string} cropId crop to sow (SOW only)
    * @returns {boolean} true if a task was queued.
    */
   enqueueTask(type, x, y, cropId = null) {
@@ -245,15 +275,18 @@ export class Game {
     return { dx, dy };
   }
 
-  update(dt) {
+  update(realDt) {
+    // Camera panning uses real time — it must not speed up with the game.
     const { dx, dy } = this._panVector();
     if (dx !== 0 || dy !== 0) {
-      this.camera.pan(dx * CAMERA_SPEED * dt, dy * CAMERA_SPEED * dt);
+      this.camera.pan(dx * CAMERA_SPEED * realDt, dy * CAMERA_SPEED * realDt);
     }
+    // The simulation runs at the chosen game speed.
+    const simDt = realDt * this.speed;
     this._updateTasks();
-    this.colonist.update(dt, this.map);
-    this._growCrops(dt);
-    this._updateEating(dt);
+    this.colonist.update(simDt, this.map);
+    this._growCrops(simDt);
+    this._updateEating(simDt);
   }
 
   render() {
@@ -265,6 +298,7 @@ export class Game {
       hover: this.hover,
       taskQueue: this.taskQueue,
       currentTask: this.colonist.currentTask,
+      tileSize: this.tileSize,
     });
   }
 

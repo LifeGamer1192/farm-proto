@@ -1,16 +1,27 @@
 // Global tuning constants.
 
-// Full map size in tiles. Alpha 2 supports a 100×100 grid.
+// Full map size in tiles. Alpha 2+ uses a 100×100 grid.
 export const GRID_COLS = 100;
 export const GRID_ROWS = 100;
 
-// Pixels per tile.
-export const TILE_SIZE = 20;
+// Fixed canvas pixel size. Map zoom changes the tile size (and thus how
+// many tiles are visible), not the canvas itself.
+export const CANVAS_W = 600;
+export const CANVAS_H = 600;
 
-// Viewport: how many tiles are visible at once. The canvas shows this much;
-// the rest of the map is reached by scrolling the camera.
-export const VIEW_COLS = 30;
-export const VIEW_ROWS = 30;
+// Map zoom levels — the on-screen size of one tile, in pixels.
+// Smaller tiles show more of the map; larger tiles show less. Default: medium.
+export const ZOOM_LEVELS = [
+  { label: 'Small', tile: 15 },
+  { label: 'Medium', tile: 20 },
+  { label: 'Large', tile: 30 },
+];
+export const DEFAULT_ZOOM = 1;
+
+// Game-speed multipliers applied to the simulation (not to camera panning).
+// Default is the second-slowest — normal, 1×.
+export const SPEED_LEVELS = [0.5, 1, 2, 4, 8];
+export const DEFAULT_SPEED = 1;
 
 // Terrain generation.
 export const WATER_LEVEL = 0.4;
@@ -20,8 +31,7 @@ export const MOISTURE_RANGE = 6;
 // Camera panning speed in tiles per second while a key / arrow is held.
 export const CAMERA_SPEED = 22;
 
-// Tiles the camera jumps on a single click/tap of an on-screen scroll arrow
-// (holding the arrow then keeps panning continuously at CAMERA_SPEED).
+// Tiles the camera jumps on a single click/tap of an on-screen scroll arrow.
 export const SCROLL_STEP = 4;
 
 // Colonist walking speed in tiles per second.
@@ -36,7 +46,7 @@ export const DRAG_THRESHOLD = 6;
 
 // --- tasks ---------------------------------------------------------------
 
-// Seconds the colonist spends working a harvest or plant task on its tile.
+// Seconds the colonist spends working a harvest or sow task on its tile.
 export const WORK_DURATION = 0.7;
 
 // Fraction of land tiles that start with a wild (harvestable) plant.

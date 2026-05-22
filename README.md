@@ -43,6 +43,7 @@ and surviving the winter.
   harvested crops and foraged wild plants stock the colony's food store
 - The colonist eats from the store on a fixed timer
 - Colony panel shows food storage, meals, and an activity log
+- Game speed control (5 steps) and map zoom (3 steps)
 
 ## Version archive
 

@@ -40,4 +40,15 @@ export class Camera {
     this.y = ty - this.viewRows / 2;
     this.clamp();
   }
+
+  /** Change how many tiles are visible (zoom), keeping the view centered. */
+  resize(viewCols, viewRows) {
+    const cx = this.x + this.viewCols / 2;
+    const cy = this.y + this.viewRows / 2;
+    this.viewCols = viewCols;
+    this.viewRows = viewRows;
+    this.x = cx - viewCols / 2;
+    this.y = cy - viewRows / 2;
+    this.clamp();
+  }
 }

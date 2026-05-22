@@ -45,21 +45,21 @@ const TASK_COLORS = {
 export class Renderer {
   /**
    * @param {HTMLCanvasElement} canvas
-   * @param {number} tileSize
    */
-  constructor(canvas, tileSize) {
+  constructor(canvas) {
     this.canvas = canvas;
     this.ctx = canvas.getContext('2d');
-    this.ts = tileSize;
+    this.ts = 20; // current tile size; set from the scene each frame (zoom)
   }
 
   /**
    * Draw one frame from a scene description.
    * @param {object} scene { map, camera, mode, colonist, hover,
-   *                          taskQueue, currentTask }
+   *                          taskQueue, currentTask, tileSize }
    */
   draw(scene) {
     const { map, camera, mode, colonist, hover, taskQueue, currentTask } = scene;
+    this.ts = scene.tileSize; // map zoom
     const ctx = this.ctx;
     const ts = this.ts;
     const cw = this.canvas.width;

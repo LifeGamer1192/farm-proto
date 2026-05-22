@@ -1,5 +1,5 @@
 import './style.css';
-import { GRID_COLS, GRID_ROWS, TILE_SIZE, DRAG_THRESHOLD, SCROLL_STEP } from './config.js';
+import { GRID_COLS, GRID_ROWS, DRAG_THRESHOLD, SCROLL_STEP } from './config.js';
 import { hashSeed, randomSeed } from './core/rng.js';
 import { TASK_LABELS } from './tasks.js';
 import { isRipe } from './crops.js';
@@ -20,6 +20,8 @@ const legendEl = document.getElementById('legend');
 const viewModesEl = document.getElementById('view-modes');
 const toolsEl = document.getElementById('tools');
 const cropsEl = document.getElementById('crops');
+const speedsEl = document.getElementById('speeds');
+const zoomsEl = document.getElementById('zooms');
 
 const PAN_DIRS = { up: [0, -1], down: [0, 1], left: [-1, 0], right: [1, 0] };
 
@@ -174,8 +176,8 @@ function tileAt(clientX, clientY) {
   const { rect, scaleX, scaleY } = canvasMetrics();
   const px = (clientX - rect.left) * scaleX;
   const py = (clientY - rect.top) * scaleY;
-  const x = Math.floor(game.camera.x + px / TILE_SIZE);
-  const y = Math.floor(game.camera.y + py / TILE_SIZE);
+  const x = Math.floor(game.camera.x + px / game.tileSize);
+  const y = Math.floor(game.camera.y + py / game.tileSize);
   if (x < 0 || y < 0 || x >= GRID_COLS || y >= GRID_ROWS) return null;
   return { x, y };
 }
@@ -225,8 +227,8 @@ canvas.addEventListener('pointermove', (ev) => {
     if (dragged) {
       const { scaleX, scaleY } = canvasMetrics();
       game.camera.pan(
-        -((ev.clientX - lastX) * scaleX) / TILE_SIZE,
-        -((ev.clientY - lastY) * scaleY) / TILE_SIZE,
+        -((ev.clientX - lastX) * scaleX) / game.tileSize,
+        -((ev.clientY - lastY) * scaleY) / game.tileSize,
       );
       lastX = ev.clientX;
       lastY = ev.clientY;
@@ -318,6 +320,20 @@ toolsEl.addEventListener('click', (ev) => {
 cropsEl.addEventListener('click', (ev) => {
   const btn = ev.target.closest('button[data-crop]');
   if (btn) cropId = selectIn(cropsEl, btn, 'crop');
+});
+
+speedsEl.addEventListener('click', (ev) => {
+  const btn = ev.target.closest('button[data-speed]');
+  if (!btn) return;
+  game.setSpeed(Number(btn.dataset.speed));
+  selectIn(speedsEl, btn, 'speed');
+});
+
+zoomsEl.addEventListener('click', (ev) => {
+  const btn = ev.target.closest('button[data-zoom]');
+  if (!btn) return;
+  game.setZoom(Number(btn.dataset.zoom));
+  selectIn(zoomsEl, btn, 'zoom');
 });
 
 viewModesEl.addEventListener('click', (ev) => {

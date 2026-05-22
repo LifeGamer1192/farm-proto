@@ -11,8 +11,8 @@
       href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%235fae6b'/><rect x='14.5' y='6' width='3' height='10' rx='1.5' fill='%2311240f'/><circle cx='16' cy='19' r='6.5' fill='%2311240f'/></svg>"
     />
     <title>Farm Proto — Alpha 4</title>
-    <script type="module" crossorigin src="./assets/index-CWhOlDO7.js"></script>
-    <link rel="stylesheet" crossorigin href="./assets/index-DWKXPuWB.css">
+    <script type="module" crossorigin src="./assets/index-DlHi97-X.js"></script>
+    <link rel="stylesheet" crossorigin href="./assets/index-B32ijXcV.css">
   </head>
   <body>
     <div id="app">
@@ -50,6 +50,24 @@
             <button id="regenerate" type="button" class="primary">
               Regenerate (random)
             </button>
+          </div>
+
+          <div class="control-group">
+            <span class="label">Speed &amp; zoom</span>
+            <p class="reason-label">Game speed</p>
+            <div class="tools speed5" id="speeds">
+              <button type="button" data-speed="0">0.5×</button>
+              <button type="button" data-speed="1" class="active">1×</button>
+              <button type="button" data-speed="2">2×</button>
+              <button type="button" data-speed="3">4×</button>
+              <button type="button" data-speed="4">8×</button>
+            </div>
+            <p class="reason-label">Map zoom</p>
+            <div class="tools" id="zooms">
+              <button type="button" data-zoom="0">Small</button>
+              <button type="button" data-zoom="1" class="active">Medium</button>
+              <button type="button" data-zoom="2">Large</button>
+            </div>
           </div>
 
           <div class="control-group">

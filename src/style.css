@@ -231,6 +231,15 @@ button.primary:hover {
   gap: 6px;
 }
 
+.tools.speed5 {
+  grid-template-columns: repeat(5, 1fr);
+}
+
+.tools.speed5 button {
+  padding: 7px 2px;
+  font-size: 0.82rem;
+}
+
 .tools button.active {
   background: var(--accent);
   color: #11240f;
