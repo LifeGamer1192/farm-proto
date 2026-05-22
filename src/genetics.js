@@ -9,11 +9,27 @@
 // takes one allele at random from each parent, then each allele may mutate.
 // Mutation supplies new variation; crossing optimises it.
 
-// Genes. The first four affect gameplay; `hue` is cosmetic (fruit colour).
-export const GENE_IDS = ['hardiness', 'yield', 'vigor', 'cold', 'hue'];
+// Genes. The first four drive gameplay; the rest are purely cosmetic and
+// shape how the crop looks — its fruit shape, leaf style, surface, colour
+// hue, colour saturation and speckling.
+export const GENE_IDS = [
+  'hardiness',
+  'yield',
+  'vigor',
+  'cold',
+  'hue',
+  'shape',
+  'leaf',
+  'surface',
+  'saturation',
+  'spots',
+];
 
 // Genes that count toward a genome's overall quality (and its ★ rank).
-const QUALITY_GENES = ['hardiness', 'yield', 'vigor', 'cold'];
+export const QUALITY_GENES = ['hardiness', 'yield', 'vigor', 'cold'];
+
+// Genes that only affect appearance (not quality).
+export const VISUAL_GENES = ['hue', 'shape', 'leaf', 'surface', 'saturation', 'spots'];
 
 // Quality ranks run ★1..★5.
 export const RANK_MAX = 5;
@@ -29,11 +45,18 @@ const LEGENDARY_STEP = 0.38;
 
 const clamp01 = (v) => (v < 0 ? 0 : v > 1 ? 1 : v);
 
-/** A fresh starting genome — a middling, slightly varied strain to breed from. */
+/**
+ * A fresh starting genome. Gameplay genes start middling — a weak strain
+ * to breed up — while the cosmetic genes start spread wide, so the first
+ * crops already vary in appearance.
+ */
 export function freshGenome(rand = Math.random) {
   const g = {};
   for (const id of GENE_IDS) {
-    g[id] = [0.32 + rand() * 0.26, 0.32 + rand() * 0.26];
+    const visual = VISUAL_GENES.includes(id);
+    const lo = visual ? 0.08 : 0.32;
+    const span = visual ? 0.84 : 0.26;
+    g[id] = [lo + rand() * span, lo + rand() * span];
   }
   return g;
 }
@@ -45,6 +68,15 @@ export function phenotype(genome, id) {
   const hi = a > b ? a : b;
   const lo = a > b ? b : a;
   return hi * DOMINANCE + lo * (1 - DOMINANCE);
+}
+
+/**
+ * Bucket a cosmetic gene's phenotype into one of `count` discrete parts —
+ * e.g. which fruit shape or leaf style the genome expresses.
+ */
+export function partIndex(genome, id, count) {
+  const i = Math.floor(phenotype(genome, id) * count);
+  return i < 0 ? 0 : i >= count ? count - 1 : i;
 }
 
 // Mutate one allele; returns { v, legendary }.

@@ -5,9 +5,12 @@ import assert from 'node:assert/strict';
 
 import {
   GENE_IDS,
+  QUALITY_GENES,
+  VISUAL_GENES,
   RANK_MAX,
   freshGenome,
   phenotype,
+  partIndex,
   crossGenomes,
   genomeQuality,
   qualityRank,
@@ -83,6 +86,32 @@ test('qualityRank stays an integer within 1..RANK_MAX', () => {
 
 test('genomeQuality rises from a weak strain to a strong one', () => {
   assert.ok(genomeQuality(uniformGenome(0.9)) > genomeQuality(uniformGenome(0.1)));
+});
+
+test('QUALITY_GENES and VISUAL_GENES partition GENE_IDS', () => {
+  assert.equal(QUALITY_GENES.length + VISUAL_GENES.length, GENE_IDS.length);
+  for (const id of [...QUALITY_GENES, ...VISUAL_GENES]) {
+    assert.ok(GENE_IDS.includes(id), `${id} should be a real gene`);
+  }
+  for (const q of QUALITY_GENES) {
+    assert.ok(!VISUAL_GENES.includes(q), `${q} cannot be both gameplay and visual`);
+  }
+});
+
+test('partIndex returns a whole bucket within 0..count-1', () => {
+  for (let i = 0; i < 40; i++) {
+    const g = freshGenome();
+    for (const [id, count] of [
+      ['shape', 4],
+      ['leaf', 3],
+      ['surface', 3],
+    ]) {
+      const idx = partIndex(g, id, count);
+      assert.ok(Number.isInteger(idx) && idx >= 0 && idx < count, `${id} idx ${idx} out of range`);
+    }
+  }
+  assert.equal(partIndex(uniformGenome(0), 'shape', 4), 0);
+  assert.equal(partIndex(uniformGenome(1), 'shape', 4), 3);
 });
 
 test('gene effects all move in the expected direction', () => {

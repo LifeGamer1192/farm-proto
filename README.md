@@ -163,6 +163,21 @@ and surviving the winter.
 - **Hover hints** on every tool button, and a new **Tips** panel of
   gameplay pointers
 
+### Alpha 14 — crops you can see the genes in
+
+- The genome gains six **cosmetic genes** — fruit shape, leaf style,
+  surface, colour hue, colour saturation and speckling — alongside the
+  four gameplay genes
+- Crops are now **drawn from their genome**: the fruit takes one of four
+  shapes, the leaves one of three styles, the surface is smooth, ridged
+  or fuzzy, and the colour and spotting vary — so a bred variety has a
+  look of its own
+- Starting seeds spread their cosmetic genes wide, so the very first
+  crops already differ; breeding and mutation push the looks further
+- The **Variety codex** now shows a picture of the best variety bred for
+  each crop, beside its gameplay-gene bars
+- Hovering a crop describes its look (shape, leaf and surface)
+
 ## Version archive
 
 Every released version stays playable. The live site links to an

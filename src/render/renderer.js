@@ -5,7 +5,7 @@ import { TileType } from '../map/tile.js';
 import { PlantKind } from '../world.js';
 import { TaskType, WORK_TYPES } from '../tasks.js';
 import { getCrop } from '../crops.js';
-import { phenotype } from '../genetics.js';
+import { phenotype, partIndex } from '../genetics.js';
 
 const lerp = (a, b, t) => a + (b - a) * t;
 
@@ -17,9 +17,9 @@ function tileHash(x, y) {
   return ((h >>> 0) % 1000) / 1000;
 }
 
-// Rotate a hex colour's hue by `deg` degrees — gives crops their genetic
-// fruit colour (the hue gene). Saturation and lightness are kept.
-function hueShift(hex, deg) {
+// Re-tint a hex colour: rotate its hue by `hueDeg` degrees and scale its
+// saturation by `satMul`. Drives a crop's genetic fruit colour.
+function tintColor(hex, hueDeg, satMul) {
   const r = parseInt(hex.slice(1, 3), 16) / 255;
   const g = parseInt(hex.slice(3, 5), 16) / 255;
   const b = parseInt(hex.slice(5, 7), 16) / 255;
@@ -27,7 +27,7 @@ function hueShift(hex, deg) {
   const min = Math.min(r, g, b);
   const l = (max + min) / 2;
   const d = max - min;
-  const s = d === 0 ? 0 : d / (1 - Math.abs(2 * l - 1));
+  let s = d === 0 ? 0 : d / (1 - Math.abs(2 * l - 1));
   let h = 0;
   if (d !== 0) {
     if (max === r) h = (((g - b) / d) % 6 + 6) % 6;
@@ -35,7 +35,8 @@ function hueShift(hex, deg) {
     else h = (r - g) / d + 4;
     h *= 60;
   }
-  h = ((h + deg) % 360 + 360) % 360;
+  h = ((h + hueDeg) % 360 + 360) % 360;
+  s = Math.max(0, Math.min(1, s * satMul));
   const c = (1 - Math.abs(2 * l - 1)) * s;
   const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
   const m = l - c / 2;
@@ -479,55 +480,159 @@ export class Renderer {
       this._drawWithered(cx, cy);
       return;
     }
-    const ctx = this.ctx;
-    const ts = this.ts;
-    const crop = getCrop(plant.cropId);
-    const g = Math.min(1, plant.growth);
+    this._paintCrop(this.ctx, this.ts, plant.cropId, plant.genome, plant.growth, cx, cy);
+    if (watered) {
+      const ctx = this.ctx;
+      const ts = this.ts;
+      ctx.fillStyle = '#5ba8d8';
+      ctx.beginPath();
+      ctx.arc(cx + ts * 0.26, cy - ts * 0.24, ts * 0.07, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  /** Draw a mature crop of `genome` filling a w×h preview area on `ctx`. */
+  drawCropPreview(ctx, w, h, cropId, genome) {
+    ctx.clearRect(0, 0, w, h);
+    this._paintCrop(ctx, h * 0.82, cropId, genome, 1, w / 2, h * 0.66);
+  }
+
+  // Compose a crop from its genome: a stem, leaves and fruit, with the
+  // fruit shape, leaf style, surface, colour and speckling all gene-driven.
+  _paintCrop(ctx, ts, cropId, genome, growth, cx, cy) {
+    const crop = getCrop(cropId);
+    const g = Math.min(1, growth);
     const ripe = g >= 1;
+    const leafIdx = partIndex(genome, 'leaf', 3);
 
     const base = cy + ts * 0.3;
     const stemH = ts * (0.16 + 0.42 * g);
     const top = base - stemH;
 
     ctx.strokeStyle = '#3f7a2b';
-    ctx.lineWidth = 2;
+    ctx.lineWidth = Math.max(1.6, ts * 0.1);
+    ctx.lineCap = 'round';
     ctx.beginPath();
     ctx.moveTo(cx, base);
     ctx.lineTo(cx, top);
     ctx.stroke();
+    ctx.lineCap = 'butt';
 
     if (g > 0.2) {
-      ctx.fillStyle = '#5ba23c';
-      const leafY = base - stemH * 0.55;
-      const leafR = ts * 0.13;
-      for (const ox of [-1, 1]) {
-        ctx.beginPath();
-        ctx.ellipse(cx + ox * leafR, leafY, leafR, leafR * 0.55, 0, 0, Math.PI * 2);
-        ctx.fill();
-      }
+      const leafY = base - stemH * 0.5;
+      this._drawLeaf(ctx, cx, leafY, ts, leafIdx, -1);
+      this._drawLeaf(ctx, cx, leafY, ts, leafIdx, 1);
     }
 
     if (g > 0.45) {
-      // The yield gene swells the fruit; the hue gene tints it when ripe.
-      const yieldPheno = phenotype(plant.genome, 'yield');
-      const huePheno = phenotype(plant.genome, 'hue');
-      const r = ts * (0.05 + 0.18 * g) * (0.8 + yieldPheno * 0.5);
-      ctx.beginPath();
-      ctx.arc(cx, top, r, 0, Math.PI * 2);
-      ctx.fillStyle = ripe ? hueShift(crop.ripeColor, (huePheno - 0.47) * 220) : crop.color;
+      const yieldP = phenotype(genome, 'yield');
+      const hueP = phenotype(genome, 'hue');
+      const satP = phenotype(genome, 'saturation');
+      const spotsP = phenotype(genome, 'spots');
+      const shapeIdx = partIndex(genome, 'shape', 4);
+      const surfIdx = partIndex(genome, 'surface', 3);
+      const r = ts * (0.07 + 0.15 * g) * (0.78 + yieldP * 0.62);
+      const hueDeg = (hueP - 0.5) * 300;
+      const satMul = 0.5 + satP * 1.15;
+      const fill = ripe
+        ? tintColor(crop.ripeColor, hueDeg, satMul)
+        : tintColor(crop.color, hueDeg * 0.25, 1);
+      this._drawFruit(ctx, cx, top, r, shapeIdx, fill, ripe, surfIdx, spotsP);
+    }
+  }
+
+  // One leaf, on the given side (-1 / +1) of the stem.
+  _drawLeaf(ctx, cx, leafY, ts, idx, side) {
+    ctx.fillStyle = '#5ba23c';
+    const lr = ts * 0.15;
+    if (idx === 0) {
+      ctx.beginPath(); // broad
+      ctx.ellipse(cx + side * lr, leafY, lr, lr * 0.62, side * 0.5, 0, Math.PI * 2);
       ctx.fill();
-      if (ripe) {
-        ctx.strokeStyle = '#ffffff';
-        ctx.lineWidth = 1.5;
-        ctx.stroke();
+    } else if (idx === 1) {
+      ctx.beginPath(); // narrow
+      ctx.ellipse(cx + side * lr * 1.05, leafY, lr * 1.2, lr * 0.32, side * 0.85, 0, Math.PI * 2);
+      ctx.fill();
+    } else {
+      // serrated — a small jagged blade
+      const tipX = cx + side * lr * 1.9;
+      ctx.beginPath();
+      ctx.moveTo(cx, leafY);
+      for (let i = 1; i <= 4; i++) {
+        const t = i / 4;
+        const lx = cx + (tipX - cx) * t;
+        ctx.lineTo(lx, leafY - lr * 0.42 * (1 - t));
+        ctx.lineTo(lx, leafY + lr * 0.3 * (1 - t));
       }
+      ctx.closePath();
+      ctx.fill();
+    }
+  }
+
+  // Trace one of four fruit silhouettes (does not fill or stroke).
+  _fruitPath(ctx, cx, cy, r, shapeIdx) {
+    ctx.beginPath();
+    if (shapeIdx === 0) {
+      ctx.arc(cx, cy, r, 0, Math.PI * 2); // round
+    } else if (shapeIdx === 1) {
+      ctx.ellipse(cx, cy, r * 1.32, r * 0.82, 0, 0, Math.PI * 2); // oval
+    } else if (shapeIdx === 2) {
+      ctx.ellipse(cx, cy, r * 0.74, r * 1.34, 0, 0, Math.PI * 2); // tall
+    } else {
+      ctx.arc(cx - r * 0.5, cy, r * 0.78, 0, Math.PI * 2); // lobed
+      ctx.moveTo(cx + r * 1.28, cy);
+      ctx.arc(cx + r * 0.5, cy, r * 0.78, 0, Math.PI * 2);
+    }
+  }
+
+  _drawFruit(ctx, cx, cy, r, shapeIdx, fill, ripe, surfIdx, spotsP) {
+    this._fruitPath(ctx, cx, cy, r, shapeIdx);
+    ctx.fillStyle = fill;
+    ctx.fill();
+
+    if (ripe && (surfIdx > 0 || spotsP > 0.35)) {
+      ctx.save();
+      this._fruitPath(ctx, cx, cy, r, shapeIdx);
+      ctx.clip();
+      if (surfIdx === 1) {
+        ctx.strokeStyle = 'rgba(0,0,0,0.22)'; // ridged
+        ctx.lineWidth = Math.max(1, r * 0.13);
+        for (const o of [-0.5, 0, 0.5]) {
+          ctx.beginPath();
+          ctx.moveTo(cx + o * r, cy - r * 1.4);
+          ctx.lineTo(cx + o * r, cy + r * 1.4);
+          ctx.stroke();
+        }
+      } else if (surfIdx === 2) {
+        ctx.strokeStyle = 'rgba(255,255,255,0.4)'; // fuzzy
+        ctx.lineWidth = 1;
+        for (let i = 0; i < 9; i++) {
+          const a = (i / 9) * Math.PI * 2;
+          ctx.beginPath();
+          ctx.moveTo(cx + Math.cos(a) * r * 0.6, cy + Math.sin(a) * r * 0.6);
+          ctx.lineTo(cx + Math.cos(a) * r * 1.15, cy + Math.sin(a) * r * 1.15);
+          ctx.stroke();
+        }
+      }
+      if (spotsP > 0.35) {
+        ctx.fillStyle = 'rgba(0,0,0,0.26)';
+        const n = Math.round(spotsP * 6);
+        for (let i = 0; i < n; i++) {
+          const a = i * 2.39996;
+          const rr = r * (0.2 + ((i * 7) % 10) / 16);
+          ctx.beginPath();
+          ctx.arc(cx + Math.cos(a) * rr, cy + Math.sin(a) * rr, r * 0.17, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+      ctx.restore();
     }
 
-    if (watered) {
-      ctx.fillStyle = '#5ba8d8';
-      ctx.beginPath();
-      ctx.arc(cx + ts * 0.26, cy - ts * 0.24, ts * 0.07, 0, Math.PI * 2);
-      ctx.fill();
+    if (ripe) {
+      this._fruitPath(ctx, cx, cy, r, shapeIdx);
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 1.4;
+      ctx.stroke();
     }
   }
 

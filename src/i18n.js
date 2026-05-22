@@ -275,6 +275,18 @@ const STRINGS = {
     'tips.6': 'Idle colonists hunt boar on their own once colony food runs low (toggle Auto-hunt).',
     'tips.7': 'Use the Cancel tool to call off planned tasks you no longer want.',
     'tips.8': 'The first goal is to survive one full year — stockpile food and firewood for the cold.',
+
+    'tip.look': 'look: {desc}',
+    'look.shape.0': 'round',
+    'look.shape.1': 'oval',
+    'look.shape.2': 'tall',
+    'look.shape.3': 'lobed',
+    'look.leaf.0': 'broad leaf',
+    'look.leaf.1': 'narrow leaf',
+    'look.leaf.2': 'serrated leaf',
+    'look.surface.0': 'smooth',
+    'look.surface.1': 'ridged',
+    'look.surface.2': 'fuzzy',
   },
 
   ja: {
@@ -548,6 +560,18 @@ const STRINGS = {
     'tips.6': '食料が尽きかけると、手すきのコロニストが自分でイノシシを狩ります（自動で狩りトグル）。',
     'tips.7': 'いらなくなった予定タスクは、キャンセルツールで取り消せます。',
     'tips.8': '最初の目標は1年の生存 — 寒さに備えて食料と薪を蓄えましょう。',
+
+    'tip.look': '見た目: {desc}',
+    'look.shape.0': '丸',
+    'look.shape.1': '楕円',
+    'look.shape.2': '縦長',
+    'look.shape.3': '双子',
+    'look.leaf.0': '広葉',
+    'look.leaf.1': '細葉',
+    'look.leaf.2': 'ギザ葉',
+    'look.surface.0': 'つるつる',
+    'look.surface.1': 'うね',
+    'look.surface.2': '毛羽',
   },
 };
 

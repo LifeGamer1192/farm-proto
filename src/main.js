@@ -13,7 +13,8 @@ import {
   qualityRank,
   RANK_MAX,
   phenotype,
-  GENE_IDS,
+  QUALITY_GENES,
+  partIndex,
   survivalGeneBonus,
 } from './genetics.js';
 import { tempGrowthFactor, sunGrowthFactor } from './season.js';
@@ -242,13 +243,13 @@ function updateSeedPanel() {
   }).join('');
 }
 
-// Variety codex: per crop, the best variety bred so far — its ★ rank and a
-// bar per gene, with a notch marking the origin strain's value.
+// Variety codex: per crop, a picture of the best variety bred so far, its
+// ★ rank, and a bar per gameplay gene with a notch marking the origin.
 function updateCodexPanel() {
-  const legend = GENE_IDS.map((g) => t('gene.' + g)).join(' · ');
+  const legend = QUALITY_GENES.map((g) => t('gene.' + g)).join(' · ');
   const rows = CROP_IDS.map((id) => {
     const c = game.codex[id];
-    const genes = GENE_IDS.map((gid) => {
+    const genes = QUALITY_GENES.map((gid) => {
       const cur = Math.round(phenotype(c.best, gid) * 100);
       const org = Math.round(phenotype(c.origin, gid) * 100);
       return (
@@ -257,13 +258,19 @@ function updateCodexPanel() {
       );
     }).join('');
     return (
-      `<div class="codex-row"><div class="codex-head">` +
+      `<div class="codex-row">` +
+      `<canvas class="codex-preview" data-crop="${id}" width="48" height="48"></canvas>` +
+      `<div class="codex-info"><div class="codex-head">` +
       `<span class="codex-crop">${t('crop.' + id)}</span>` +
       `<span class="codex-rank">${'★'.repeat(qualityRank(c.best))}</span></div>` +
-      `<div class="codex-genes">${genes}</div></div>`
+      `<div class="codex-genes">${genes}</div></div></div>`
     );
   }).join('');
   codexEl.innerHTML = `<p class="codex-legend">${legend}</p>${rows}`;
+  for (const cv of codexEl.querySelectorAll('canvas.codex-preview')) {
+    const id = cv.dataset.crop;
+    game.renderer.drawCropPreview(cv.getContext('2d'), cv.width, cv.height, id, game.codex[id].best);
+  }
 }
 
 // The activity log keeps up to ~1000 events. It re-renders only when an
@@ -379,7 +386,13 @@ function describePlant(plant) {
   else if (isRipe(plant)) status = t('tip.ripe');
   else status = `${Math.round(plant.growth * 100)}%`;
   let line = t('tip.crop', { crop: t('crop.' + plant.cropId), status });
-  if (plant.genome && !plant.withered) line += ` ${'★'.repeat(qualityRank(plant.genome))}`;
+  if (plant.genome && !plant.withered) {
+    line += ` ${'★'.repeat(qualityRank(plant.genome))}`;
+    const shape = t('look.shape.' + partIndex(plant.genome, 'shape', 4));
+    const leaf = t('look.leaf.' + partIndex(plant.genome, 'leaf', 3));
+    const surface = t('look.surface.' + partIndex(plant.genome, 'surface', 3));
+    line += `<br>${t('tip.look', { desc: `${shape} · ${leaf} · ${surface}` })}`;
+  }
   return `<br>${line}`;
 }
 
