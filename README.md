@@ -130,6 +130,24 @@ and surviving the winter.
   contents, whether a hearth is lit), alongside the terrain readout
 - The activity log keeps a much longer history — scroll back ~1000 events
 
+### Alpha 12 — genetics & mutation
+
+- Every crop and seed now carries a **genome** — five genes (hardiness,
+  yield, vigor, cold-hardiness, hue), each a pair of alleles with
+  dominant/recessive expression
+- Crops planted next to each other **cross-pollinate**: the seeds from a
+  harvest mix the genes of the harvested crop and an adjacent same-crop
+  neighbour (or self-pollinate if it stands alone)
+- **Mutation** nudges alleles when seeds are bred, and rare "legendary"
+  mutations make a large jump — the source of brand-new traits
+- Genes drive the game: hardiness lifts survival odds (a well-bred strain
+  can reach ~80–90%), yield swells the harvest and the fruit, vigor
+  speeds growth, cold-hardiness keeps crops growing in poor weather
+- The ripe fruit's **colour** shifts with the hue gene — bred varieties
+  look different on the map
+- A new **Variety codex** panel tracks the best variety bred for each
+  crop, gene by gene, against the origin strain
+
 ## Version archive
 
 Every released version stays playable. The live site links to an

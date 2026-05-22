@@ -124,11 +124,10 @@ export const AUTO_HUNT_RANGE = 9; // tiles — an idle colonist auto-hunts boar 
 export const HUNT_FOOD_PER_HEAD = 3; // auto-hunt starts below this much food per colonist
 export const MEAL_TARGET = 6; // colonists auto-cook until this many meals are stocked
 
-// --- seeds & crop quality (alpha 11) -------------------------------------
+// --- seeds, crop quality & genetics (alpha 11–12) ------------------------
 
 export const SEED_START_COUNT = 12; // seeds per crop the colony begins with
-export const SEED_START_RANK = 2; // quality rank (★) of those starting seeds
-export const SEEDS_PER_HARVEST = 2; // seeds gathered from one ripe crop
+export const SEEDS_PER_HARVEST = 2; // seeds bred from one ripe crop
 
 // --- stockpiles & hauling (alpha 11) -------------------------------------
 

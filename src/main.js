@@ -8,14 +8,14 @@ import {
   STOCKPILE_CAP,
 } from './config.js';
 import { hashSeed, randomSeed } from './core/rng.js';
+import { isRipe, cropSuitability, survivalChance, getCrop, CROP_IDS } from './crops.js';
 import {
-  isRipe,
-  cropSuitability,
-  survivalChance,
-  getCrop,
-  CROP_IDS,
-  rankSurvivalBonus,
-} from './crops.js';
+  qualityRank,
+  RANK_MAX,
+  phenotype,
+  GENE_IDS,
+  survivalGeneBonus,
+} from './genetics.js';
 import { tempGrowthFactor, sunGrowthFactor } from './season.js';
 import { t, setLang, getLang } from './i18n.js';
 import { Game, STOCKPILE_ITEMS } from './game.js';
@@ -36,6 +36,7 @@ const taskStatsEl = $('task-stats');
 const taskReasonEl = $('task-reason');
 const colonyStatsEl = $('colony-stats');
 const seedStockEl = $('seed-stock');
+const codexEl = $('codex');
 const logEl = $('event-log');
 const legendEl = $('legend');
 const gameoverEl = $('gameover');
@@ -197,14 +198,15 @@ function updateColonyStats() {
   ]);
 }
 
-// Seed stock: each crop's seeds grouped by quality rank (★).
+// Seed stock: each crop's seeds bucketed by quality rank (★).
 function updateSeedPanel() {
   seedStockEl.innerHTML = CROP_IDS.map((id) => {
-    const stock = game.seeds[id];
+    const buckets = new Array(RANK_MAX + 1).fill(0);
+    for (const seed of game.seeds[id]) buckets[qualityRank(seed.genome)]++;
     let chips = '';
-    for (let r = 1; r < stock.length; r++) {
-      if (stock[r] > 0) {
-        chips += `<span class="seed-chip">${'★'.repeat(r)}<b>×${stock[r]}</b></span>`;
+    for (let r = 1; r <= RANK_MAX; r++) {
+      if (buckets[r] > 0) {
+        chips += `<span class="seed-chip">${'★'.repeat(r)}<b>×${buckets[r]}</b></span>`;
       }
     }
     if (!chips) chips = `<span class="seed-none">${t('val.none')}</span>`;
@@ -213,6 +215,30 @@ function updateSeedPanel() {
       `<span class="seed-chips">${chips}</span></div>`
     );
   }).join('');
+}
+
+// Variety codex: per crop, the best variety bred so far — its ★ rank and a
+// bar per gene, with a notch marking the origin strain's value.
+function updateCodexPanel() {
+  const legend = GENE_IDS.map((g) => t('gene.' + g)).join(' · ');
+  const rows = CROP_IDS.map((id) => {
+    const c = game.codex[id];
+    const genes = GENE_IDS.map((gid) => {
+      const cur = Math.round(phenotype(c.best, gid) * 100);
+      const org = Math.round(phenotype(c.origin, gid) * 100);
+      return (
+        `<span class="gene-cell" title="${t('gene.' + gid)}: ${cur}% (origin ${org}%)">` +
+        `<i style="width:${cur}%"></i><u style="left:${org}%"></u></span>`
+      );
+    }).join('');
+    return (
+      `<div class="codex-row"><div class="codex-head">` +
+      `<span class="codex-crop">${t('crop.' + id)}</span>` +
+      `<span class="codex-rank">${'★'.repeat(qualityRank(c.best))}</span></div>` +
+      `<div class="codex-genes">${genes}</div></div>`
+    );
+  }).join('');
+  codexEl.innerHTML = `<p class="codex-legend">${legend}</p>${rows}`;
 }
 
 // The activity log keeps up to ~1000 events. It re-renders only when an
@@ -256,6 +282,7 @@ function refreshPanels() {
   updateTaskPanel();
   updateColonyStats();
   updateSeedPanel();
+  updateCodexPanel();
   updateLog();
   updateEnvPanel();
   updateLegend();
@@ -315,7 +342,7 @@ function describePlant(plant) {
   else if (isRipe(plant)) status = t('tip.ripe');
   else status = `${Math.round(plant.growth * 100)}%`;
   let line = t('tip.crop', { crop: t('crop.' + plant.cropId), status });
-  if (plant.seedRank && !plant.withered) line += ` ${'★'.repeat(plant.seedRank)}`;
+  if (plant.genome && !plant.withered) line += ` ${'★'.repeat(qualityRank(plant.genome))}`;
   return `<br>${line}`;
 }
 
@@ -359,12 +386,12 @@ function sowHint(tile) {
   if (!game.canSow(cropId)) {
     return `<br>${t('tip.noSeed', { crop: t('crop.' + cropId) })}`;
   }
-  const rank = game.bestSeedRank(cropId);
-  const bonus = (tile.tilled ? TILL_SURVIVAL_BONUS : 0) + rankSurvivalBonus(rank);
+  const seed = game.bestSeed(cropId);
+  const bonus = (tile.tilled ? TILL_SURVIVAL_BONUS : 0) + survivalGeneBonus(seed.genome);
   const chance = survivalChance(cropSuitability(getCrop(cropId), tile), bonus);
   return `<br>${t('tip.sowHere', {
     crop: t('crop.' + cropId),
-    rank: '★'.repeat(rank),
+    rank: '★'.repeat(qualityRank(seed.genome)),
     n: Math.round(chance * 100),
   })}`;
 }
@@ -698,6 +725,7 @@ setInterval(() => {
   updateTaskPanel();
   updateColonyStats();
   updateSeedPanel();
+  updateCodexPanel();
   updateLog();
   updateEnvPanel();
   updateMapStats();

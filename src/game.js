@@ -47,7 +47,6 @@ import {
   HUNT_FOOD_PER_HEAD,
   MEAL_TARGET,
   SEED_START_COUNT,
-  SEED_START_RANK,
   SEEDS_PER_HARVEST,
   STOCKPILE_CAP,
   ON_HAND_CAP,
@@ -62,18 +61,17 @@ import { Colonist } from './entities/colonist.js';
 import { Animal } from './entities/animal.js';
 import { TaskType, WORK_TYPES, createTask } from './tasks.js';
 import { scatterPlants, PlantKind } from './world.js';
+import { getCrop, cropSuitability, survivalChance, isRipe, CROP_IDS } from './crops.js';
 import {
-  getCrop,
-  cropSuitability,
-  survivalChance,
-  isRipe,
-  CROP_IDS,
-  MIN_RANK,
-  MAX_RANK,
-  rankSurvivalBonus,
-  rankYield,
-  harvestSeedRank,
-} from './crops.js';
+  freshGenome,
+  crossGenomes,
+  qualityRank,
+  genomeQuality,
+  survivalGeneBonus,
+  yieldMult,
+  vigorMult,
+  coldGrowthFactor,
+} from './genetics.js';
 import {
   clockInfo,
   temperatureAt,
@@ -125,8 +123,10 @@ export class Game {
     // The colony's on-hand store — freshly gathered goods. Pests gnaw at it;
     // colonists haul surplus food into stockpiles, the safe vaults.
     this.storage = { forage: 0, wheat: 0, potato: 0, bean: 0, meat: 0, wood: 0, meal: 0 };
-    // Seed stock per crop — counts indexed by quality rank (1..MAX_RANK).
+    // Seed stock per crop — a list of seed objects, each carrying a genome.
     this.seeds = this._freshSeeds();
+    // Codex: the origin strain and the best variety bred so far, per crop.
+    this.codex = this._freshCodex();
     this.meals = { eaten: 0, missed: 0 };
     this.cropsLost = 0;
     this.pestsLost = 0;
@@ -167,16 +167,37 @@ export class Game {
     return n;
   }
 
-  // A fresh seed stock: SEED_START_COUNT seeds of each crop at the start rank.
-  // Each crop's array is indexed by rank (index 0 unused, 1..MAX_RANK in use).
+  // A fresh seed stock: SEED_START_COUNT seeds of each crop, each an
+  // individual carrying its own (slightly varied) starting genome.
   _freshSeeds() {
     const stock = {};
     for (const id of CROP_IDS) {
-      const ranks = new Array(MAX_RANK + 1).fill(0);
-      ranks[SEED_START_RANK] = SEED_START_COUNT;
-      stock[id] = ranks;
+      const list = [];
+      for (let i = 0; i < SEED_START_COUNT; i++) list.push({ genome: freshGenome() });
+      stock[id] = list;
     }
     return stock;
+  }
+
+  // A fresh codex: per crop the origin strain (a starting seed) and the best
+  // variety bred so far (begins as the best of the starting seeds).
+  _freshCodex() {
+    const codex = {};
+    for (const id of CROP_IDS) {
+      const list = this.seeds[id];
+      let best = list[0].genome;
+      for (const s of list) {
+        if (genomeQuality(s.genome) > genomeQuality(best)) best = s.genome;
+      }
+      codex[id] = { origin: list[0].genome, best };
+    }
+    return codex;
+  }
+
+  // Note in the codex if this genome is the best variety of its crop yet.
+  _recordCodex(cropId, genome) {
+    const c = this.codex[cropId];
+    if (c && genomeQuality(genome) > genomeQuality(c.best)) c.best = genome;
   }
 
   _freshStockpileItems() {
@@ -185,21 +206,27 @@ export class Game {
     return items;
   }
 
-  /** Total seeds of a crop, across every quality rank. */
+  /** Number of seeds of a crop in stock. */
   seedCount(cropId) {
     const s = this.seeds[cropId];
-    if (!s) return 0;
-    let n = 0;
-    for (let r = MIN_RANK; r <= MAX_RANK; r++) n += s[r];
-    return n;
+    return s ? s.length : 0;
   }
 
-  /** Highest seed rank in stock for a crop, or 0 if there are none. */
-  bestSeedRank(cropId) {
+  // The best (highest-quality) seed of a crop in stock, or null.
+  bestSeed(cropId) {
     const s = this.seeds[cropId];
-    if (!s) return 0;
-    for (let r = MAX_RANK; r >= MIN_RANK; r--) if (s[r] > 0) return r;
-    return 0;
+    if (!s || s.length === 0) return null;
+    let best = s[0];
+    for (const seed of s) {
+      if (genomeQuality(seed.genome) > genomeQuality(best.genome)) best = seed;
+    }
+    return best;
+  }
+
+  /** Quality rank ★ of the best seed of a crop, or 0 if there are none. */
+  bestSeedRank(cropId) {
+    const seed = this.bestSeed(cropId);
+    return seed ? qualityRank(seed.genome) : 0;
   }
 
   // Sow tasks for a crop already lined up — queued plus in colonists' hands.
@@ -220,28 +247,57 @@ export class Game {
     return this.seedCount(cropId) > this._pendingSows(cropId);
   }
 
-  // Remove the best-quality seed of a crop and return its rank (0 if none).
+  // Remove and return the best-quality seed of a crop (null if there are none).
   _takeSeed(cropId) {
+    const seed = this.bestSeed(cropId);
+    if (!seed) return null;
+    const list = this.seeds[cropId];
+    list.splice(list.indexOf(seed), 1);
+    return seed;
+  }
+
+  // Add a bred seed to a crop's stock and record it in the codex.
+  _addSeed(cropId, genome) {
     const s = this.seeds[cropId];
-    if (!s) return 0;
-    for (let r = MAX_RANK; r >= MIN_RANK; r--) {
-      if (s[r] > 0) {
-        s[r]--;
-        return r;
+    if (s) {
+      s.push({ genome });
+      this._recordCodex(cropId, genome);
+    }
+  }
+
+  // The same-crop plant pollinating `plant` from an adjacent tile, if any —
+  // the second parent for the seeds a harvest breeds.
+  _pollenSource(plant) {
+    const mates = [];
+    for (let dy = -1; dy <= 1; dy++) {
+      const row = this.map.tiles[plant.y + dy];
+      if (!row) continue;
+      for (let dx = -1; dx <= 1; dx++) {
+        if (dx === 0 && dy === 0) continue;
+        const p = row[plant.x + dx] && row[plant.x + dx].plant;
+        if (p && p.kind === PlantKind.CROP && !p.withered && p.cropId === plant.cropId) {
+          mates.push(p);
+        }
       }
     }
-    return 0;
+    return mates.length ? mates[(Math.random() * mates.length) | 0] : null;
   }
 
-  _addSeed(cropId, rank) {
-    const s = this.seeds[cropId];
-    if (s) s[rank] += 1;
-  }
-
-  // Bank SEEDS_PER_HARVEST seeds from a harvested crop; returns the count.
+  // Breed SEEDS_PER_HARVEST seeds from a harvested crop, crossing it with an
+  // adjacent same-crop plant (or self-pollinating). Returns the seed count.
   _gatherSeeds(plant) {
+    const mate = this._pollenSource(plant);
+    const otherGenome = mate ? mate.genome : plant.genome;
     for (let i = 0; i < SEEDS_PER_HARVEST; i++) {
-      this._addSeed(plant.cropId, harvestSeedRank(plant.seedRank, plant.suitability, Math.random()));
+      const child = crossGenomes(plant.genome, otherGenome);
+      this._addSeed(plant.cropId, child.genome);
+      if (child.legendary) {
+        this._pushLog({
+          icon: '✨',
+          text: t('log.mutation', { crop: t('crop.' + plant.cropId) }),
+          cls: 'log-meal',
+        });
+      }
     }
     return SEEDS_PER_HARVEST;
   }
@@ -328,6 +384,7 @@ export class Game {
     this.stockpiles = [];
     this.storage = { forage: 0, wheat: 0, potato: 0, bean: 0, meat: 0, wood: 0, meal: 0 };
     this.seeds = this._freshSeeds();
+    this.codex = this._freshCodex();
     this.meals = { eaten: 0, missed: 0 };
     this.cropsLost = 0;
     this.pestsLost = 0;
@@ -600,8 +657,9 @@ export class Game {
           task.outcome = 'cleared';
         } else {
           const crop = getCrop(plant.cropId);
-          const n = rankYield(crop.yield, plant.seedRank);
+          const n = Math.max(1, Math.round(crop.yield * yieldMult(plant.genome)));
           this.storage[plant.cropId] += n;
+          this._recordCodex(plant.cropId, plant.genome);
           const seeds = this._gatherSeeds(plant);
           task.outcome = 'harvested';
           task.outcomeData = { crop: plant.cropId, n, seeds };
@@ -615,14 +673,14 @@ export class Game {
       }
       tile.plant = null;
     } else if (task.type === TaskType.SOW) {
-      const seedRank = this._takeSeed(task.cropId);
-      if (seedRank === 0) {
+      const seed = this._takeSeed(task.cropId);
+      if (!seed) {
         task.outcome = 'noSeed';
         task.outcomeData = { crop: task.cropId };
       } else {
         const cropDef = getCrop(task.cropId);
         const suitability = cropSuitability(cropDef, tile);
-        const bonus = (tile.tilled ? TILL_SURVIVAL_BONUS : 0) + rankSurvivalBonus(seedRank);
+        const bonus = (tile.tilled ? TILL_SURVIVAL_BONUS : 0) + survivalGeneBonus(seed.genome);
         const doomed = Math.random() >= survivalChance(suitability, bonus);
         const crop = {
           kind: PlantKind.CROP,
@@ -631,7 +689,7 @@ export class Game {
           x: task.x,
           y: task.y,
           suitability,
-          seedRank,
+          genome: seed.genome,
           doomed,
           witherAt: doomed ? 0.3 + Math.random() * 0.5 : 1,
           withered: false,
@@ -640,7 +698,7 @@ export class Game {
         tile.plant = crop;
         this.crops.push(crop);
         task.outcome = 'sowed';
-        task.outcomeData = { crop: task.cropId, rank: seedRank };
+        task.outcomeData = { crop: task.cropId, rank: qualityRank(seed.genome) };
       }
     } else if (task.type === TaskType.TILL) {
       tile.tilled = true;
@@ -993,7 +1051,9 @@ export class Game {
     for (const crop of this.crops) {
       if (crop.withered) continue;
       const tile = this.map.tiles[crop.y][crop.x];
-      let rate = tempFactor * sunGrowthFactor(tile.sunlight, env.daylight);
+      // The cold gene keeps a crop growing in poor weather; vigor sets pace.
+      const tf = coldGrowthFactor(crop.genome, tempFactor);
+      let rate = tf * sunGrowthFactor(tile.sunlight, env.daylight) * vigorMult(crop.genome);
       if (this.clock < crop.wateredUntil) rate *= WATER_GROWTH_BONUS;
       crop.growth = Math.min(1, crop.growth + (dt / getCrop(crop.cropId).growthTime) * rate);
       if (crop.doomed && crop.growth >= crop.witherAt) {

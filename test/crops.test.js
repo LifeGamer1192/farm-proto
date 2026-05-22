@@ -11,11 +11,6 @@ import {
   isRipe,
   cropSuitability,
   survivalChance,
-  MIN_RANK,
-  MAX_RANK,
-  rankSurvivalBonus,
-  rankYield,
-  harvestSeedRank,
 } from '../src/crops.js';
 
 test('every crop id resolves to a crop with the required fields', () => {
@@ -70,37 +65,4 @@ test('survival chance rises with suitability and stays in 0..1', () => {
 test('a tilled-soil bonus raises the survival chance', () => {
   assert.ok(survivalChance(0.5, 0.15) > survivalChance(0.5));
   assert.ok(survivalChance(1, 0.15) <= 1);
-});
-
-test('rankSurvivalBonus is zero at rank 1 and rises with rank', () => {
-  assert.equal(rankSurvivalBonus(1), 0);
-  assert.ok(rankSurvivalBonus(3) > rankSurvivalBonus(1));
-  assert.ok(rankSurvivalBonus(5) > rankSurvivalBonus(3));
-});
-
-test('rankSurvivalBonus clamps ranks outside 1..5', () => {
-  assert.equal(rankSurvivalBonus(0), rankSurvivalBonus(MIN_RANK));
-  assert.equal(rankSurvivalBonus(99), rankSurvivalBonus(MAX_RANK));
-});
-
-test('rankYield grows with rank and never drops below 1', () => {
-  assert.equal(rankYield(4, 1), 4);
-  assert.ok(rankYield(4, 5) > rankYield(4, 1));
-  assert.ok(rankYield(1, 1) >= 1);
-});
-
-test('harvestSeedRank always returns an integer rank within 1..5', () => {
-  for (const roll of [0, 0.25, 0.5, 0.75, 0.999]) {
-    for (const parent of [1, 3, 5]) {
-      for (const suit of [0, 0.5, 1]) {
-        const r = harvestSeedRank(parent, suit, roll);
-        assert.ok(r >= MIN_RANK && r <= MAX_RANK, `rank ${r} out of range`);
-        assert.equal(r, Math.round(r), 'rank should be a whole number');
-      }
-    }
-  }
-});
-
-test('harvestSeedRank: a strong parent on rich soil yields better seed than a weak one on poor soil', () => {
-  assert.ok(harvestSeedRank(5, 1, 0.5) > harvestSeedRank(1, 0, 0.5));
 });

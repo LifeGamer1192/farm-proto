@@ -384,6 +384,66 @@ button.primary:hover {
   color: var(--muted);
 }
 
+/* Variety codex: the best bred variety of each crop, gene by gene. */
+.codex {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.codex-legend {
+  margin: 0;
+  font-size: 0.66rem;
+  color: var(--muted);
+}
+
+.codex-row {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.codex-head {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.78rem;
+}
+
+.codex-rank {
+  color: #e8c65a;
+  letter-spacing: -1px;
+}
+
+.codex-genes {
+  display: flex;
+  gap: 4px;
+}
+
+.gene-cell {
+  position: relative;
+  flex: 1;
+  height: 9px;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.gene-cell i {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, #4f8f5a, #79c98a);
+}
+
+.gene-cell u {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  margin-left: -1px;
+  background: rgba(255, 255, 255, 0.75);
+}
+
 /* Two stats per row to pack more information onto one screen. */
 .stats {
   margin: 0;

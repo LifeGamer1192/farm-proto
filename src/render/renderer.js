@@ -5,8 +5,44 @@ import { TileType } from '../map/tile.js';
 import { PlantKind } from '../world.js';
 import { TaskType, WORK_TYPES } from '../tasks.js';
 import { getCrop } from '../crops.js';
+import { phenotype } from '../genetics.js';
 
 const lerp = (a, b, t) => a + (b - a) * t;
+
+// Rotate a hex colour's hue by `deg` degrees — gives crops their genetic
+// fruit colour (the hue gene). Saturation and lightness are kept.
+function hueShift(hex, deg) {
+  const r = parseInt(hex.slice(1, 3), 16) / 255;
+  const g = parseInt(hex.slice(3, 5), 16) / 255;
+  const b = parseInt(hex.slice(5, 7), 16) / 255;
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  const l = (max + min) / 2;
+  const d = max - min;
+  const s = d === 0 ? 0 : d / (1 - Math.abs(2 * l - 1));
+  let h = 0;
+  if (d !== 0) {
+    if (max === r) h = (((g - b) / d) % 6 + 6) % 6;
+    else if (max === g) h = (b - r) / d + 2;
+    else h = (r - g) / d + 4;
+    h *= 60;
+  }
+  h = ((h + deg) % 360 + 360) % 360;
+  const c = (1 - Math.abs(2 * l - 1)) * s;
+  const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
+  const m = l - c / 2;
+  let rr = 0;
+  let gg = 0;
+  let bb = 0;
+  if (h < 60) [rr, gg, bb] = [c, x, 0];
+  else if (h < 120) [rr, gg, bb] = [x, c, 0];
+  else if (h < 180) [rr, gg, bb] = [0, c, x];
+  else if (h < 240) [rr, gg, bb] = [0, x, c];
+  else if (h < 300) [rr, gg, bb] = [x, 0, c];
+  else [rr, gg, bb] = [c, 0, x];
+  const to = (v) => Math.round((v + m) * 255);
+  return `rgb(${to(rr)},${to(gg)},${to(bb)})`;
+}
 
 function mix(c1, c2, t) {
   const r = Math.round(lerp(c1[0], c2[0], t));
@@ -376,10 +412,13 @@ export class Renderer {
     }
 
     if (g > 0.45) {
-      const r = ts * (0.05 + 0.18 * g);
+      // The yield gene swells the fruit; the hue gene tints it when ripe.
+      const yieldPheno = phenotype(plant.genome, 'yield');
+      const huePheno = phenotype(plant.genome, 'hue');
+      const r = ts * (0.05 + 0.18 * g) * (0.8 + yieldPheno * 0.5);
       ctx.beginPath();
       ctx.arc(cx, top, r, 0, Math.PI * 2);
-      ctx.fillStyle = ripe ? crop.ripeColor : crop.color;
+      ctx.fillStyle = ripe ? hueShift(crop.ripeColor, (huePheno - 0.47) * 220) : crop.color;
       ctx.fill();
       if (ripe) {
         ctx.strokeStyle = '#ffffff';

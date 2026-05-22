@@ -4,7 +4,7 @@
 
 const STRINGS = {
   en: {
-    'app.tagline': 'A colony of farmers — seasons, crops, seed quality and autonomous workers',
+    'app.tagline': 'A colony of farmers — seasons, crops, genetics and autonomous workers',
 
     'panel.season': 'Season',
     'panel.speedZoom': 'Speed & zoom',
@@ -108,7 +108,7 @@ const STRINGS = {
     'hint.task.harvest':
       'Harvest tool — click a ripe crop, wild plant or dead husk to gather or clear it. A ripe crop also yields seeds for next time.',
     'hint.task.sow':
-      'Sow tool — click tiles to plant the chosen crop. Each sow spends one seed; crops grown from higher-ranked seed (★) are hardier and yield more.',
+      'Sow tool — click tiles to plant the chosen crop. Each sow spends one seed. Plant crops next to each other and the seeds from a harvest cross-breed — traits mix and slowly improve.',
     'hint.task.till':
       'Till tool — click land to till the soil. Crops sown on tilled soil survive better.',
     'hint.task.water':
@@ -247,10 +247,19 @@ const STRINGS = {
     'tip.stored': '{n}/{cap} stored',
     'tip.hearthLit': 'lit',
     'tip.hearthUnlit': 'unlit — no firewood',
+
+    'gene.hardiness': 'Hardiness',
+    'gene.yield': 'Yield',
+    'gene.vigor': 'Vigor',
+    'gene.cold': 'Cold-hardy',
+    'gene.hue': 'Hue',
+    'panel.codex': 'Variety codex',
+    'codex.hint': 'Best variety bred so far — the notch marks the origin strain.',
+    'log.mutation': '{crop} — a rare mutation appeared!',
   },
 
   ja: {
-    'app.tagline': '農民のコロニー — 季節・作物・種の品質・自律して働く仲間たち',
+    'app.tagline': '農民のコロニー — 季節・作物・遺伝・自律して働く仲間たち',
 
     'panel.season': '季節',
     'panel.speedZoom': '速度・ズーム',
@@ -354,7 +363,7 @@ const STRINGS = {
     'hint.task.harvest':
       '収穫ツール — 熟した作物・野生植物・枯死株をクリックして収穫／撤去します。熟した作物からは次回用の種も採れます。',
     'hint.task.sow':
-      '種まきツール — タイルをクリックして選んだ作物を植えます。1回ごとに種を1つ消費。品質ランク（★）の高い種ほど丈夫でよく実ります。',
+      '種まきツール — タイルをクリックして選んだ作物を植えます。1回ごとに種を1つ消費。作物を隣り合わせて植えると収穫時に種が交配し、形質が混ざって少しずつ良くなります。',
     'hint.task.till':
       '耕すツール — 陸地をクリックして土を耕します。耕した土では作物が枯れにくくなります。',
     'hint.task.water':
@@ -492,6 +501,15 @@ const STRINGS = {
     'tip.stored': '収納 {n}/{cap}',
     'tip.hearthLit': '点火中',
     'tip.hearthUnlit': '消火 — 薪がない',
+
+    'gene.hardiness': '耐性',
+    'gene.yield': '収量',
+    'gene.vigor': '成長',
+    'gene.cold': '耐寒',
+    'gene.hue': '色',
+    'panel.codex': '品種図鑑',
+    'codex.hint': '育成した最良品種 — 目盛りは初代の値です。',
+    'log.mutation': '{crop} — 珍しい突然変異が現れた！',
   },
 };
 
