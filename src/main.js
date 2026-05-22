@@ -15,6 +15,9 @@ import { Game } from './game.js';
 const canvas = document.getElementById('map');
 const game = new Game(canvas);
 
+// Exposed for debugging and headless checks; harmless in production.
+window.game = game;
+
 const $ = (id) => document.getElementById(id);
 const seedInput = $('seed');
 const tooltip = $('tooltip');
@@ -26,6 +29,7 @@ const taskReasonEl = $('task-reason');
 const colonyStatsEl = $('colony-stats');
 const logEl = $('event-log');
 const legendEl = $('legend');
+const gameoverEl = $('gameover');
 const viewModesEl = $('view-modes');
 const toolsEl = $('tools');
 const cropsEl = $('crops');
@@ -113,11 +117,31 @@ function updateMapStats() {
   ]);
 }
 
-function updateColonistsPanel() {
-  renderRows(
-    colonistsEl,
-    game.colonists.map((c) => [c.name, t('state.' + c.state)]),
+// A thin 0..1 bar; green when comfortable, red when the stat runs low.
+function statBar(key, value) {
+  const pct = Math.max(0, Math.min(100, Math.round(value * 100)));
+  const cls = value > 0.5 ? 'good' : value > 0.25 ? 'mid' : 'low';
+  return (
+    `<span class="cbar" title="${t(key)} ${pct}%">` +
+    `<b class="${cls}" style="width:${pct}%"></b></span>`
   );
+}
+
+function updateColonistsPanel() {
+  colonistsEl.innerHTML = game.colonists
+    .map((c) => {
+      const bars =
+        statBar('stat.fed', 1 - c.hunger) +
+        statBar('stat.health', c.health) +
+        statBar('stat.mood', c.mood);
+      return (
+        '<div class="colonist-row">' +
+        `<div class="crow-head"><span>${c.name}</span>` +
+        `<span class="cstate">${t('state.' + c.state)}</span></div>` +
+        `<div class="crow-bars">${bars}</div></div>`
+      );
+    })
+    .join('');
 }
 
 function updateTaskPanel() {
@@ -134,6 +158,7 @@ function updateColonyStats() {
     [t('stat.foodStored'), game.totalFood],
     [t('stat.harvest'), `${s.wheat} / ${s.potato} / ${s.bean}`],
     [t('stat.forage'), s.forage],
+    [t('stat.meat'), s.meat],
     [t('stat.cropsLost'), game.cropsLost],
     [t('stat.meals'), game.meals.eaten],
     [t('stat.missed'), game.meals.missed],
@@ -406,6 +431,10 @@ $('clear-tasks').addEventListener('click', () => {
   game.clearTasks();
   updateTaskPanel();
 });
+$('gameover-new').addEventListener('click', () => {
+  newMap(randomSeed());
+  gameoverEl.hidden = true;
+});
 
 // --- start ----------------------------------------------------------------
 
@@ -419,6 +448,7 @@ setInterval(() => {
   updateColonyStats();
   updateEnvPanel();
   updateMapStats();
+  if (gameoverEl.hidden === game.over) gameoverEl.hidden = !game.over;
   const season = game.consumeSeasonChange();
   if (season) showToast(t('note.' + season));
 }, 150);

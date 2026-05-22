@@ -1,10 +1,11 @@
-// The game: owns the map, camera, colonists, task queue, crops and food
-// store, and runs the frame loop.
+// The game: owns the map, camera, colonists, animals, task queue, crops
+// and food store, and runs the frame loop.
 //
-// Several colonists share one work queue. Each colonist runs a small
-// priority AI: eat when due, else take queued work, else do a personal
-// task (rest / leisure / sleep). Game speed scales the simulation; map
-// zoom changes the tile size.
+// Several colonists share one work queue. Each runs a small priority AI:
+// eat when hungry, else take queued work (a miserable colonist may slack),
+// else do a personal task. Wild animals stroll the map and harry the
+// colonists; colonists can hunt them. If every colonist falls, the colony
+// is lost.
 
 import {
   GRID_COLS,
@@ -17,18 +18,26 @@ import {
   DEFAULT_SPEED,
   CAMERA_SPEED,
   TASK_LOG_SIZE,
-  EAT_INTERVAL,
   COLONIST_COUNT,
   COLONIST_NAMES,
   TILL_SURVIVAL_BONUS,
   WATER_DURATION,
   WATER_GROWTH_BONUS,
+  EAT_THRESHOLD,
+  EAT_RETRY,
+  ANIMAL_COUNT,
+  ANIMAL_DAMAGE,
+  ANIMAL_ATTACK_INTERVAL,
+  ANIMAL_ATTACK_RANGE,
+  HUNT_RANGE,
+  MEAT_YIELD,
 } from './config.js';
 import { generateMap, mapStats } from './map/mapGenerator.js';
 import { TileType } from './map/tile.js';
 import { Camera } from './render/camera.js';
 import { Renderer } from './render/renderer.js';
 import { Colonist } from './entities/colonist.js';
+import { Animal } from './entities/animal.js';
 import { TaskType, WORK_TYPES, createTask } from './tasks.js';
 import { scatterPlants, PlantKind } from './world.js';
 import { getCrop, cropSuitability, survivalChance } from './crops.js';
@@ -42,7 +51,7 @@ import {
 } from './season.js';
 import { t } from './i18n.js';
 
-const FOOD_TYPES = ['forage', 'wheat', 'potato', 'bean'];
+const FOOD_TYPES = ['forage', 'wheat', 'potato', 'bean', 'meat'];
 
 export class Game {
   constructor(canvas) {
@@ -63,11 +72,13 @@ export class Game {
     this.map = null;
     this.camera = null;
     this.colonists = [];
+    this.animals = [];
     this.stats = null;
+    this.over = false;
 
     this.taskQueue = [];
     this.crops = [];
-    this.storage = { forage: 0, wheat: 0, potato: 0, bean: 0 };
+    this.storage = { forage: 0, wheat: 0, potato: 0, bean: 0, meat: 0 };
     this.meals = { eaten: 0, missed: 0 };
     this.cropsLost = 0;
     this.log = [];
@@ -90,12 +101,11 @@ export class Game {
   get totalFood() {
     return FOOD_TYPES.reduce((sum, ft) => sum + this.storage[ft], 0);
   }
-  // Colonists not currently on a personal idle task.
+  // Colonists currently on a player work task.
   get busyColonists() {
-    return this.colonists.filter((c) => {
-      const ty = c.currentTask && c.currentTask.type;
-      return WORK_TYPES.includes(ty);
-    }).length;
+    return this.colonists.filter(
+      (c) => c.currentTask && WORK_TYPES.includes(c.currentTask.type),
+    ).length;
   }
 
   _viewCols() {
@@ -105,7 +115,7 @@ export class Game {
     return Math.round(CANVAS_H / this.tileSize);
   }
 
-  /** Generate a fresh map, scatter plants, and place the colonists. */
+  /** Generate a fresh map, scatter plants, and place colonists and animals. */
   newMap(seed) {
     this.map = generateMap(GRID_COLS, GRID_ROWS, seed);
     scatterPlants(this.map);
@@ -116,13 +126,17 @@ export class Game {
     this.colonists = spawns.map(
       (s, i) => new Colonist(s.x, s.y, COLONIST_NAMES[i] || `C${i + 1}`),
     );
+    this.animals = this._randomLandTiles(ANIMAL_COUNT).map(
+      (s, i) => new Animal(s.x, s.y, i + 1),
+    );
     this.camera.centerOn(spawns[0].x + 0.5, spawns[0].y + 0.5);
 
     this.taskQueue = [];
     this.crops = [];
-    this.storage = { forage: 0, wheat: 0, potato: 0, bean: 0 };
+    this.storage = { forage: 0, wheat: 0, potato: 0, bean: 0, meat: 0 };
     this.meals = { eaten: 0, missed: 0 };
     this.cropsLost = 0;
+    this.over = false;
     this.log = [];
     this.lastAssignReason = t('reason.start');
     this.hover = null;
@@ -152,6 +166,18 @@ export class Game {
     return spawns;
   }
 
+  // n random land tiles anywhere on the map (for scattering animals).
+  _randomLandTiles(n) {
+    const tiles = [];
+    let guard = 0;
+    while (tiles.length < n && guard++ < 4000) {
+      const x = (Math.random() * this.map.cols) | 0;
+      const y = (Math.random() * this.map.rows) | 0;
+      if (this.map.tiles[y][x].type === TileType.LAND) tiles.push({ x, y });
+    }
+    return tiles;
+  }
+
   setSpeed(index) {
     this.speedIndex = Math.max(0, Math.min(SPEED_LEVELS.length - 1, index));
   }
@@ -167,7 +193,6 @@ export class Game {
     if (c) this.camera.centerOn(c.x + 0.5, c.y + 0.5);
   }
 
-  // Recompute the calendar and weather from the clock.
   _updateEnvironment() {
     const info = clockInfo(this.clock);
     info.temperature = temperatureAt(info.yearProgress);
@@ -181,6 +206,20 @@ export class Game {
     return s;
   }
 
+  // The animal nearest to a tile, within `range` tiles (or null).
+  _animalNear(x, y, range) {
+    let best = range;
+    let found = null;
+    for (const a of this.animals) {
+      const d = Math.hypot(a.x - x, a.y - y);
+      if (d <= best) {
+        best = d;
+        found = a;
+      }
+    }
+    return found;
+  }
+
   /** Queue a work task at a tile, if it makes sense there. */
   enqueueTask(type, x, y, cropId = null) {
     const tile = this.map.tiles[y] && this.map.tiles[y][x];
@@ -192,6 +231,14 @@ export class Game {
     if (type === TaskType.WATER) {
       const p = tile.plant;
       if (!p || p.kind !== PlantKind.CROP || p.withered) return false;
+    }
+    if (type === TaskType.HUNT) {
+      const animal = this._animalNear(x, y, 1.6);
+      if (!animal) return false;
+      this.taskQueue.push(
+        createTask(TaskType.HUNT, animal.tileX, animal.tileY, null, animal.id),
+      );
+      return true;
     }
     this.taskQueue.push(createTask(type, x, y, cropId));
     return true;
@@ -212,6 +259,7 @@ export class Game {
     const d = task.outcomeData;
     if (d) {
       if (d.crop) params.crop = t('crop.' + d.crop);
+      if (d.animal) params.animal = t('animal.' + d.animal);
       if (d.n !== undefined) params.n = d.n;
     }
     return t('out.' + (task.outcome || 'arrived'), params);
@@ -221,17 +269,16 @@ export class Game {
   _logWorkTask(task) {
     if (!WORK_TYPES.includes(task.type)) return;
     const where = `${t('task.' + task.type)} (${task.x}, ${task.y})`;
-    const text = `${where} — ${this._outcomeText(task)}`;
     this._pushLog({
       icon: task.status === 'done' ? '✓' : '✗',
-      text,
+      text: `${where} — ${this._outcomeText(task)}`,
       cls: task.status === 'done' ? 'log-ok' : 'log-fail',
     });
   }
 
   // Feed a colonist from the shared store (called when an eat task ends).
   _feed(colonist) {
-    colonist.eatTimer = 0;
+    colonist.eatCooldown = EAT_RETRY;
     let pick = null;
     for (const ft of FOOD_TYPES) {
       if (this.storage[ft] > 0 && (pick === null || this.storage[ft] > this.storage[pick])) {
@@ -240,6 +287,7 @@ export class Game {
     }
     if (pick) {
       this.storage[pick] -= 1;
+      colonist.hunger = 0;
       this.meals.eaten += 1;
       this._pushLog({ icon: '🍴', text: t('log.ate', { name: colonist.name }), cls: 'log-meal' });
     } else {
@@ -303,6 +351,17 @@ export class Game {
         p.wateredUntil = this.clock + WATER_DURATION;
       }
       task.outcome = 'watered';
+    } else if (task.type === TaskType.HUNT) {
+      const idx = this.animals.findIndex((a) => a.id === task.animalId);
+      const a = idx >= 0 ? this.animals[idx] : null;
+      if (a && Math.hypot(a.x - task.x, a.y - task.y) <= HUNT_RANGE) {
+        this.animals.splice(idx, 1);
+        this.storage.meat += MEAT_YIELD;
+        task.outcome = 'hunted';
+        task.outcomeData = { animal: 'boar', n: MEAT_YIELD };
+      } else {
+        task.outcome = 'gotAway';
+      }
     } else if (task.type === TaskType.EAT) {
       this._feed(colonist);
     } else {
@@ -312,10 +371,12 @@ export class Game {
 
   // Priority AI: decide a colonist's next task.
   _assignColonist(colonist) {
-    if (colonist.eatTimer >= EAT_INTERVAL) {
+    if (colonist.hunger >= EAT_THRESHOLD && colonist.eatCooldown <= 0) {
       return createTask(TaskType.EAT, colonist.tileX, colonist.tileY);
     }
-    if (this.taskQueue.length > 0) {
+    // A content colonist works; a miserable one may slack off instead.
+    const willWork = colonist.mood >= 0.3 || Math.random() < 0.5;
+    if (this.taskQueue.length > 0 && willWork) {
       const task = this.taskQueue.shift();
       this.lastAssignReason = t('reason.queued', {
         task: t('task.' + task.type),
@@ -360,8 +421,44 @@ export class Game {
       }
       c.update(dt);
     }
+    // Carry off the fallen.
+    if (this.colonists.some((c) => c.dead)) {
+      for (const c of this.colonists) {
+        if (c.dead) {
+          this._pushLog({ icon: '☠', text: t('log.died', { name: c.name }), cls: 'log-fail' });
+        }
+      }
+      this.colonists = this.colonists.filter((c) => !c.dead);
+      if (this.colonists.length === 0) this.over = true;
+    }
     if (this.taskQueue.length === 0 && this.busyColonists === 0) {
       this.lastAssignReason = t('reason.idle');
+    }
+  }
+
+  // Animals stroll, and on a cooldown harry a nearby colonist.
+  _updateAnimals(dt) {
+    for (const a of this.animals) {
+      a.update(dt, this.map);
+      if (a.attackCooldown > 0) continue;
+      let victim = null;
+      let best = ANIMAL_ATTACK_RANGE;
+      for (const c of this.colonists) {
+        const d = Math.hypot(c.x - a.x, c.y - a.y);
+        if (d < best) {
+          best = d;
+          victim = c;
+        }
+      }
+      if (victim) {
+        victim.hurt(ANIMAL_DAMAGE);
+        a.attackCooldown = ANIMAL_ATTACK_INTERVAL;
+        this._pushLog({
+          icon: '⚔',
+          text: t('log.attacked', { animal: t('animal.boar'), name: victim.name }),
+          cls: 'log-warn',
+        });
+      }
     }
   }
 
@@ -418,6 +515,7 @@ export class Game {
       this._seasonEvent = this.environment.season;
     }
     this._updateColonists(simDt);
+    this._updateAnimals(simDt);
     this._growCrops(simDt);
   }
 
@@ -427,6 +525,7 @@ export class Game {
       camera: this.camera,
       mode: this.viewMode,
       colonists: this.colonists,
+      animals: this.animals,
       hover: this.hover,
       taskQueue: this.taskQueue,
       tileSize: this.tileSize,

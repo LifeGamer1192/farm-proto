@@ -109,3 +109,45 @@ test('an unreachable task fails', () => {
   assert.equal(task.status, 'failed');
   assert.equal(task.outcome, 'unreachable');
 });
+
+// --- survival stats (alpha 7) --------------------------------------------
+
+test('a colonist grows hungrier as time passes', () => {
+  const c = new Colonist(0, 0, 'A');
+  const before = c.hunger;
+  simulate(c, 10);
+  assert.ok(c.hunger > before);
+});
+
+test('a starving colonist loses health', () => {
+  const c = new Colonist(0, 0, 'A');
+  c.hunger = 1;
+  simulate(c, 5);
+  assert.ok(c.health < 1);
+});
+
+test('a well-fed colonist recovers lost health', () => {
+  const c = new Colonist(0, 0, 'A');
+  c.health = 0.5;
+  c.hunger = 0;
+  simulate(c, 5);
+  assert.ok(c.health > 0.5);
+});
+
+test('an animal attack hurts a colonist; enough attacks are fatal', () => {
+  const c = new Colonist(0, 0, 'A');
+  c.hurt(0.3);
+  assert.ok(c.health < 1);
+  assert.equal(c.dead, false);
+  c.hurt(1);
+  assert.equal(c.health, 0);
+  assert.equal(c.dead, true);
+});
+
+test('a colonist that starves to death is marked dead', () => {
+  const c = new Colonist(0, 0, 'A');
+  c.hunger = 1;
+  c.health = 0.02;
+  simulate(c, 5);
+  assert.equal(c.dead, true);
+});

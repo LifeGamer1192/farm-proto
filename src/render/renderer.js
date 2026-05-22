@@ -40,6 +40,7 @@ const TASK_COLORS = {
   [TaskType.SOW]: '#6fc46f',
   [TaskType.TILL]: '#b98a52',
   [TaskType.WATER]: '#5ba8d8',
+  [TaskType.HUNT]: '#d2603a',
 };
 
 export class Renderer {
@@ -50,7 +51,7 @@ export class Renderer {
   }
 
   draw(scene) {
-    const { map, camera, mode, colonists, hover, taskQueue } = scene;
+    const { map, camera, mode, colonists, animals, hover, taskQueue } = scene;
     this.ts = scene.tileSize;
     const ctx = this.ctx;
     const ts = this.ts;
@@ -166,6 +167,13 @@ export class Renderer {
       ctx.strokeStyle = 'rgba(255,255,255,0.85)';
       ctx.lineWidth = 2;
       ctx.strokeRect(sx(hover.x) + 1, sy(hover.y) + 1, ts - 2, ts - 2);
+    }
+
+    // --- wild animals ---
+    if (animals) {
+      for (const a of animals) {
+        this._drawAnimal(sx(a.x + 0.5), sy(a.y + 0.5));
+      }
     }
 
     // --- colonists ---
@@ -323,5 +331,54 @@ export class Renderer {
       ctx.lineWidth = 3;
       ctx.stroke();
     }
+
+    // A health bar appears only once a colonist has been hurt.
+    if (colonist.health < 1) {
+      const bw = r * 2.2;
+      const bh = Math.max(3, this.ts * 0.1);
+      const bx = cx - bw / 2;
+      const by = cy - r * 1.7;
+      ctx.fillStyle = 'rgba(0,0,0,0.55)';
+      ctx.fillRect(bx - 1, by - 1, bw + 2, bh + 2);
+      const h = Math.max(0, colonist.health);
+      ctx.fillStyle = h > 0.5 ? '#5fc46f' : h > 0.25 ? '#e8b23c' : '#d2493a';
+      ctx.fillRect(bx, by, bw * h, bh);
+    }
+  }
+
+  // A wild boar: a dark, low oval body with a blunt snout.
+  _drawAnimal(cx, cy) {
+    const ctx = this.ctx;
+    const ts = this.ts;
+    const rx = ts * 0.36;
+    const ry = ts * 0.24;
+
+    ctx.fillStyle = 'rgba(0,0,0,0.30)';
+    ctx.beginPath();
+    ctx.ellipse(cx, cy + ry * 0.7, rx, ry * 0.5, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
+    ctx.fillStyle = '#6b5440';
+    ctx.fill();
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = '#2c2014';
+    ctx.stroke();
+
+    // Snout.
+    ctx.beginPath();
+    ctx.arc(cx + rx * 0.85, cy, ry * 0.5, 0, Math.PI * 2);
+    ctx.fillStyle = '#4a3829';
+    ctx.fill();
+    ctx.stroke();
+
+    // Bristle ridge.
+    ctx.strokeStyle = '#3a2c1e';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(cx - rx * 0.5, cy - ry * 0.7);
+    ctx.lineTo(cx + rx * 0.3, cy - ry * 0.7);
+    ctx.stroke();
   }
 }

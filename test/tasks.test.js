@@ -27,6 +27,14 @@ test('WORK_TYPES are player-placed types and exclude personal tasks', () => {
   }
   assert.ok(WORK_TYPES.includes(TaskType.TILL));
   assert.ok(WORK_TYPES.includes(TaskType.WATER));
+  assert.ok(WORK_TYPES.includes(TaskType.HUNT));
   assert.ok(!WORK_TYPES.includes(TaskType.EAT));
   assert.ok(!WORK_TYPES.includes(TaskType.SLEEP));
+});
+
+test('a hunt task carries the target animal id', () => {
+  const task = createTask(TaskType.HUNT, 4, 9, null, 3);
+  assert.equal(task.type, TaskType.HUNT);
+  assert.equal(task.animalId, 3);
+  assert.equal(task.cropId, null);
 });

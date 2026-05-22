@@ -64,6 +64,16 @@ and surviving the winter.
   (watered crops grow faster for a while)
 - The interface can switch between English and Japanese
 
+### Alpha 7 — survival stats & wild animals
+
+- Every colonist has three survival stats — **hunger**, **health** and
+  **mood** — shown as bars in the Colonists panel
+- Hunger climbs over time; colonists seek food on their own when hungry,
+  and starvation drains health. A miserable colonist may slack off work
+- Wild boar roam the map and harry nearby colonists with minor attacks
+- A new **Hunt** tool: click a boar to send a colonist after it for meat
+- If every colonist falls, the colony is lost — start over to try again
+
 ## Version archive
 
 Every released version stays playable. The live site links to an

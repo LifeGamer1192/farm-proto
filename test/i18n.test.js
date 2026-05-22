@@ -30,3 +30,14 @@ test('an unknown language is ignored', () => {
   setLang('klingon');
   assert.equal(getLang(), 'en');
 });
+
+test('alpha-7 keys are translated in both languages', () => {
+  const keys = ['task.hunt', 'stat.health', 'stat.mood', 'animal.boar', 'gameover.title'];
+  for (const key of keys) {
+    setLang('en');
+    assert.notEqual(t(key), key);
+    setLang('ja');
+    assert.notEqual(t(key), key);
+  }
+  setLang('en');
+});

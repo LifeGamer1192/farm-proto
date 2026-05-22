@@ -1,9 +1,11 @@
-// A colonist: a worker that walks the map and carries out tasks.
+// A colonist: a worker that walks the map and carries out tasks, and now
+// has survival stats — hunger, health and mood.
 //
 // The game assigns one task at a time (work from the queue, or a personal
 // task — eat / rest / leisure / sleep — chosen by its priority AI). The
 // colonist walks to the task's tile, spends the task's work phase there,
-// and marks it done (or failed).
+// and marks it done (or failed). Each update it also ages its stats:
+// hunger climbs, starvation eats health, and health recovers when fed.
 
 import { findPath } from '../core/pathfinder.js';
 import { TileType } from '../map/tile.js';
@@ -15,7 +17,15 @@ import {
   EAT_DURATION,
   REST_DURATION,
   SLEEP_DURATION,
+  HUNT_DURATION,
+  HUNGER_RATE,
+  STARVE_RATE,
+  HEALTH_REGEN,
+  HEALTH_REGEN_HUNGER,
+  MOOD_ADAPT,
 } from '../config.js';
+
+const clamp01 = (v) => (v < 0 ? 0 : v > 1 ? 1 : v);
 
 // Seconds of "work" each task type spends once the colonist has arrived.
 const WORK_PHASE = {
@@ -25,6 +35,7 @@ const WORK_PHASE = {
   [TaskType.HARVEST]: WORK_DURATION,
   [TaskType.TILL]: WORK_DURATION,
   [TaskType.WATER]: WORK_DURATION,
+  [TaskType.HUNT]: HUNT_DURATION,
   [TaskType.EAT]: EAT_DURATION,
   [TaskType.REST]: REST_DURATION,
   [TaskType.SLEEP]: SLEEP_DURATION,
@@ -36,6 +47,7 @@ const WORK_STATE = {
   [TaskType.HARVEST]: 'working',
   [TaskType.TILL]: 'working',
   [TaskType.WATER]: 'working',
+  [TaskType.HUNT]: 'hunting',
   [TaskType.EAT]: 'eating',
   [TaskType.REST]: 'resting',
   [TaskType.SLEEP]: 'sleeping',
@@ -43,14 +55,20 @@ const WORK_STATE = {
 
 export class Colonist {
   constructor(x, y, name) {
-    this.x = x; // continuous tile coordinate
+    this.x = x;
     this.y = y;
     this.name = name;
-    this.path = []; // remaining waypoints {x, y}
+    this.path = [];
     this.state = 'idle';
     this.currentTask = null;
     this.workTimer = 0;
-    this.eatTimer = 0; // counts up; reset when an eat task completes
+
+    // Survival stats (0..1).
+    this.hunger = 0; // 0 full, 1 starving
+    this.health = 1; // 1 healthy, 0 dead
+    this.mood = 0.8; // 1 content, 0 miserable
+    this.eatCooldown = 0; // delay before seeking food again
+    this.dead = false;
   }
 
   get tileX() {
@@ -66,7 +84,6 @@ export class Colonist {
     return dur > 0 ? Math.min(1, this.workTimer / dur) : 0;
   }
 
-  // A tile to re-route from: the one being walked toward, or the current one.
   _anchor() {
     return this.path.length > 0
       ? { x: this.path[0].x, y: this.path[0].y }
@@ -76,6 +93,13 @@ export class Colonist {
   _fail(task, outcomeKey) {
     task.status = 'failed';
     task.outcome = outcomeKey;
+  }
+
+  /** Take damage from an animal attack. */
+  hurt(amount) {
+    this.health = Math.max(0, this.health - amount);
+    this.mood = Math.max(0, this.mood - 0.12);
+    if (this.health <= 0) this.dead = true;
   }
 
   /** Take on a task: validate it, then route to its target tile. */
@@ -112,7 +136,6 @@ export class Colonist {
     this.state = 'walking';
   }
 
-  // Advance along the current path by dt seconds.
   _walk(dt) {
     let budget = COLONIST_SPEED * dt;
     while (budget > 0 && this.path.length > 0) {
@@ -133,9 +156,22 @@ export class Colonist {
     }
   }
 
-  /** Advance by dt seconds. */
+  /** Advance survival stats and the current task by dt seconds. */
   update(dt) {
-    this.eatTimer += dt;
+    this.hunger = Math.min(1, this.hunger + HUNGER_RATE * dt);
+    if (this.hunger >= 1) {
+      this.health = Math.max(0, this.health - STARVE_RATE * dt);
+    } else if (this.hunger < HEALTH_REGEN_HUNGER && this.health < 1) {
+      this.health = Math.min(1, this.health + HEALTH_REGEN * dt);
+    }
+    const moodTarget = clamp01(1 - this.hunger * 0.6 - (1 - this.health) * 0.5);
+    this.mood = clamp01(this.mood + (moodTarget - this.mood) * MOOD_ADAPT * dt);
+    if (this.eatCooldown > 0) this.eatCooldown -= dt;
+    if (this.health <= 0) {
+      this.dead = true;
+      return;
+    }
+
     const task = this.currentTask;
     if (!task) {
       this.state = 'idle';
@@ -148,7 +184,6 @@ export class Colonist {
       this._walk(dt);
       return;
     }
-    // Arrived — spend the task's work phase, if it has one.
     const dur = WORK_PHASE[task.type] || 0;
     if (dur <= 0) {
       task.status = 'done';

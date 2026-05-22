@@ -363,3 +363,97 @@ button.primary:hover {
   white-space: nowrap;
   z-index: 5;
 }
+
+/* Colonists panel: each worker shows state and three survival bars. */
+.colonists {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+
+.colonist-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.crow-head {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.86rem;
+}
+
+.crow-head .cstate {
+  color: var(--muted);
+}
+
+.crow-bars {
+  display: flex;
+  gap: 5px;
+}
+
+.cbar {
+  flex: 1;
+  height: 7px;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.cbar b {
+  display: block;
+  height: 100%;
+}
+
+.cbar b.good {
+  background: #5fc46f;
+}
+.cbar b.mid {
+  background: #e8b23c;
+}
+.cbar b.low {
+  background: #d2493a;
+}
+
+/* Game-over overlay, shown over the canvas when the colony is lost. */
+.gameover {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(8, 10, 14, 0.8);
+  border-radius: 6px;
+  z-index: 6;
+}
+
+.gameover[hidden] {
+  display: none;
+}
+
+.gameover-box {
+  background: var(--panel);
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  padding: 22px 26px;
+  text-align: center;
+  max-width: 280px;
+  line-height: 1.5;
+}
+
+.gameover-box h2 {
+  margin: 0 0 8px;
+  font-size: 1.2rem;
+}
+
+.gameover-box p {
+  margin: 0 0 16px;
+  color: var(--muted);
+  font-size: 0.86rem;
+}
+
+.gameover-box .primary {
+  width: auto;
+  padding: 8px 20px;
+}

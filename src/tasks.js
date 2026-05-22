@@ -12,6 +12,7 @@ export const TaskType = {
   SOW: 'sow',
   TILL: 'till',
   WATER: 'water',
+  HUNT: 'hunt',
   EAT: 'eat',
   REST: 'rest',
   LEISURE: 'leisure',
@@ -25,25 +26,28 @@ export const WORK_TYPES = [
   TaskType.SOW,
   TaskType.TILL,
   TaskType.WATER,
+  TaskType.HUNT,
 ];
 
 let nextId = 1;
 
 /**
- * @param {string} type    a TaskType value
- * @param {number} x       target tile column
- * @param {number} y       target tile row
- * @param {?string} cropId crop to sow (SOW tasks only)
+ * @param {string} type      a TaskType value
+ * @param {number} x         target tile column
+ * @param {number} y         target tile row
+ * @param {?string} cropId   crop to sow (SOW tasks only)
+ * @param {?number} animalId animal to hunt (HUNT tasks only)
  */
-export function createTask(type, x, y, cropId = null) {
+export function createTask(type, x, y, cropId = null, animalId = null) {
   return {
     id: nextId++,
     type,
     x,
     y,
     cropId,
+    animalId,
     status: 'queued', // 'queued' | 'active' | 'done' | 'failed'
     outcome: '', // an i18n outcome key ('out.*'), set when the task resolves
-    outcomeData: null, // params for the outcome string (crop / n)
+    outcomeData: null, // params for the outcome string (crop / animal / n)
   };
 }

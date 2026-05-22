@@ -55,11 +55,6 @@ export const WILD_PLANT_CHANCE = 0.07;
 // How many recent events the activity log keeps.
 export const TASK_LOG_SIZE = 7;
 
-// --- farming -------------------------------------------------------------
-
-// Seconds between a colonist's meals (hunger as a stat arrives later).
-export const EAT_INTERVAL = 15;
-
 // --- colonists -----------------------------------------------------------
 
 export const COLONIST_COUNT = 4;
@@ -78,3 +73,24 @@ export const TILL_SURVIVAL_BONUS = 0.15;
 // Sim-seconds a watered crop keeps its boost, and the growth multiplier.
 export const WATER_DURATION = 45;
 export const WATER_GROWTH_BONUS = 1.5;
+
+// --- survival stats (alpha 7) --------------------------------------------
+
+export const HUNGER_RATE = 1 / 70; // hunger climbs 0 → 1 over 70 sim-seconds
+export const EAT_THRESHOLD = 0.55; // hunger at which a colonist seeks food
+export const EAT_RETRY = 5; // sim-seconds before a fed-up colonist retries eating
+export const STARVE_RATE = 1 / 40; // health lost per second while starving
+export const HEALTH_REGEN = 1 / 80; // health regained per second when well-fed
+export const HEALTH_REGEN_HUNGER = 0.4; // hunger must be below this to recover
+export const MOOD_ADAPT = 0.15; // how fast mood drifts toward its target
+
+// --- wild animals (alpha 7) ----------------------------------------------
+
+export const ANIMAL_COUNT = 4;
+export const ANIMAL_SPEED = 1.6; // tiles per second (slow)
+export const ANIMAL_DAMAGE = 0.07; // colonist health lost per attack
+export const ANIMAL_ATTACK_INTERVAL = 9; // sim-seconds between an animal's attacks
+export const ANIMAL_ATTACK_RANGE = 1.6; // tiles
+export const HUNT_DURATION = 1.5; // work phase to bring an animal down
+export const HUNT_RANGE = 2.5; // the animal must be this close when the hunt lands
+export const MEAT_YIELD = 5; // food gained from a hunted animal
