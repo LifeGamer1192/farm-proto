@@ -146,14 +146,14 @@ body {
   min-width: 220px;
   display: flex;
   flex-direction: column;
-  gap: 7px;
+  gap: 6px;
 }
 
 .control-group {
   background: var(--panel);
   border: 1px solid var(--border);
   border-radius: 6px;
-  padding: 7px 10px;
+  padding: 6px 9px;
 }
 
 .control-group > label,
@@ -311,18 +311,17 @@ button.primary:hover {
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 3px;
-  font-size: 0.76rem;
+  gap: 4px;
+  font-size: 0.82rem;
+  line-height: 1.35;
   font-variant-numeric: tabular-nums;
   /* Keep a window of recent events; older ones scroll back into view. */
-  max-height: 150px;
+  max-height: 172px;
   overflow-y: auto;
 }
 
 .task-log li {
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  word-break: break-word;
 }
 
 .task-log .log-ok {
@@ -341,27 +340,32 @@ button.primary:hover {
   color: #e0a766;
 }
 
+/* Two stats per row to pack more information onto one screen. */
 .stats {
   margin: 0;
   display: grid;
-  gap: 4px;
+  grid-template-columns: 1fr 1fr;
+  gap: 3px 12px;
 }
 
 .stats > div {
   display: flex;
   justify-content: space-between;
-  gap: 10px;
-  font-size: 0.8rem;
+  gap: 6px;
+  font-size: 0.76rem;
+  min-width: 0;
 }
 
 .stats dt {
   color: var(--muted);
   margin: 0;
+  min-width: 0;
 }
 
 .stats dd {
   margin: 0;
   text-align: right;
+  white-space: nowrap;
   font-variant-numeric: tabular-nums;
 }
 
@@ -543,7 +547,7 @@ button.primary:hover {
 /* "All colonists" work-order target toggle. */
 .target-all {
   width: 100%;
-  margin-bottom: 10px;
+  margin-bottom: 8px;
 }
 
 .target-all.active {
@@ -551,4 +555,34 @@ button.primary:hover {
   color: #11240f;
   border-color: var(--accent);
   font-weight: 600;
+}
+
+/* Auto-hunt toggle button (and similar on/off toggles). */
+.toggle-btn {
+  width: 100%;
+  margin-top: 6px;
+}
+
+.toggle-btn.on {
+  background: var(--accent);
+  color: #11240f;
+  border-color: var(--accent);
+  font-weight: 600;
+}
+
+/* Victory screen: a year-one results summary and two actions. */
+#victory-summary {
+  margin: 4px 0 14px;
+  text-align: left;
+}
+
+.victory-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+}
+
+.victory-actions .primary {
+  width: auto;
+  padding: 8px 16px;
 }

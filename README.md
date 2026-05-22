@@ -100,6 +100,19 @@ and surviving the winter.
 - **Drag** to apply a range tool (sow, till, water, build, harvest) over
   many tiles at once; the activity log keeps a longer, scrollable history
 
+### Alpha 10 — the year goal & smarter colonists
+
+- **Survive a full year** and a results screen celebrates the milestone —
+  then play continues if you want to keep building
+- Idle colonists now **tend the farm on their own**: harvesting ripe
+  crops, watering dry ones, and cooking when a hearth is lit
+- **Auto-hunt** toggle — when on, idle colonists hunt boar once the
+  colony's food runs low
+- **All-colonist orders**: with "All colonists" selected, a Move order
+  sends every colonist at once
+- Press **1–5** to switch game speed; stat panels are denser (two
+  columns) and the activity log is readable and scrolls properly
+
 ## Version archive
 
 Every released version stays playable. The live site links to an

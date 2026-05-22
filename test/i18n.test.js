@@ -71,3 +71,14 @@ test('alpha-9 keys are translated in both languages', () => {
   }
   setLang('en');
 });
+
+test('alpha-10 keys are translated in both languages', () => {
+  const keys = ['win.title', 'win.summary', 'btn.keepPlaying', 'label.autoHunt', 'val.on'];
+  for (const key of keys) {
+    setLang('en');
+    assert.notEqual(t(key), key);
+    setLang('ja');
+    assert.notEqual(t(key), key);
+  }
+  setLang('en');
+});

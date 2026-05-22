@@ -30,6 +30,9 @@ const colonyStatsEl = $('colony-stats');
 const logEl = $('event-log');
 const legendEl = $('legend');
 const gameoverEl = $('gameover');
+const victoryEl = $('victory');
+const victorySummaryEl = $('victory-summary');
+const autoHuntBtn = $('autohunt-btn');
 const viewModesEl = $('view-modes');
 const toolsEl = $('tools');
 const cropsEl = $('crops');
@@ -177,9 +180,19 @@ function updateColonyStats() {
     [t('stat.meals'), game.meals.eaten],
     [t('stat.missed'), game.meals.missed],
   ]);
+}
+
+// The activity log re-renders only when an entry is added (game.logRev),
+// so the panel does not snap back to the top while the player scrolls it.
+let lastLogRev = -1;
+function updateLog() {
+  if (game.logRev === lastLogRev) return;
+  lastLogRev = game.logRev;
+  const scroll = logEl.scrollTop;
   logEl.innerHTML = game.log
     .map((e) => `<li class="${e.cls}">${e.icon} ${e.text}</li>`)
     .join('');
+  logEl.scrollTop = scroll;
 }
 
 function updateEnvPanel() {
@@ -198,6 +211,7 @@ function refreshPanels() {
   updateColonistsPanel();
   updateTaskPanel();
   updateColonyStats();
+  updateLog();
   updateEnvPanel();
   updateLegend();
 }
@@ -211,6 +225,7 @@ function applyI18n() {
   document.documentElement.lang = getLang();
   refreshPanels();
   updatePauseBtn();
+  updateAutoHuntBtn();
 }
 
 // --- map lifecycle --------------------------------------------------------
@@ -399,6 +414,15 @@ window.addEventListener('keydown', (ev) => {
     ev.preventDefault();
     return;
   }
+  if (k >= '1' && k <= '5') {
+    // Keys 1–5 pick a game speed.
+    const idx = Number(k) - 1;
+    game.setSpeed(idx);
+    const btn = speedsEl.querySelector(`button[data-speed="${idx}"]`);
+    if (btn) selectIn(speedsEl, btn, 'speed');
+    ev.preventDefault();
+    return;
+  }
   if (k === 'w' || k === 'a' || k === 's' || k === 'd') {
     game.keys.add(k);
     ev.preventDefault();
@@ -516,6 +540,46 @@ function togglePause() {
 
 pauseBtn.addEventListener('click', togglePause);
 
+// --- auto-hunt toggle -----------------------------------------------------
+
+function updateAutoHuntBtn() {
+  autoHuntBtn.textContent = `${t('label.autoHunt')}: ${t(game.autoHunt ? 'val.on' : 'val.off')}`;
+  autoHuntBtn.classList.toggle('on', game.autoHunt);
+}
+
+autoHuntBtn.addEventListener('click', () => {
+  game.autoHunt = !game.autoHunt;
+  updateAutoHuntBtn();
+});
+
+// --- victory: surviving the first year -----------------------------------
+
+function showVictory() {
+  renderRows(victorySummaryEl, [
+    [t('stat.survived'), game.colonists.length],
+    [t('stat.foodStored'), game.totalFood],
+    [t('stat.meals'), game.meals.eaten],
+    [t('stat.cropsLost'), game.cropsLost],
+    [t('stat.spoiled'), game.pestsLost],
+  ]);
+  victoryEl.hidden = false;
+  game.paused = true; // freeze under the overlay so the summary can be read
+  updatePauseBtn();
+}
+
+$('victory-continue').addEventListener('click', () => {
+  victoryEl.hidden = true;
+  game.paused = false;
+  updatePauseBtn();
+});
+
+$('victory-new').addEventListener('click', () => {
+  newMap(randomSeed());
+  victoryEl.hidden = true;
+  game.paused = false;
+  updatePauseBtn();
+});
+
 // --- work-order target: the whole colony, or one named colonist -----------
 
 colonistsEl.addEventListener('click', (ev) => {
@@ -542,6 +606,7 @@ setInterval(() => {
   updateColonistsPanel();
   updateTaskPanel();
   updateColonyStats();
+  updateLog();
   updateEnvPanel();
   updateMapStats();
   if (gameoverEl.hidden === game.over) gameoverEl.hidden = !game.over;
@@ -549,4 +614,5 @@ setInterval(() => {
   if (season) showToast(t('note.' + season));
   if (game.consumePestEvent()) showToast(t('note.pests'));
   if (game.consumeColdEvent()) showToast(t('note.cold'));
+  if (game.consumeWinEvent()) showVictory();
 }, 150);

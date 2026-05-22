@@ -45,6 +45,9 @@ import {
   COLD_MOOD_DROP,
   COOK_BATCH,
   MEAL_MOOD_BONUS,
+  AUTO_HUNT_RANGE,
+  HUNT_FOOD_PER_HEAD,
+  MEAL_TARGET,
 } from './config.js';
 import { generateMap, mapStats } from './map/mapGenerator.js';
 import { TileType } from './map/tile.js';
@@ -54,7 +57,7 @@ import { Colonist } from './entities/colonist.js';
 import { Animal } from './entities/animal.js';
 import { TaskType, WORK_TYPES, createTask } from './tasks.js';
 import { scatterPlants, PlantKind } from './world.js';
-import { getCrop, cropSuitability, survivalChance } from './crops.js';
+import { getCrop, cropSuitability, survivalChance, isRipe } from './crops.js';
 import {
   clockInfo,
   temperatureAt,
@@ -90,7 +93,10 @@ export class Game {
     this.hearths = []; // built hearth positions {x, y}
     this.stats = null;
     this.over = false;
+    this.won = false; // the colony has survived its first full year
+    this._winEvent = false;
     this.paused = false;
+    this.autoHunt = true; // idle colonists hunt boar when food runs low
     // The colonist new work is addressed to, or null for the whole colony.
     this.selectedColonist = null;
 
@@ -105,6 +111,7 @@ export class Game {
     this._coldEvent = false;
     this._coldActive = false;
     this.log = [];
+    this.logRev = 0;
     this.lastAssignReason = '';
 
     this.clock = 0;
@@ -174,8 +181,11 @@ export class Game {
     this._coldEvent = false;
     this._coldActive = false;
     this.over = false;
+    this.won = false;
+    this._winEvent = false;
     this.selectedColonist = null;
     this.log = [];
+    this.logRev += 1;
     this.lastAssignReason = t('reason.start');
     this.hover = null;
     this.clock = 0;
@@ -258,6 +268,14 @@ export class Game {
     return e;
   }
 
+  // True once when the colony first survives a full year — drives the
+  // victory screen. The game keeps running afterwards.
+  consumeWinEvent() {
+    const e = this._winEvent;
+    this._winEvent = false;
+    return e;
+  }
+
   /** Freeze or resume the simulation. Returns the new paused state. */
   togglePause() {
     this.paused = !this.paused;
@@ -287,7 +305,19 @@ export class Game {
     const tile = this.map.tiles[y] && this.map.tiles[y][x];
     if (!tile) return false;
     const assignee = opts.assignee || null;
-    if (type === TaskType.MOVE && tile.type === TileType.WATER) return false;
+    if (type === TaskType.MOVE) {
+      if (tile.type === TileType.WATER) return false;
+      if (assignee) {
+        this.taskQueue.push(createTask(TaskType.MOVE, x, y, { assignee }));
+      } else {
+        // "All colonists" + Move: send every colonist to the tile.
+        if (this.colonists.length === 0) return false;
+        for (const c of this.colonists) {
+          this.taskQueue.push(createTask(TaskType.MOVE, x, y, { assignee: c.name }));
+        }
+      }
+      return true;
+    }
     if (type === TaskType.HARVEST && !tile.plant) return false;
     if (type === TaskType.SOW && (tile.type === TileType.WATER || tile.plant)) return false;
     if (type === TaskType.TILL && tile.type === TileType.WATER) return false;
@@ -323,6 +353,7 @@ export class Game {
   _pushLog(entry) {
     this.log.unshift(entry);
     if (this.log.length > TASK_LOG_SIZE) this.log.pop();
+    this.logRev += 1;
   }
 
   _outcomeText(task) {
@@ -533,8 +564,70 @@ export class Game {
         });
         return task;
       }
+      // No orders queued — find useful work to do unprompted.
+      const auto = this._autonomousTask(colonist);
+      if (auto) {
+        this.lastAssignReason = t('reason.auto', { task: t('task.' + auto.type) });
+        return auto;
+      }
     }
     return this._idleTask(colonist);
+  }
+
+  // Work an idle colonist takes up on its own: gather ripe crops, tend
+  // dry ones, cook while a hearth is lit, and hunt when food runs low.
+  _autonomousTask(colonist) {
+    for (const crop of this.crops) {
+      if (isRipe(crop) && !crop.withered && !this._tileClaimed(crop.x, crop.y)) {
+        return createTask(TaskType.HARVEST, crop.x, crop.y);
+      }
+    }
+    for (const crop of this.crops) {
+      if (
+        !crop.withered &&
+        !isRipe(crop) &&
+        this.clock >= crop.wateredUntil &&
+        !this._tileClaimed(crop.x, crop.y)
+      ) {
+        return createTask(TaskType.WATER, crop.x, crop.y);
+      }
+    }
+    if (this.hearthsLit && this.rawFood > 0 && this.storage.meal < MEAL_TARGET) {
+      for (const h of this.hearths) {
+        if (!this._tileClaimed(h.x, h.y)) {
+          return createTask(TaskType.COOK, h.x, h.y);
+        }
+      }
+    }
+    // Hunting is food-driven: idle colonists go after boar when the
+    // colony's stores run low.
+    if (this.autoHunt && this.totalFood < this.colonists.length * HUNT_FOOD_PER_HEAD) {
+      const a = this._animalNear(colonist.tileX, colonist.tileY, AUTO_HUNT_RANGE);
+      if (a && !this._tileClaimed(a.tileX, a.tileY)) {
+        return createTask(TaskType.HUNT, a.tileX, a.tileY, { animalId: a.id });
+      }
+    }
+    return null;
+  }
+
+  // True if a colonist is already working a tile, or a task is queued for it.
+  _tileClaimed(x, y) {
+    for (const c of this.colonists) {
+      const task = c.currentTask;
+      if (
+        task &&
+        task.x === x &&
+        task.y === y &&
+        task.status !== 'done' &&
+        task.status !== 'failed'
+      ) {
+        return true;
+      }
+    }
+    for (const task of this.taskQueue) {
+      if (task.x === x && task.y === y) return true;
+    }
+    return false;
   }
 
   // A personal idle task — rest, sleep, or stroll to a nearby tile.
@@ -742,6 +835,11 @@ export class Game {
     this._updateAnimals(simDt);
     this._growCrops(simDt);
     this._updatePests(simDt);
+    // Surviving a full year is the colony's first goal — but play goes on.
+    if (!this.won && !this.over && this.environment.year >= 2 && this.colonists.length > 0) {
+      this.won = true;
+      this._winEvent = true;
+    }
   }
 
   render() {

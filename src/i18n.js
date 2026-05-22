@@ -218,6 +218,16 @@ const STRINGS = {
     'log.cold': 'Colonists are suffering in the cold',
     'note.cold':
       'Colonists are cold! Keep a hearth lit — gather firewood by harvesting wild plants.',
+
+    'win.title': 'Year one survived',
+    'win.hint': 'Your colony made it through a full year. Keep playing, or start anew.',
+    'win.summary': 'Year-one results',
+    'btn.keepPlaying': 'Keep playing',
+    'stat.survived': 'Colonists',
+    'label.autoHunt': 'Auto-hunt',
+    'val.on': 'On',
+    'val.off': 'Off',
+    'reason.auto': 'Took up {task} on its own.',
   },
 
   ja: {
@@ -434,6 +444,16 @@ const STRINGS = {
     'log.cold': 'コロニストが寒さに苦しんでいる',
     'note.cold':
       'コロニストが寒い！かまどの火を絶やさず、野生植物を収穫して薪を集めましょう。',
+
+    'win.title': '1年生存達成',
+    'win.hint': 'コロニーは1年を生き延びました。このまま続けるか、新たに始められます。',
+    'win.summary': '1年目の成績',
+    'btn.keepPlaying': 'このまま続ける',
+    'stat.survived': 'コロニスト',
+    'label.autoHunt': '自動で狩り',
+    'val.on': 'オン',
+    'val.off': 'オフ',
+    'reason.auto': '手すきの判断で{task}を実施。',
   },
 };
 

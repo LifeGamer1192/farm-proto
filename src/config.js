@@ -119,3 +119,9 @@ export const COLD_MOOD_DROP = 1 / 50; // mood lost per sim-second while cold
 export const COOK_DURATION = 2; // work phase (sim-seconds) to cook a batch
 export const COOK_BATCH = 4; // raw food units turned into meals per cook task
 export const MEAL_MOOD_BONUS = 0.12; // mood lift from eating a cooked meal
+
+// --- autonomy & the year goal (alpha 10) ---------------------------------
+
+export const AUTO_HUNT_RANGE = 9; // tiles — an idle colonist auto-hunts boar this close
+export const HUNT_FOOD_PER_HEAD = 3; // auto-hunt starts below this much food per colonist
+export const MEAL_TARGET = 6; // colonists auto-cook until this many meals are stocked
