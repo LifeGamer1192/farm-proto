@@ -340,6 +340,50 @@ button.primary:hover {
   color: #e0a766;
 }
 
+/* Seed stock: each crop's seeds grouped by quality rank (★). */
+.seed-stock {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 4px 0 2px;
+}
+
+.seed-row {
+  display: flex;
+  gap: 8px;
+  font-size: 0.78rem;
+  align-items: baseline;
+}
+
+.seed-crop {
+  color: var(--muted);
+  flex: 0 0 auto;
+  min-width: 52px;
+}
+
+.seed-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 8px;
+}
+
+.seed-chip {
+  color: #e8c65a;
+  letter-spacing: -1px;
+  white-space: nowrap;
+}
+
+.seed-chip b {
+  color: var(--text);
+  font-weight: 600;
+  letter-spacing: 0;
+  margin-left: 1px;
+}
+
+.seed-none {
+  color: var(--muted);
+}
+
 /* Two stats per row to pack more information onto one screen. */
 .stats {
   margin: 0;
@@ -399,7 +443,8 @@ button.primary:hover {
   font-size: 0.78rem;
   line-height: 1.45;
   font-variant-numeric: tabular-nums;
-  white-space: nowrap;
+  white-space: normal;
+  max-width: 240px;
   z-index: 5;
 }
 

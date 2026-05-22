@@ -4,7 +4,7 @@
 
 const STRINGS = {
   en: {
-    'app.tagline': 'A colony of farmers — seasons, crops and autonomous workers',
+    'app.tagline': 'A colony of farmers — seasons, crops, seed quality and autonomous workers',
 
     'panel.season': 'Season',
     'panel.speedZoom': 'Speed & zoom',
@@ -106,9 +106,9 @@ const STRINGS = {
       'Pick a tool, then click map tiles to set tasks. Colonists pick up work on their own.',
     'hint.task.move': 'Move tool — click a tile and a colonist walks there.',
     'hint.task.harvest':
-      'Harvest tool — click a ripe crop, wild plant or dead husk to gather or clear it.',
+      'Harvest tool — click a ripe crop, wild plant or dead husk to gather or clear it. A ripe crop also yields seeds for next time.',
     'hint.task.sow':
-      'Sow tool — click tiles to plant the chosen crop. It grows over time; harvest it when ripe.',
+      'Sow tool — click tiles to plant the chosen crop. Each sow spends one seed; crops grown from higher-ranked seed (★) are hardier and yield more.',
     'hint.task.till':
       'Till tool — click land to till the soil. Crops sown on tilled soil survive better.',
     'hint.task.water':
@@ -138,7 +138,8 @@ const STRINGS = {
     'tip.withered': 'withered',
     'tip.watered': 'watered',
     'tip.growthHere': 'crop growth here ~{n}%',
-    'tip.sowHere': 'sow {crop}: ~{n}% to survive',
+    'tip.sowHere': 'sow {crop} {rank}: ~{n}% to survive',
+    'tip.noSeed': 'no {crop} seed in store',
     'tile.land': 'land',
     'tile.water': 'water',
 
@@ -146,8 +147,8 @@ const STRINGS = {
     'log.ate': '{name} ate',
     'log.hungry': '{name} went hungry — no food',
     'out.arrived': 'arrived',
-    'out.sowed': 'sowed {crop}',
-    'out.harvested': '{crop} +{n}',
+    'out.sowed': 'sowed {crop} {rank}',
+    'out.harvested': '{crop} +{n}, seeds +{seeds}',
     'out.foraged': 'foraged +1',
     'out.cleared': 'cleared dead crop',
     'out.tilled': 'soil tilled',
@@ -193,14 +194,14 @@ const STRINGS = {
       'Fence — wild animals will not cross it. Ring the farm to keep boar out.',
     'hint.structure.hut': 'Hut — a colonist resting nearby recovers its mood faster.',
     'hint.structure.stockpile':
-      'Stockpile — a storage ground; each stockpile tile blunts pest losses.',
+      'Stockpile — a safe store. Colonists haul food here, out of reach of pests; each tile holds a limited amount.',
     'hint.targetOne':
       'Now directing {name}. New work goes to them — pick "All colonists" to share it again.',
     'hint.targetAll': 'Now directing the whole colony — new work is shared by all.',
     'stat.spoiled': 'Spoiled to pests',
     'out.built': 'built {structure}',
     'log.pests': 'Pests spoiled {n} food',
-    'note.pests': 'Pests! Some stored food was spoiled — stockpiles soften the blow.',
+    'note.pests': 'Pests! Some on-hand food was spoiled — keep food in stockpiles to protect it.',
 
     'task.cook': 'Cook',
     'state.cooking': 'Cooking',
@@ -228,10 +229,28 @@ const STRINGS = {
     'val.on': 'On',
     'val.off': 'Off',
     'reason.auto': 'Took up {task} on its own.',
+
+    'task.weed': 'Weed',
+    'task.store': 'Store',
+    'task.fetch': 'Fetch',
+    'task.cancel': 'Cancel',
+    'state.weeding': 'Weeding',
+    'state.hauling': 'Hauling',
+    'hint.task.cancel':
+      'Cancel tool — click or drag over planned task markers to call them off.',
+    'label.seeds': 'Seed stock',
+    'stat.stockpiles': 'Stockpiles',
+    'stat.bestSeed': 'Best seed',
+    'out.weeded': 'cleared a dead crop',
+    'out.noWeed': 'nothing to clear',
+    'out.noSeed': 'out of {crop} seed',
+    'tip.stored': '{n}/{cap} stored',
+    'tip.hearthLit': 'lit',
+    'tip.hearthUnlit': 'unlit — no firewood',
   },
 
   ja: {
-    'app.tagline': '農民のコロニー — 季節・作物・自律して働く仲間たち',
+    'app.tagline': '農民のコロニー — 季節・作物・種の品質・自律して働く仲間たち',
 
     'panel.season': '季節',
     'panel.speedZoom': '速度・ズーム',
@@ -333,9 +352,9 @@ const STRINGS = {
       'ツールを選び、マップをクリックして作業を指示。コロニストは自分で仕事を取りに行きます。',
     'hint.task.move': '移動ツール — タイルをクリックするとコロニストがそこへ歩きます。',
     'hint.task.harvest':
-      '収穫ツール — 熟した作物・野生植物・枯死株をクリックして収穫／撤去します。',
+      '収穫ツール — 熟した作物・野生植物・枯死株をクリックして収穫／撤去します。熟した作物からは次回用の種も採れます。',
     'hint.task.sow':
-      '種まきツール — タイルをクリックして作物を植えます。時間で育ち、熟したら収穫します。',
+      '種まきツール — タイルをクリックして選んだ作物を植えます。1回ごとに種を1つ消費。品質ランク（★）の高い種ほど丈夫でよく実ります。',
     'hint.task.till':
       '耕すツール — 陸地をクリックして土を耕します。耕した土では作物が枯れにくくなります。',
     'hint.task.water':
@@ -365,7 +384,8 @@ const STRINGS = {
     'tip.withered': '枯死',
     'tip.watered': '水やり済み',
     'tip.growthHere': 'ここでの成長 ～{n}%',
-    'tip.sowHere': '{crop}の生存率 ～{n}%',
+    'tip.sowHere': '{crop}（{rank}）の生存率 ～{n}%',
+    'tip.noSeed': '{crop}の種が在庫にない',
     'tile.land': '陸地',
     'tile.water': '水域',
 
@@ -373,8 +393,8 @@ const STRINGS = {
     'log.ate': '{name}が食事した',
     'log.hungry': '{name}が空腹 — 食料なし',
     'out.arrived': '到着',
-    'out.sowed': '{crop}を植えた',
-    'out.harvested': '{crop} +{n}',
+    'out.sowed': '{crop}（{rank}）を植えた',
+    'out.harvested': '{crop} +{n}、種+{seeds}',
     'out.foraged': '採取 +1',
     'out.cleared': '枯死株を撤去',
     'out.tilled': '土を耕した',
@@ -419,14 +439,14 @@ const STRINGS = {
     'hint.structure.fence': '柵 — 野生動物は越えられません。農地を囲ってイノシシを防ぎます。',
     'hint.structure.hut': '小屋 — 近くで休むコロニストの気分の回復が速くなります。',
     'hint.structure.stockpile':
-      'ストックパイル — 備蓄置き場。タイルが多いほど虫害の損失を抑えます。',
+      'ストックパイル — 安全な保管庫。コロニストが食料を運び込み、虫害から守ります。1マスの容量には上限があります。',
     'hint.targetOne':
       '{name}に指示中。以降の作業はこの人へ — 「全コロニスト」で全体指示に戻ります。',
     'hint.targetAll': 'コロニー全体に指示中 — 作業は全員で分担します。',
     'stat.spoiled': '虫害ロス',
     'out.built': '{structure}を建てた',
     'log.pests': '虫害で食料{n}が傷んだ',
-    'note.pests': '虫害発生 — 備蓄食料が傷みました。ストックパイルで被害を軽減できます。',
+    'note.pests': '虫害発生 — 手持ちの食料が傷みました。食料はストックパイルに入れて守りましょう。',
 
     'task.cook': '調理',
     'state.cooking': '調理中',
@@ -454,6 +474,24 @@ const STRINGS = {
     'val.on': 'オン',
     'val.off': 'オフ',
     'reason.auto': '手すきの判断で{task}を実施。',
+
+    'task.weed': '除草',
+    'task.store': '収納',
+    'task.fetch': '取り出し',
+    'task.cancel': 'キャンセル',
+    'state.weeding': '除草中',
+    'state.hauling': '運搬中',
+    'hint.task.cancel':
+      'キャンセルツール — 予定タスクのマーカーをクリック／ドラッグして取り消します。',
+    'label.seeds': '種の在庫',
+    'stat.stockpiles': 'ストックパイル',
+    'stat.bestSeed': '最良の種',
+    'out.weeded': '枯死株を除草した',
+    'out.noWeed': '撤去するものがない',
+    'out.noSeed': '{crop}の種切れ',
+    'tip.stored': '収納 {n}/{cap}',
+    'tip.hearthLit': '点火中',
+    'tip.hearthUnlit': '消火 — 薪がない',
   },
 };
 

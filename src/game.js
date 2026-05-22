@@ -35,8 +35,6 @@ import {
   HUT_MOOD_BONUS,
   PEST_INTERVAL,
   PEST_BITE,
-  PEST_PROTECTION_PER_TILE,
-  PEST_PROTECTION_CAP,
   WILD_WOOD_YIELD,
   WOOD_BURN_RATE,
   HEARTH_RANGE,
@@ -48,6 +46,13 @@ import {
   AUTO_HUNT_RANGE,
   HUNT_FOOD_PER_HEAD,
   MEAL_TARGET,
+  SEED_START_COUNT,
+  SEED_START_RANK,
+  SEEDS_PER_HARVEST,
+  STOCKPILE_CAP,
+  ON_HAND_CAP,
+  ON_HAND_LOW,
+  HAUL_BATCH,
 } from './config.js';
 import { generateMap, mapStats } from './map/mapGenerator.js';
 import { TileType } from './map/tile.js';
@@ -57,7 +62,18 @@ import { Colonist } from './entities/colonist.js';
 import { Animal } from './entities/animal.js';
 import { TaskType, WORK_TYPES, createTask } from './tasks.js';
 import { scatterPlants, PlantKind } from './world.js';
-import { getCrop, cropSuitability, survivalChance, isRipe } from './crops.js';
+import {
+  getCrop,
+  cropSuitability,
+  survivalChance,
+  isRipe,
+  CROP_IDS,
+  MIN_RANK,
+  MAX_RANK,
+  rankSurvivalBonus,
+  rankYield,
+  harvestSeedRank,
+} from './crops.js';
 import {
   clockInfo,
   temperatureAt,
@@ -68,7 +84,10 @@ import {
 } from './season.js';
 import { t } from './i18n.js';
 
+// Raw food — what pests can spoil and what a cook task turns into meals.
 const FOOD_TYPES = ['forage', 'wheat', 'potato', 'bean', 'meat'];
+// Everything a stockpile can hold: raw food plus cooked meals.
+export const STOCKPILE_ITEMS = ['forage', 'wheat', 'potato', 'bean', 'meat', 'meal'];
 
 export class Game {
   constructor(canvas) {
@@ -91,6 +110,7 @@ export class Game {
     this.colonists = [];
     this.animals = [];
     this.hearths = []; // built hearth positions {x, y}
+    this.stockpiles = []; // built stockpiles: {x, y, items}
     this.stats = null;
     this.over = false;
     this.won = false; // the colony has survived its first full year
@@ -102,7 +122,11 @@ export class Game {
 
     this.taskQueue = [];
     this.crops = [];
+    // The colony's on-hand store — freshly gathered goods. Pests gnaw at it;
+    // colonists haul surplus food into stockpiles, the safe vaults.
     this.storage = { forage: 0, wheat: 0, potato: 0, bean: 0, meat: 0, wood: 0, meal: 0 };
+    // Seed stock per crop — counts indexed by quality rank (1..MAX_RANK).
+    this.seeds = this._freshSeeds();
     this.meals = { eaten: 0, missed: 0 };
     this.cropsLost = 0;
     this.pestsLost = 0;
@@ -128,12 +152,141 @@ export class Game {
   get speed() {
     return SPEED_LEVELS[this.speedIndex];
   }
-  // Raw, uncooked food only — what pests can spoil.
+  // Raw, uncooked food on hand — what pests can spoil, what a cook task uses.
   get rawFood() {
     return FOOD_TYPES.reduce((sum, ft) => sum + this.storage[ft], 0);
   }
-  get totalFood() {
+  // All food the colony holds on hand (raw plus cooked meals).
+  get onHandFood() {
     return this.rawFood + this.storage.meal;
+  }
+  // Every food unit the colony owns — on hand and tucked away in stockpiles.
+  get totalFood() {
+    let n = this.onHandFood;
+    for (const sp of this.stockpiles) n += this.stockpileFood(sp);
+    return n;
+  }
+
+  // A fresh seed stock: SEED_START_COUNT seeds of each crop at the start rank.
+  // Each crop's array is indexed by rank (index 0 unused, 1..MAX_RANK in use).
+  _freshSeeds() {
+    const stock = {};
+    for (const id of CROP_IDS) {
+      const ranks = new Array(MAX_RANK + 1).fill(0);
+      ranks[SEED_START_RANK] = SEED_START_COUNT;
+      stock[id] = ranks;
+    }
+    return stock;
+  }
+
+  _freshStockpileItems() {
+    const items = {};
+    for (const it of STOCKPILE_ITEMS) items[it] = 0;
+    return items;
+  }
+
+  /** Total seeds of a crop, across every quality rank. */
+  seedCount(cropId) {
+    const s = this.seeds[cropId];
+    if (!s) return 0;
+    let n = 0;
+    for (let r = MIN_RANK; r <= MAX_RANK; r++) n += s[r];
+    return n;
+  }
+
+  /** Highest seed rank in stock for a crop, or 0 if there are none. */
+  bestSeedRank(cropId) {
+    const s = this.seeds[cropId];
+    if (!s) return 0;
+    for (let r = MAX_RANK; r >= MIN_RANK; r--) if (s[r] > 0) return r;
+    return 0;
+  }
+
+  // Sow tasks for a crop already lined up — queued plus in colonists' hands.
+  _pendingSows(cropId) {
+    let n = 0;
+    for (const task of this.taskQueue) {
+      if (task.type === TaskType.SOW && task.cropId === cropId) n++;
+    }
+    for (const c of this.colonists) {
+      const ct = c.currentTask;
+      if (ct && ct.type === TaskType.SOW && ct.cropId === cropId) n++;
+    }
+    return n;
+  }
+
+  /** True if a seed of this crop can still be spared for another sow order. */
+  canSow(cropId) {
+    return this.seedCount(cropId) > this._pendingSows(cropId);
+  }
+
+  // Remove the best-quality seed of a crop and return its rank (0 if none).
+  _takeSeed(cropId) {
+    const s = this.seeds[cropId];
+    if (!s) return 0;
+    for (let r = MAX_RANK; r >= MIN_RANK; r--) {
+      if (s[r] > 0) {
+        s[r]--;
+        return r;
+      }
+    }
+    return 0;
+  }
+
+  _addSeed(cropId, rank) {
+    const s = this.seeds[cropId];
+    if (s) s[rank] += 1;
+  }
+
+  // Bank SEEDS_PER_HARVEST seeds from a harvested crop; returns the count.
+  _gatherSeeds(plant) {
+    for (let i = 0; i < SEEDS_PER_HARVEST; i++) {
+      this._addSeed(plant.cropId, harvestSeedRank(plant.seedRank, plant.suitability, Math.random()));
+    }
+    return SEEDS_PER_HARVEST;
+  }
+
+  /** The stockpile built on a tile, or null. */
+  stockpileAt(x, y) {
+    return this.stockpiles.find((sp) => sp.x === x && sp.y === y) || null;
+  }
+
+  /** Food units held in one stockpile. */
+  stockpileFood(sp) {
+    let n = 0;
+    for (const it of STOCKPILE_ITEMS) n += sp.items[it];
+    return n;
+  }
+
+  // The stockpile nearest a colonist that satisfies `pred`, or null.
+  _nearestStockpile(colonist, pred) {
+    let best = null;
+    let bestD = Infinity;
+    for (const sp of this.stockpiles) {
+      if (!pred(sp)) continue;
+      const d = Math.hypot(sp.x - colonist.tileX, sp.y - colonist.tileY);
+      if (d < bestD) {
+        bestD = d;
+        best = sp;
+      }
+    }
+    return best;
+  }
+
+  // The on-hand / stockpile food item with the largest count (or null).
+  _largestFood(store, items) {
+    let pick = null;
+    for (const it of items) {
+      if (store[it] > 0 && (pick === null || store[it] > store[pick])) pick = it;
+    }
+    return pick;
+  }
+
+  /** Total of an item the colony owns — on hand plus every stockpile. */
+  totalItem(it) {
+    let n = this.storage[it] || 0;
+    for (const sp of this.stockpiles) n += sp.items[it] || 0;
+    return n;
   }
   // A hearth warms and cooks only while the colony has firewood to burn.
   get hearthsLit() {
@@ -172,7 +325,9 @@ export class Game {
     this.taskQueue = [];
     this.crops = [];
     this.hearths = [];
+    this.stockpiles = [];
     this.storage = { forage: 0, wheat: 0, potato: 0, bean: 0, meat: 0, wood: 0, meal: 0 };
+    this.seeds = this._freshSeeds();
     this.meals = { eaten: 0, missed: 0 };
     this.cropsLost = 0;
     this.pestsLost = 0;
@@ -319,7 +474,11 @@ export class Game {
       return true;
     }
     if (type === TaskType.HARVEST && !tile.plant) return false;
-    if (type === TaskType.SOW && (tile.type === TileType.WATER || tile.plant)) return false;
+    if (type === TaskType.SOW) {
+      if (tile.type === TileType.WATER || tile.plant) return false;
+      // Each sow spends one seed — refuse the order if none can be spared.
+      if (!this.canSow(opts.cropId)) return false;
+    }
     if (type === TaskType.TILL && tile.type === TileType.WATER) return false;
     if (type === TaskType.WATER) {
       const p = tile.plant;
@@ -350,6 +509,14 @@ export class Game {
     this.lastAssignReason = t('reason.cleared');
   }
 
+  // Drop every queued (not yet started) task on a tile — the Cancel tool.
+  // Returns how many planned tasks were removed.
+  cancelTasksAt(x, y) {
+    const before = this.taskQueue.length;
+    this.taskQueue = this.taskQueue.filter((task) => task.x !== x || task.y !== y);
+    return before - this.taskQueue.length;
+  }
+
   _pushLog(entry) {
     this.log.unshift(entry);
     if (this.log.length > TASK_LOG_SIZE) this.log.pop();
@@ -364,13 +531,16 @@ export class Game {
       if (d.animal) params.animal = t('animal.' + d.animal);
       if (d.structure) params.structure = t('structure.' + d.structure);
       if (d.n !== undefined) params.n = d.n;
+      if (d.seeds !== undefined) params.seeds = d.seeds;
+      if (d.rank !== undefined) params.rank = '★'.repeat(d.rank);
     }
     return t('out.' + (task.outcome || 'arrived'), params);
   }
 
-  // Log only the player's work tasks; personal tasks would flood the log.
+  // Log colony work tasks; personal tasks and routine hauling would flood it.
   _logWorkTask(task) {
     if (!WORK_TYPES.includes(task.type)) return;
+    if (task.type === TaskType.STORE || task.type === TaskType.FETCH) return;
     let where = `${t('task.' + task.type)} (${task.x}, ${task.y})`;
     if (task.assignee) where += ` · ${task.assignee}`;
     this._pushLog({
@@ -380,37 +550,44 @@ export class Game {
     });
   }
 
-  // Feed a colonist from the shared store (called when an eat task ends).
-  // A cooked meal is eaten first and lifts the mood; raw food just fills.
+  // Feed a colonist (called when an eat task ends). A cooked meal is eaten
+  // first and lifts the mood; raw food just fills. On-hand food goes first,
+  // but a hungry colonist will also help itself straight from a stockpile.
   _feed(colonist) {
     colonist.eatCooldown = EAT_RETRY;
+    const name = colonist.name;
     if (this.storage.meal > 0) {
       this.storage.meal -= 1;
       colonist.hunger = 0;
       colonist.mood = Math.min(1, colonist.mood + MEAL_MOOD_BONUS);
       this.meals.eaten += 1;
-      this._pushLog({ icon: '🍲', text: t('log.ate', { name: colonist.name }), cls: 'log-meal' });
+      this._pushLog({ icon: '🍲', text: t('log.ate', { name }), cls: 'log-meal' });
       return;
     }
-    let pick = null;
-    for (const ft of FOOD_TYPES) {
-      if (this.storage[ft] > 0 && (pick === null || this.storage[ft] > this.storage[pick])) {
-        pick = ft;
-      }
-    }
-    if (pick) {
-      this.storage[pick] -= 1;
+    const onHand = this._largestFood(this.storage, FOOD_TYPES);
+    if (onHand) {
+      this.storage[onHand] -= 1;
       colonist.hunger = 0;
       this.meals.eaten += 1;
-      this._pushLog({ icon: '🍴', text: t('log.ate', { name: colonist.name }), cls: 'log-meal' });
-    } else {
-      this.meals.missed += 1;
-      this._pushLog({
-        icon: '⚠',
-        text: t('log.hungry', { name: colonist.name }),
-        cls: 'log-warn',
-      });
+      this._pushLog({ icon: '🍴', text: t('log.ate', { name }), cls: 'log-meal' });
+      return;
     }
+    const sp = this.stockpiles.find((s) => this.stockpileFood(s) > 0);
+    if (sp) {
+      const it = sp.items.meal > 0 ? 'meal' : this._largestFood(sp.items, STOCKPILE_ITEMS);
+      sp.items[it] -= 1;
+      colonist.hunger = 0;
+      if (it === 'meal') colonist.mood = Math.min(1, colonist.mood + MEAL_MOOD_BONUS);
+      this.meals.eaten += 1;
+      this._pushLog({
+        icon: it === 'meal' ? '🍲' : '🍴',
+        text: t('log.ate', { name }),
+        cls: 'log-meal',
+      });
+      return;
+    }
+    this.meals.missed += 1;
+    this._pushLog({ icon: '⚠', text: t('log.hungry', { name }), cls: 'log-warn' });
   }
 
   // Apply the world effect of a completed task.
@@ -423,9 +600,11 @@ export class Game {
           task.outcome = 'cleared';
         } else {
           const crop = getCrop(plant.cropId);
-          this.storage[plant.cropId] += crop.yield;
+          const n = rankYield(crop.yield, plant.seedRank);
+          this.storage[plant.cropId] += n;
+          const seeds = this._gatherSeeds(plant);
           task.outcome = 'harvested';
-          task.outcomeData = { crop: plant.cropId, n: crop.yield };
+          task.outcomeData = { crop: plant.cropId, n, seeds };
         }
         const i = this.crops.indexOf(plant);
         if (i >= 0) this.crops.splice(i, 1);
@@ -436,26 +615,33 @@ export class Game {
       }
       tile.plant = null;
     } else if (task.type === TaskType.SOW) {
-      const cropDef = getCrop(task.cropId);
-      const suitability = cropSuitability(cropDef, tile);
-      const bonus = tile.tilled ? TILL_SURVIVAL_BONUS : 0;
-      const doomed = Math.random() >= survivalChance(suitability, bonus);
-      const crop = {
-        kind: PlantKind.CROP,
-        cropId: task.cropId,
-        growth: 0,
-        x: task.x,
-        y: task.y,
-        suitability,
-        doomed,
-        witherAt: doomed ? 0.3 + Math.random() * 0.5 : 1,
-        withered: false,
-        wateredUntil: 0,
-      };
-      tile.plant = crop;
-      this.crops.push(crop);
-      task.outcome = 'sowed';
-      task.outcomeData = { crop: task.cropId };
+      const seedRank = this._takeSeed(task.cropId);
+      if (seedRank === 0) {
+        task.outcome = 'noSeed';
+        task.outcomeData = { crop: task.cropId };
+      } else {
+        const cropDef = getCrop(task.cropId);
+        const suitability = cropSuitability(cropDef, tile);
+        const bonus = (tile.tilled ? TILL_SURVIVAL_BONUS : 0) + rankSurvivalBonus(seedRank);
+        const doomed = Math.random() >= survivalChance(suitability, bonus);
+        const crop = {
+          kind: PlantKind.CROP,
+          cropId: task.cropId,
+          growth: 0,
+          x: task.x,
+          y: task.y,
+          suitability,
+          seedRank,
+          doomed,
+          witherAt: doomed ? 0.3 + Math.random() * 0.5 : 1,
+          withered: false,
+          wateredUntil: 0,
+        };
+        tile.plant = crop;
+        this.crops.push(crop);
+        task.outcome = 'sowed';
+        task.outcomeData = { crop: task.cropId, rank: seedRank };
+      }
     } else if (task.type === TaskType.TILL) {
       tile.tilled = true;
       task.outcome = 'tilled';
@@ -480,6 +666,9 @@ export class Game {
       if (tile.type !== TileType.WATER && !tile.plant && !tile.structure) {
         tile.structure = task.structure;
         if (task.structure === 'hearth') this.hearths.push({ x: task.x, y: task.y });
+        if (task.structure === 'stockpile') {
+          this.stockpiles.push({ x: task.x, y: task.y, items: this._freshStockpileItems() });
+        }
         task.outcome = 'built';
         task.outcomeData = { structure: task.structure };
       } else {
@@ -512,6 +701,47 @@ export class Game {
           task.outcomeData = { n: cooked };
         }
       }
+    } else if (task.type === TaskType.WEED) {
+      const plant = tile.plant;
+      if (plant && plant.kind === PlantKind.CROP && plant.withered) {
+        const i = this.crops.indexOf(plant);
+        if (i >= 0) this.crops.splice(i, 1);
+        tile.plant = null;
+        task.outcome = 'weeded';
+      } else {
+        task.outcome = 'noWeed';
+      }
+    } else if (task.type === TaskType.STORE) {
+      const sp = this.stockpileAt(task.x, task.y);
+      let moved = 0;
+      if (sp) {
+        let space = STOCKPILE_CAP - this.stockpileFood(sp);
+        while (moved < HAUL_BATCH && space > 0) {
+          const it = this._largestFood(this.storage, FOOD_TYPES);
+          const food = it || (this.storage.meal > 0 ? 'meal' : null);
+          if (!food) break;
+          this.storage[food] -= 1;
+          sp.items[food] += 1;
+          moved++;
+          space--;
+        }
+      }
+      task.outcome = moved > 0 ? 'stored' : 'storeFail';
+      task.outcomeData = { n: moved };
+    } else if (task.type === TaskType.FETCH) {
+      const sp = this.stockpileAt(task.x, task.y);
+      let moved = 0;
+      if (sp) {
+        while (moved < HAUL_BATCH) {
+          const it = this._largestFood(sp.items, STOCKPILE_ITEMS);
+          if (!it) break;
+          sp.items[it] -= 1;
+          this.storage[it] += 1;
+          moved++;
+        }
+      }
+      task.outcome = moved > 0 ? 'fetched' : 'fetchFail';
+      task.outcomeData = { n: moved };
     } else if (task.type === TaskType.EAT) {
       this._feed(colonist);
     } else {
@@ -574,14 +804,23 @@ export class Game {
     return this._idleTask(colonist);
   }
 
-  // Work an idle colonist takes up on its own: gather ripe crops, tend
-  // dry ones, cook while a hearth is lit, and hunt when food runs low.
+  // Work an idle colonist takes up on its own: gather ripe crops, fetch and
+  // stockpile food, tend dry crops, clear withered ones, cook, and hunt.
   _autonomousTask(colonist) {
+    // Gather ripe crops.
     for (const crop of this.crops) {
       if (isRipe(crop) && !crop.withered && !this._tileClaimed(crop.x, crop.y)) {
         return createTask(TaskType.HARVEST, crop.x, crop.y);
       }
     }
+    // Fetch food back from a stockpile when the on-hand store runs low.
+    if (this.onHandFood < ON_HAND_LOW) {
+      const sp = this._nearestStockpile(colonist, (s) => this.stockpileFood(s) > 0);
+      if (sp && !this._tileClaimed(sp.x, sp.y)) {
+        return createTask(TaskType.FETCH, sp.x, sp.y);
+      }
+    }
+    // Tend crops that have run dry.
     for (const crop of this.crops) {
       if (
         !crop.withered &&
@@ -592,11 +831,25 @@ export class Game {
         return createTask(TaskType.WATER, crop.x, crop.y);
       }
     }
+    // Clear away withered, dead crops.
+    for (const crop of this.crops) {
+      if (crop.withered && !this._tileClaimed(crop.x, crop.y)) {
+        return createTask(TaskType.WEED, crop.x, crop.y);
+      }
+    }
+    // Cook raw food into meals while a hearth is lit.
     if (this.hearthsLit && this.rawFood > 0 && this.storage.meal < MEAL_TARGET) {
       for (const h of this.hearths) {
         if (!this._tileClaimed(h.x, h.y)) {
           return createTask(TaskType.COOK, h.x, h.y);
         }
+      }
+    }
+    // Haul surplus on-hand food into a stockpile, safe from the pests.
+    if (this.onHandFood > ON_HAND_CAP) {
+      const sp = this._nearestStockpile(colonist, (s) => this.stockpileFood(s) < STOCKPILE_CAP);
+      if (sp && !this._tileClaimed(sp.x, sp.y)) {
+        return createTask(TaskType.STORE, sp.x, sp.y);
       }
     }
     // Hunting is food-driven: idle colonists go after boar when the
@@ -731,22 +984,20 @@ export class Game {
     }
   }
 
-  // Advance every growing crop; doomed ones wither before they ripen.
+  // Advance every growing crop; doomed ones wither before they ripen. A
+  // withered crop stays on its tile (as dead growth) until a colonist
+  // weeds it or it is harvested clear.
   _growCrops(dt) {
     const env = this.environment;
     const tempFactor = tempGrowthFactor(env.temperature);
-    for (let i = this.crops.length - 1; i >= 0; i--) {
-      const crop = this.crops[i];
+    for (const crop of this.crops) {
+      if (crop.withered) continue;
       const tile = this.map.tiles[crop.y][crop.x];
       let rate = tempFactor * sunGrowthFactor(tile.sunlight, env.daylight);
       if (this.clock < crop.wateredUntil) rate *= WATER_GROWTH_BONUS;
-      crop.growth = Math.min(
-        1,
-        crop.growth + (dt / getCrop(crop.cropId).growthTime) * rate,
-      );
+      crop.growth = Math.min(1, crop.growth + (dt / getCrop(crop.cropId).growthTime) * rate);
       if (crop.doomed && crop.growth >= crop.witherAt) {
         crop.withered = true;
-        this.crops.splice(i, 1);
         this.cropsLost += 1;
         this._pushLog({
           icon: '✗',
@@ -770,26 +1021,14 @@ export class Game {
   }
 
   _pestStrike() {
-    // Pests gnaw raw stores only — cooked meals are kept safe.
+    // Pests gnaw on-hand raw food only — cooked meals, and anything tucked
+    // away in a stockpile, are kept safe.
     if (this.rawFood <= 0) return;
-    let stockpile = 0;
-    for (let y = 0; y < this.map.rows; y++) {
-      const row = this.map.tiles[y];
-      for (let x = 0; x < this.map.cols; x++) {
-        if (row[x].structure === 'stockpile') stockpile += 1;
-      }
-    }
-    const protection = Math.min(PEST_PROTECTION_CAP, stockpile * PEST_PROTECTION_PER_TILE);
-    const loss = Math.ceil(this.rawFood * PEST_BITE * (1 - protection));
+    const loss = Math.ceil(this.rawFood * PEST_BITE);
     let spoiled = 0;
     // Spoil one unit at a time, always from the largest store.
     while (spoiled < loss) {
-      let pick = null;
-      for (const ft of FOOD_TYPES) {
-        if (this.storage[ft] > 0 && (pick === null || this.storage[ft] > this.storage[pick])) {
-          pick = ft;
-        }
-      }
+      const pick = this._largestFood(this.storage, FOOD_TYPES);
       if (pick === null) break;
       this.storage[pick] -= 1;
       spoiled += 1;

@@ -64,11 +64,43 @@ export function cropSuitability(crop, tile) {
 /**
  * Chance (0..1) that a freshly sown crop survives to ripeness.
  * Initial crop strains are weak — even ideal soil only carries about half
- * to harvest. Tilled soil adds a bonus. Later versions (quality/genetics)
- * will improve the base odds.
+ * to harvest. Tilled soil and higher-quality seed add to `bonus`.
  * @param {number} suitability  0..1 soil match
- * @param {number} [bonus]      extra survival (e.g. from tilled soil)
+ * @param {number} [bonus]      extra survival (tilled soil, seed quality)
  */
 export function survivalChance(suitability, bonus = 0) {
   return clamp01(0.15 + suitability * 0.42 + bonus);
+}
+
+// Crop quality ranks (alpha 11): a single ★1–★5 axis. Higher-ranked seed
+// is hardier and yields more food. Later versions grow this one axis into
+// the genetics / mutation system.
+export const MIN_RANK = 1;
+export const MAX_RANK = 5;
+
+const clampRank = (r) => (r < MIN_RANK ? MIN_RANK : r > MAX_RANK ? MAX_RANK : r);
+
+/** Extra survival chance a crop gains from its seed's quality rank (rank 1 = 0). */
+export function rankSurvivalBonus(rank) {
+  return (clampRank(rank) - 1) * 0.05;
+}
+
+/** Food yield of a ripe crop of base yield `base` grown from a rank `rank` seed. */
+export function rankYield(base, rank) {
+  return Math.max(1, Math.round(base * (1 + (clampRank(rank) - 1) * 0.11)));
+}
+
+/**
+ * Quality rank (1..5) of a seed gathered from a harvested crop. It blends the
+ * parent crop's own rank with how well its tile suited it, plus a small
+ * random spread that leans slightly upward — so careful farming lifts seed
+ * quality over the years.
+ * @param {number} parentRank  the harvested crop's seed rank
+ * @param {number} suitability 0..1 soil match the crop grew on
+ * @param {number} roll        0..1 random sample
+ */
+export function harvestSeedRank(parentRank, suitability, roll) {
+  const suitRank = 1 + suitability * 4; // 1..5
+  const base = (parentRank + suitRank) / 2;
+  return clampRank(Math.round(base + (roll - 0.42) * 1.7));
 }

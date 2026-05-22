@@ -5,12 +5,20 @@ import {
   DRAG_THRESHOLD,
   SCROLL_STEP,
   TILL_SURVIVAL_BONUS,
+  STOCKPILE_CAP,
 } from './config.js';
 import { hashSeed, randomSeed } from './core/rng.js';
-import { isRipe, cropSuitability, survivalChance, getCrop } from './crops.js';
+import {
+  isRipe,
+  cropSuitability,
+  survivalChance,
+  getCrop,
+  CROP_IDS,
+  rankSurvivalBonus,
+} from './crops.js';
 import { tempGrowthFactor, sunGrowthFactor } from './season.js';
 import { t, setLang, getLang } from './i18n.js';
-import { Game } from './game.js';
+import { Game, STOCKPILE_ITEMS } from './game.js';
 
 const canvas = document.getElementById('map');
 const game = new Game(canvas);
@@ -27,6 +35,7 @@ const colonistsEl = $('colonist-stats');
 const taskStatsEl = $('task-stats');
 const taskReasonEl = $('task-reason');
 const colonyStatsEl = $('colony-stats');
+const seedStockEl = $('seed-stock');
 const logEl = $('event-log');
 const legendEl = $('legend');
 const gameoverEl = $('gameover');
@@ -168,13 +177,19 @@ function updateTaskPanel() {
 
 function updateColonyStats() {
   const s = game.storage;
+  // Item rows show the colony's whole holding — on hand plus every stockpile.
+  const ti = (it) => game.totalItem(it);
+  let spUsed = 0;
+  for (const sp of game.stockpiles) spUsed += game.stockpileFood(sp);
+  const spCap = game.stockpiles.length * STOCKPILE_CAP;
   renderRows(colonyStatsEl, [
     [t('stat.foodStored'), game.totalFood],
-    [t('stat.harvest'), `${s.wheat} / ${s.potato} / ${s.bean}`],
-    [t('stat.forage'), s.forage],
-    [t('stat.meat'), s.meat],
-    [t('stat.cooked'), s.meal],
+    [t('stat.harvest'), `${ti('wheat')} / ${ti('potato')} / ${ti('bean')}`],
+    [t('stat.forage'), ti('forage')],
+    [t('stat.meat'), ti('meat')],
+    [t('stat.cooked'), ti('meal')],
     [t('stat.wood'), Math.ceil(s.wood)],
+    [t('stat.stockpiles'), `${spUsed} / ${spCap}`],
     [t('stat.cropsLost'), game.cropsLost],
     [t('stat.spoiled'), game.pestsLost],
     [t('stat.meals'), game.meals.eaten],
@@ -182,17 +197,46 @@ function updateColonyStats() {
   ]);
 }
 
-// The activity log re-renders only when an entry is added (game.logRev),
-// so the panel does not snap back to the top while the player scrolls it.
+// Seed stock: each crop's seeds grouped by quality rank (★).
+function updateSeedPanel() {
+  seedStockEl.innerHTML = CROP_IDS.map((id) => {
+    const stock = game.seeds[id];
+    let chips = '';
+    for (let r = 1; r < stock.length; r++) {
+      if (stock[r] > 0) {
+        chips += `<span class="seed-chip">${'★'.repeat(r)}<b>×${stock[r]}</b></span>`;
+      }
+    }
+    if (!chips) chips = `<span class="seed-none">${t('val.none')}</span>`;
+    return (
+      `<div class="seed-row"><span class="seed-crop">${t('crop.' + id)}</span>` +
+      `<span class="seed-chips">${chips}</span></div>`
+    );
+  }).join('');
+}
+
+// The activity log keeps up to ~1000 events. It re-renders only when an
+// entry is added (game.logRev) and prepends just the new entries, so the
+// panel stays cheap and does not snap to the top while it is scrolled.
 let lastLogRev = -1;
+const logEntryHtml = (e) => `<li class="${e.cls}">${e.icon} ${e.text}</li>`;
 function updateLog() {
   if (game.logRev === lastLogRev) return;
+  const added = game.logRev - lastLogRev;
   lastLogRev = game.logRev;
-  const scroll = logEl.scrollTop;
-  logEl.innerHTML = game.log
-    .map((e) => `<li class="${e.cls}">${e.icon} ${e.text}</li>`)
-    .join('');
-  logEl.scrollTop = scroll;
+  // Full rebuild after a reset, or if more changed than the log now holds.
+  if (added < 0 || added >= game.log.length) {
+    logEl.innerHTML = game.log.map(logEntryHtml).join('');
+    return;
+  }
+  const followNewest = logEl.scrollTop <= 1;
+  const beforeH = logEl.scrollHeight;
+  const frag = document.createElement('template');
+  frag.innerHTML = game.log.slice(0, added).map(logEntryHtml).join('');
+  logEl.prepend(frag.content);
+  while (logEl.childElementCount > game.log.length) logEl.lastElementChild.remove();
+  // Keep the player's place if they have scrolled back to read history.
+  if (!followNewest) logEl.scrollTop += logEl.scrollHeight - beforeH;
 }
 
 function updateEnvPanel() {
@@ -211,6 +255,7 @@ function refreshPanels() {
   updateColonistsPanel();
   updateTaskPanel();
   updateColonyStats();
+  updateSeedPanel();
   updateLog();
   updateEnvPanel();
   updateLegend();
@@ -269,7 +314,37 @@ function describePlant(plant) {
   if (plant.withered) status = t('tip.withered');
   else if (isRipe(plant)) status = t('tip.ripe');
   else status = `${Math.round(plant.growth * 100)}%`;
-  return `<br>${t('tip.crop', { crop: t('crop.' + plant.cropId), status })}`;
+  let line = t('tip.crop', { crop: t('crop.' + plant.cropId), status });
+  if (plant.seedRank && !plant.withered) line += ` ${'★'.repeat(plant.seedRank)}`;
+  return `<br>${line}`;
+}
+
+// Short label for a stored item, reusing the crop / stat strings.
+function itemLabel(it) {
+  if (it === 'forage') return t('stat.forage');
+  if (it === 'meat') return t('stat.meat');
+  if (it === 'meal') return t('stat.cooked');
+  return t('crop.' + it);
+}
+
+// Extra tooltip lines for any structure on the tile (added, not replacing).
+function structureHint(pos) {
+  const tl = game.map.tiles[pos.y][pos.x];
+  if (!tl.structure) return '';
+  let s = `<br><strong>${t('structure.' + tl.structure)}</strong>`;
+  if (tl.structure === 'stockpile') {
+    const sp = game.stockpileAt(pos.x, pos.y);
+    if (sp) {
+      s += ` · ${t('tip.stored', { n: game.stockpileFood(sp), cap: STOCKPILE_CAP })}`;
+      const parts = STOCKPILE_ITEMS.filter((it) => sp.items[it] > 0).map(
+        (it) => `${itemLabel(it)} ${sp.items[it]}`,
+      );
+      if (parts.length) s += `<br>${parts.join(' · ')}`;
+    }
+  } else if (tl.structure === 'hearth') {
+    s += ` · ${t(game.hearthsLit ? 'tip.hearthLit' : 'tip.hearthUnlit')}`;
+  }
+  return s;
 }
 
 function growthHint(tile) {
@@ -281,9 +356,17 @@ function growthHint(tile) {
 
 function sowHint(tile) {
   if (tool !== 'sow' || tile.type === 'water' || tile.plant) return '';
-  const bonus = tile.tilled ? TILL_SURVIVAL_BONUS : 0;
+  if (!game.canSow(cropId)) {
+    return `<br>${t('tip.noSeed', { crop: t('crop.' + cropId) })}`;
+  }
+  const rank = game.bestSeedRank(cropId);
+  const bonus = (tile.tilled ? TILL_SURVIVAL_BONUS : 0) + rankSurvivalBonus(rank);
   const chance = survivalChance(cropSuitability(getCrop(cropId), tile), bonus);
-  return `<br>${t('tip.sowHere', { crop: t('crop.' + cropId), n: Math.round(chance * 100) })}`;
+  return `<br>${t('tip.sowHere', {
+    crop: t('crop.' + cropId),
+    rank: '★'.repeat(rank),
+    n: Math.round(chance * 100),
+  })}`;
 }
 
 function showTooltip(clientX, clientY, pos) {
@@ -295,7 +378,7 @@ function showTooltip(clientX, clientY, pos) {
     `<strong>(${pos.x}, ${pos.y})</strong> ${t('tile.' + tl.type)}<br>` +
     `${t('tip.elevation')} ${f(tl.elevation)}<br>${t('tip.fertility')} ${f(tl.fertility)}<br>` +
     `${t('tip.moisture')} ${f(tl.moisture)}<br>${t('tip.sunlight')} ${f(tl.sunlight)}` +
-    `${tilled}${describePlant(tl.plant)}${growthHint(tl)}${sowHint(tl)}`;
+    `${tilled}${describePlant(tl.plant)}${structureHint(pos)}${growthHint(tl)}${sowHint(tl)}`;
   const { rect } = canvasMetrics();
   tooltip.style.left = `${clientX - rect.left + 14}px`;
   tooltip.style.top = `${clientY - rect.top + 14}px`;
@@ -303,7 +386,7 @@ function showTooltip(clientX, clientY, pos) {
 
 // Range tools paint a task on every tile a drag crosses; single-target
 // tools (move / hunt) keep the classic drag-to-pan.
-const PAINT_TOOLS = new Set(['harvest', 'sow', 'till', 'water', 'build']);
+const PAINT_TOOLS = new Set(['harvest', 'sow', 'till', 'water', 'build', 'cancel']);
 
 let activePointer = null;
 let dragged = false;
@@ -315,6 +398,11 @@ let lastY = 0;
 const paintedTiles = new Set();
 
 function placeTask(pos) {
+  if (tool === 'cancel') {
+    game.cancelTasksAt(pos.x, pos.y);
+    updateTaskPanel();
+    return;
+  }
   game.enqueueTask(tool, pos.x, pos.y, {
     cropId,
     structure,
@@ -555,10 +643,13 @@ autoHuntBtn.addEventListener('click', () => {
 // --- victory: surviving the first year -----------------------------------
 
 function showVictory() {
+  let bestSeed = 0;
+  for (const id of CROP_IDS) bestSeed = Math.max(bestSeed, game.bestSeedRank(id));
   renderRows(victorySummaryEl, [
     [t('stat.survived'), game.colonists.length],
     [t('stat.foodStored'), game.totalFood],
     [t('stat.meals'), game.meals.eaten],
+    [t('stat.bestSeed'), bestSeed ? '★'.repeat(bestSeed) : t('val.none')],
     [t('stat.cropsLost'), game.cropsLost],
     [t('stat.spoiled'), game.pestsLost],
   ]);
@@ -606,6 +697,7 @@ setInterval(() => {
   updateColonistsPanel();
   updateTaskPanel();
   updateColonyStats();
+  updateSeedPanel();
   updateLog();
   updateEnvPanel();
   updateMapStats();

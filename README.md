@@ -113,6 +113,23 @@ and surviving the winter.
 - Press **1–5** to switch game speed; stat panels are denser (two
   columns) and the activity log is readable and scrolls properly
 
+### Alpha 11 — seeds, crop quality & stockpiles
+
+- Sowing now draws on the colony's **seed stock**: each sown crop spends
+  one seed, shown in the Colony panel by **quality rank** (★1–★5).
+  Higher-ranked seed is hardier and yields more food, and harvesting a
+  ripe crop **returns seeds** — careful farming lifts their quality over
+  the years, the first step toward the genetics system
+- **Stockpiles** are now real containers with a limited capacity.
+  Colonists **haul food into them on their own**, keeping it safe from
+  pests, and fetch it back when the on-hand store runs low
+- Colonists also **clear withered crops on their own** (weeding)
+- A new **Cancel** tool calls off planned tasks — click or drag over
+  their markers
+- Hovering a tile now also shows any **structure** there (a stockpile's
+  contents, whether a hearth is lit), alongside the terrain readout
+- The activity log keeps a much longer history — scroll back ~1000 events
+
 ## Version archive
 
 Every released version stays playable. The live site links to an

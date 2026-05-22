@@ -17,13 +17,17 @@ export const TaskType = {
   HUNT: 'hunt',
   BUILD: 'build',
   COOK: 'cook',
+  WEED: 'weed', // clear a withered, dead crop (autonomous)
+  STORE: 'store', // haul on-hand food into a stockpile (autonomous)
+  FETCH: 'fetch', // haul food from a stockpile back on-hand (autonomous)
   EAT: 'eat',
   REST: 'rest',
   LEISURE: 'leisure',
   SLEEP: 'sleep',
 };
 
-// Task types the player places with the on-screen tools.
+// Colony work tasks — placed by the player's tools or taken up autonomously.
+// (As opposed to personal tasks: eat / rest / leisure / sleep.)
 export const WORK_TYPES = [
   TaskType.MOVE,
   TaskType.HARVEST,
@@ -33,6 +37,9 @@ export const WORK_TYPES = [
   TaskType.HUNT,
   TaskType.BUILD,
   TaskType.COOK,
+  TaskType.WEED,
+  TaskType.STORE,
+  TaskType.FETCH,
 ];
 
 // Structures a BUILD task can raise.

@@ -43,6 +43,9 @@ const TASK_COLORS = {
   [TaskType.HUNT]: '#d2603a',
   [TaskType.BUILD]: '#c8a06a',
   [TaskType.COOK]: '#e0843c',
+  [TaskType.WEED]: '#9aa84a',
+  [TaskType.STORE]: '#86b8d0',
+  [TaskType.FETCH]: '#d0a886',
 };
 
 export class Renderer {

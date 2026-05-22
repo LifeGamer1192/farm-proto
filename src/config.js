@@ -53,7 +53,7 @@ export const WORK_DURATION = 0.7;
 export const WILD_PLANT_CHANCE = 0.07;
 
 // How many recent events the activity log keeps (the panel scrolls back).
-export const TASK_LOG_SIZE = 50;
+export const TASK_LOG_SIZE = 1000;
 
 // --- colonists -----------------------------------------------------------
 
@@ -104,9 +104,7 @@ export const HUT_MOOD_BONUS = 0.06; // mood per sim-second gained resting near a
 // --- pests (alpha 8) -----------------------------------------------------
 
 export const PEST_INTERVAL = 40; // sim-seconds between pest infestations
-export const PEST_BITE = 0.15; // fraction of stored food a pest strike spoils
-export const PEST_PROTECTION_PER_TILE = 0.05; // each stockpile tile cuts the loss
-export const PEST_PROTECTION_CAP = 0.85; // most a stockpile can mitigate
+export const PEST_BITE = 0.15; // fraction of on-hand food a pest strike spoils
 
 // --- cooking, fuel & cold (alpha 9) --------------------------------------
 
@@ -125,3 +123,17 @@ export const MEAL_MOOD_BONUS = 0.12; // mood lift from eating a cooked meal
 export const AUTO_HUNT_RANGE = 9; // tiles — an idle colonist auto-hunts boar this close
 export const HUNT_FOOD_PER_HEAD = 3; // auto-hunt starts below this much food per colonist
 export const MEAL_TARGET = 6; // colonists auto-cook until this many meals are stocked
+
+// --- seeds & crop quality (alpha 11) -------------------------------------
+
+export const SEED_START_COUNT = 12; // seeds per crop the colony begins with
+export const SEED_START_RANK = 2; // quality rank (★) of those starting seeds
+export const SEEDS_PER_HARVEST = 2; // seeds gathered from one ripe crop
+
+// --- stockpiles & hauling (alpha 11) -------------------------------------
+
+export const STOCKPILE_CAP = 25; // food units one stockpile tile can hold
+export const ON_HAND_CAP = 30; // above this, colonists haul on-hand food to a stockpile
+export const ON_HAND_LOW = 12; // below this, colonists fetch food back from a stockpile
+export const HAUL_BATCH = 8; // food units moved per store / fetch task
+export const HAUL_DURATION = 1.2; // work phase (sim-seconds) to store or fetch

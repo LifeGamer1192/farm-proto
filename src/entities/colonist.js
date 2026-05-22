@@ -20,6 +20,7 @@ import {
   HUNT_DURATION,
   BUILD_DURATION,
   COOK_DURATION,
+  HAUL_DURATION,
   HUNGER_RATE,
   STARVE_RATE,
   HEALTH_REGEN,
@@ -37,9 +38,12 @@ const WORK_PHASE = {
   [TaskType.HARVEST]: WORK_DURATION,
   [TaskType.TILL]: WORK_DURATION,
   [TaskType.WATER]: WORK_DURATION,
+  [TaskType.WEED]: WORK_DURATION,
   [TaskType.HUNT]: HUNT_DURATION,
   [TaskType.BUILD]: BUILD_DURATION,
   [TaskType.COOK]: COOK_DURATION,
+  [TaskType.STORE]: HAUL_DURATION,
+  [TaskType.FETCH]: HAUL_DURATION,
   [TaskType.EAT]: EAT_DURATION,
   [TaskType.REST]: REST_DURATION,
   [TaskType.SLEEP]: SLEEP_DURATION,
@@ -51,9 +55,12 @@ const WORK_STATE = {
   [TaskType.HARVEST]: 'working',
   [TaskType.TILL]: 'working',
   [TaskType.WATER]: 'working',
+  [TaskType.WEED]: 'weeding',
   [TaskType.HUNT]: 'hunting',
   [TaskType.BUILD]: 'building',
   [TaskType.COOK]: 'cooking',
+  [TaskType.STORE]: 'hauling',
+  [TaskType.FETCH]: 'hauling',
   [TaskType.EAT]: 'eating',
   [TaskType.REST]: 'resting',
   [TaskType.SLEEP]: 'sleeping',
@@ -132,6 +139,11 @@ export class Colonist {
     } else if (task.type === TaskType.WATER) {
       const p = tile.plant;
       if (!p || p.kind !== 'crop' || p.withered) return this._fail(task, 'noCrop');
+    } else if (task.type === TaskType.WEED) {
+      const p = tile.plant;
+      if (!p || p.kind !== 'crop' || !p.withered) return this._fail(task, 'noWeed');
+    } else if (task.type === TaskType.STORE || task.type === TaskType.FETCH) {
+      if (tile.structure !== 'stockpile') return this._fail(task, 'noStockpile');
     } else if (task.type === TaskType.BUILD) {
       if (tile.type === TileType.WATER) return this._fail(task, 'onWater');
       if (tile.plant || tile.structure) return this._fail(task, 'occupied');
