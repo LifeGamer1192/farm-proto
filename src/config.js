@@ -94,3 +94,16 @@ export const ANIMAL_ATTACK_RANGE = 1.6; // tiles
 export const HUNT_DURATION = 1.5; // work phase to bring an animal down
 export const HUNT_RANGE = 2.5; // the animal must be this close when the hunt lands
 export const MEAT_YIELD = 5; // food gained from a hunted animal
+
+// --- building & storage (alpha 8) ----------------------------------------
+
+export const BUILD_DURATION = 1.6; // work phase (sim-seconds) to raise a structure
+export const HUT_RANGE = 4; // tiles within which a hut comforts a resting colonist
+export const HUT_MOOD_BONUS = 0.06; // mood per sim-second gained resting near a hut
+
+// --- pests (alpha 8) -----------------------------------------------------
+
+export const PEST_INTERVAL = 40; // sim-seconds between pest infestations
+export const PEST_BITE = 0.15; // fraction of stored food a pest strike spoils
+export const PEST_PROTECTION_PER_TILE = 0.05; // each stockpile tile cuts the loss
+export const PEST_PROTECTION_CAP = 0.85; // most a stockpile can mitigate

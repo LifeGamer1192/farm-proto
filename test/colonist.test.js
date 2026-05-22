@@ -68,10 +68,29 @@ test('a withered crop may be harvested (to clear the husk)', () => {
 test('sowing on water fails', () => {
   const map = makeMap(['..#..', '.....']);
   const c = new Colonist(0, 0, 'A');
-  const task = createTask(TaskType.SOW, 2, 0, 'wheat');
+  const task = createTask(TaskType.SOW, 2, 0, { cropId: 'wheat' });
   c.assignTask(task, map);
   assert.equal(task.status, 'failed');
   assert.equal(task.outcome, 'onWater');
+});
+
+test('a build task on open land completes', () => {
+  const map = makeMap(Array(5).fill('.....'));
+  const c = new Colonist(0, 0, 'A');
+  const task = createTask(TaskType.BUILD, 3, 2, { structure: 'fence' });
+  c.assignTask(task, map);
+  simulate(c, 4);
+  assert.equal(task.status, 'done');
+});
+
+test('building on an occupied tile fails', () => {
+  const map = makeMap(Array(5).fill('.....'));
+  map.tiles[2][3].structure = 'hut';
+  const c = new Colonist(0, 0, 'A');
+  const task = createTask(TaskType.BUILD, 3, 2, { structure: 'fence' });
+  c.assignTask(task, map);
+  assert.equal(task.status, 'failed');
+  assert.equal(task.outcome, 'occupied');
 });
 
 test('a till task on land completes', () => {

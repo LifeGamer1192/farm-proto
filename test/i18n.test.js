@@ -41,3 +41,22 @@ test('alpha-7 keys are translated in both languages', () => {
   }
   setLang('en');
 });
+
+test('alpha-8 keys are translated in both languages', () => {
+  const keys = [
+    'task.build',
+    'structure.fence',
+    'structure.hut',
+    'structure.stockpile',
+    'btn.pause',
+    'btn.allColonists',
+    'stat.spoiled',
+  ];
+  for (const key of keys) {
+    setLang('en');
+    assert.notEqual(t(key), key);
+    setLang('ja');
+    assert.notEqual(t(key), key);
+  }
+  setLang('en');
+});

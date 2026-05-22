@@ -31,6 +31,12 @@ import {
   ANIMAL_ATTACK_RANGE,
   HUNT_RANGE,
   MEAT_YIELD,
+  HUT_RANGE,
+  HUT_MOOD_BONUS,
+  PEST_INTERVAL,
+  PEST_BITE,
+  PEST_PROTECTION_PER_TILE,
+  PEST_PROTECTION_CAP,
 } from './config.js';
 import { generateMap, mapStats } from './map/mapGenerator.js';
 import { TileType } from './map/tile.js';
@@ -75,12 +81,18 @@ export class Game {
     this.animals = [];
     this.stats = null;
     this.over = false;
+    this.paused = false;
+    // The colonist new work is addressed to, or null for the whole colony.
+    this.selectedColonist = null;
 
     this.taskQueue = [];
     this.crops = [];
     this.storage = { forage: 0, wheat: 0, potato: 0, bean: 0, meat: 0 };
     this.meals = { eaten: 0, missed: 0 };
     this.cropsLost = 0;
+    this.pestsLost = 0;
+    this.pestTimer = 0;
+    this._pestEvent = false;
     this.log = [];
     this.lastAssignReason = '';
 
@@ -136,7 +148,11 @@ export class Game {
     this.storage = { forage: 0, wheat: 0, potato: 0, bean: 0, meat: 0 };
     this.meals = { eaten: 0, missed: 0 };
     this.cropsLost = 0;
+    this.pestsLost = 0;
+    this.pestTimer = 0;
+    this._pestEvent = false;
     this.over = false;
+    this.selectedColonist = null;
     this.log = [];
     this.lastAssignReason = t('reason.start');
     this.hover = null;
@@ -206,6 +222,19 @@ export class Game {
     return s;
   }
 
+  // True once after a pest strike — drives a one-shot UI toast.
+  consumePestEvent() {
+    const e = this._pestEvent;
+    this._pestEvent = false;
+    return e;
+  }
+
+  /** Freeze or resume the simulation. Returns the new paused state. */
+  togglePause() {
+    this.paused = !this.paused;
+    return this.paused;
+  }
+
   // The animal nearest to a tile, within `range` tiles (or null).
   _animalNear(x, y, range) {
     let best = range;
@@ -220,10 +249,15 @@ export class Game {
     return found;
   }
 
-  /** Queue a work task at a tile, if it makes sense there. */
-  enqueueTask(type, x, y, cropId = null) {
+  /**
+   * Queue a work task at a tile, if it makes sense there.
+   * @param {object} [opts] cropId (SOW), structure (BUILD), assignee (a
+   *   colonist name, or null to address the whole colony).
+   */
+  enqueueTask(type, x, y, opts = {}) {
     const tile = this.map.tiles[y] && this.map.tiles[y][x];
     if (!tile) return false;
+    const assignee = opts.assignee || null;
     if (type === TaskType.MOVE && tile.type === TileType.WATER) return false;
     if (type === TaskType.HARVEST && !tile.plant) return false;
     if (type === TaskType.SOW && (tile.type === TileType.WATER || tile.plant)) return false;
@@ -232,15 +266,22 @@ export class Game {
       const p = tile.plant;
       if (!p || p.kind !== PlantKind.CROP || p.withered) return false;
     }
+    if (type === TaskType.BUILD) {
+      if (tile.type === TileType.WATER || tile.plant || tile.structure) return false;
+      this.taskQueue.push(
+        createTask(TaskType.BUILD, x, y, { structure: opts.structure || 'fence', assignee }),
+      );
+      return true;
+    }
     if (type === TaskType.HUNT) {
       const animal = this._animalNear(x, y, 1.6);
       if (!animal) return false;
       this.taskQueue.push(
-        createTask(TaskType.HUNT, animal.tileX, animal.tileY, null, animal.id),
+        createTask(TaskType.HUNT, animal.tileX, animal.tileY, { animalId: animal.id, assignee }),
       );
       return true;
     }
-    this.taskQueue.push(createTask(type, x, y, cropId));
+    this.taskQueue.push(createTask(type, x, y, { cropId: opts.cropId || null, assignee }));
     return true;
   }
 
@@ -260,6 +301,7 @@ export class Game {
     if (d) {
       if (d.crop) params.crop = t('crop.' + d.crop);
       if (d.animal) params.animal = t('animal.' + d.animal);
+      if (d.structure) params.structure = t('structure.' + d.structure);
       if (d.n !== undefined) params.n = d.n;
     }
     return t('out.' + (task.outcome || 'arrived'), params);
@@ -268,7 +310,8 @@ export class Game {
   // Log only the player's work tasks; personal tasks would flood the log.
   _logWorkTask(task) {
     if (!WORK_TYPES.includes(task.type)) return;
-    const where = `${t('task.' + task.type)} (${task.x}, ${task.y})`;
+    let where = `${t('task.' + task.type)} (${task.x}, ${task.y})`;
+    if (task.assignee) where += ` · ${task.assignee}`;
     this._pushLog({
       icon: task.status === 'done' ? '✓' : '✗',
       text: `${where} — ${this._outcomeText(task)}`,
@@ -362,11 +405,32 @@ export class Game {
       } else {
         task.outcome = 'gotAway';
       }
+    } else if (task.type === TaskType.BUILD) {
+      if (tile.type !== TileType.WATER && !tile.plant && !tile.structure) {
+        tile.structure = task.structure;
+        task.outcome = 'built';
+        task.outcomeData = { structure: task.structure };
+      } else {
+        task.outcome = 'occupied';
+      }
     } else if (task.type === TaskType.EAT) {
       this._feed(colonist);
     } else {
       task.outcome = 'arrived';
     }
+  }
+
+  // True if a hut stands within HUT_RANGE tiles of (x, y).
+  _hutNear(x, y) {
+    for (let dy = -HUT_RANGE; dy <= HUT_RANGE; dy++) {
+      const row = this.map.tiles[y + dy];
+      if (!row) continue;
+      for (let dx = -HUT_RANGE; dx <= HUT_RANGE; dx++) {
+        const tile = row[x + dx];
+        if (tile && tile.structure === 'hut') return true;
+      }
+    }
+    return false;
   }
 
   // Priority AI: decide a colonist's next task.
@@ -376,14 +440,20 @@ export class Game {
     }
     // A content colonist works; a miserable one may slack off instead.
     const willWork = colonist.mood >= 0.3 || Math.random() < 0.5;
-    if (this.taskQueue.length > 0 && willWork) {
-      const task = this.taskQueue.shift();
-      this.lastAssignReason = t('reason.queued', {
-        task: t('task.' + task.type),
-        x: task.x,
-        y: task.y,
-      });
-      return task;
+    if (willWork) {
+      // Take the first queued task addressed to this colonist or to all.
+      const idx = this.taskQueue.findIndex(
+        (task) => !task.assignee || task.assignee === colonist.name,
+      );
+      if (idx >= 0) {
+        const task = this.taskQueue.splice(idx, 1)[0];
+        this.lastAssignReason = t('reason.queued', {
+          task: t('task.' + task.type),
+          x: task.x,
+          y: task.y,
+        });
+        return task;
+      }
     }
     return this._idleTask(colonist);
   }
@@ -420,12 +490,23 @@ export class Game {
         }
       }
       c.update(dt);
+      // Resting beside a hut lifts the spirits.
+      if (
+        (c.state === 'resting' || c.state === 'sleeping') &&
+        this._hutNear(c.tileX, c.tileY)
+      ) {
+        c.mood = Math.min(1, c.mood + HUT_MOOD_BONUS * dt);
+      }
     }
     // Carry off the fallen.
     if (this.colonists.some((c) => c.dead)) {
       for (const c of this.colonists) {
         if (c.dead) {
           this._pushLog({ icon: '☠', text: t('log.died', { name: c.name }), cls: 'log-fail' });
+          // Hand this colonist's queued work back to the whole colony.
+          for (const task of this.taskQueue) {
+            if (task.assignee === c.name) task.assignee = null;
+          }
         }
       }
       this.colonists = this.colonists.filter((c) => !c.dead);
@@ -492,6 +573,44 @@ export class Game {
     }
   }
 
+  // Pests gnaw at the food store on a timer; stockpile tiles soften the loss.
+  _updatePests(dt) {
+    this.pestTimer += dt;
+    if (this.pestTimer < PEST_INTERVAL) return;
+    this.pestTimer -= PEST_INTERVAL;
+    this._pestStrike();
+  }
+
+  _pestStrike() {
+    if (this.totalFood <= 0) return;
+    let stockpile = 0;
+    for (let y = 0; y < this.map.rows; y++) {
+      const row = this.map.tiles[y];
+      for (let x = 0; x < this.map.cols; x++) {
+        if (row[x].structure === 'stockpile') stockpile += 1;
+      }
+    }
+    const protection = Math.min(PEST_PROTECTION_CAP, stockpile * PEST_PROTECTION_PER_TILE);
+    const loss = Math.ceil(this.totalFood * PEST_BITE * (1 - protection));
+    let spoiled = 0;
+    // Spoil one unit at a time, always from the largest store.
+    while (spoiled < loss) {
+      let pick = null;
+      for (const ft of FOOD_TYPES) {
+        if (this.storage[ft] > 0 && (pick === null || this.storage[ft] > this.storage[pick])) {
+          pick = ft;
+        }
+      }
+      if (pick === null) break;
+      this.storage[pick] -= 1;
+      spoiled += 1;
+    }
+    if (spoiled === 0) return;
+    this.pestsLost += spoiled;
+    this._pestEvent = true;
+    this._pushLog({ icon: '🐛', text: t('log.pests', { n: spoiled }), cls: 'log-fail' });
+  }
+
   _panVector() {
     let dx = this.panDir.x;
     let dy = this.panDir.y;
@@ -503,10 +622,12 @@ export class Game {
   }
 
   update(realDt) {
+    // The camera still pans while paused; the simulation does not advance.
     const { dx, dy } = this._panVector();
     if (dx !== 0 || dy !== 0) {
       this.camera.pan(dx * CAMERA_SPEED * realDt, dy * CAMERA_SPEED * realDt);
     }
+    if (this.paused) return;
     const simDt = realDt * this.speed;
     this.clock += simDt;
     const prevSeason = this.environment.seasonIndex;
@@ -517,6 +638,7 @@ export class Game {
     this._updateColonists(simDt);
     this._updateAnimals(simDt);
     this._growCrops(simDt);
+    this._updatePests(simDt);
   }
 
   render() {
@@ -531,6 +653,7 @@ export class Game {
       tileSize: this.tileSize,
       seasonTint: SEASON_TINT[this.environment.season],
       clock: this.clock,
+      selectedColonist: this.selectedColonist,
     });
   }
 

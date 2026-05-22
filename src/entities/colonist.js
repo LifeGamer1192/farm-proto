@@ -18,6 +18,7 @@ import {
   REST_DURATION,
   SLEEP_DURATION,
   HUNT_DURATION,
+  BUILD_DURATION,
   HUNGER_RATE,
   STARVE_RATE,
   HEALTH_REGEN,
@@ -36,6 +37,7 @@ const WORK_PHASE = {
   [TaskType.TILL]: WORK_DURATION,
   [TaskType.WATER]: WORK_DURATION,
   [TaskType.HUNT]: HUNT_DURATION,
+  [TaskType.BUILD]: BUILD_DURATION,
   [TaskType.EAT]: EAT_DURATION,
   [TaskType.REST]: REST_DURATION,
   [TaskType.SLEEP]: SLEEP_DURATION,
@@ -48,6 +50,7 @@ const WORK_STATE = {
   [TaskType.TILL]: 'working',
   [TaskType.WATER]: 'working',
   [TaskType.HUNT]: 'hunting',
+  [TaskType.BUILD]: 'building',
   [TaskType.EAT]: 'eating',
   [TaskType.REST]: 'resting',
   [TaskType.SLEEP]: 'sleeping',
@@ -125,6 +128,9 @@ export class Colonist {
     } else if (task.type === TaskType.WATER) {
       const p = tile.plant;
       if (!p || p.kind !== 'crop' || p.withered) return this._fail(task, 'noCrop');
+    } else if (task.type === TaskType.BUILD) {
+      if (tile.type === TileType.WATER) return this._fail(task, 'onWater');
+      if (tile.plant || tile.structure) return this._fail(task, 'occupied');
     } else if (task.type === TaskType.MOVE) {
       if (tile.type === TileType.WATER) return this._fail(task, 'onWater');
     }

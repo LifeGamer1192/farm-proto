@@ -174,6 +174,32 @@ const STRINGS = {
     'gameover.title': 'Colony lost',
     'gameover.hint': 'The last colonist has fallen. Start over to begin a new colony.',
     'gameover.btn': 'New colony',
+
+    'task.build': 'Build',
+    'state.building': 'Building',
+    'structure.fence': 'Fence',
+    'structure.hut': 'Hut',
+    'structure.stockpile': 'Stockpile',
+    'panel.structure': 'Structure to build',
+    'panel.simulation': 'Simulation',
+    'btn.pause': 'Pause',
+    'btn.resume': 'Resume',
+    'btn.allColonists': 'All colonists',
+    'note.paused': 'Paused',
+    'hint.task.build':
+      'Build tool — click land to raise the chosen structure; a colonist constructs it.',
+    'hint.structure.fence':
+      'Fence — wild animals will not cross it. Ring the farm to keep boar out.',
+    'hint.structure.hut': 'Hut — a colonist resting nearby recovers its mood faster.',
+    'hint.structure.stockpile':
+      'Stockpile — a storage ground; each stockpile tile blunts pest losses.',
+    'hint.targetOne':
+      'Now directing {name}. New work goes to them — pick "All colonists" to share it again.',
+    'hint.targetAll': 'Now directing the whole colony — new work is shared by all.',
+    'stat.spoiled': 'Spoiled to pests',
+    'out.built': 'built {structure}',
+    'log.pests': 'Pests spoiled {n} food',
+    'note.pests': 'Pests! Some stored food was spoiled — stockpiles soften the blow.',
   },
 
   ja: {
@@ -347,6 +373,31 @@ const STRINGS = {
     'gameover.title': 'コロニー消滅',
     'gameover.hint': '最後のコロニストが倒れました。新たなコロニーを始めましょう。',
     'gameover.btn': '新しいコロニー',
+
+    'task.build': '建築',
+    'state.building': '建築中',
+    'structure.fence': '柵',
+    'structure.hut': '小屋',
+    'structure.stockpile': 'ストックパイル',
+    'panel.structure': '建てる構造物',
+    'panel.simulation': 'シミュレーション',
+    'btn.pause': '一時停止',
+    'btn.resume': '再開',
+    'btn.allColonists': '全コロニスト',
+    'note.paused': '一時停止中',
+    'hint.task.build':
+      '建築ツール — 陸地をクリックすると、選んだ構造物の建設をコロニストに指示します。',
+    'hint.structure.fence': '柵 — 野生動物は越えられません。農地を囲ってイノシシを防ぎます。',
+    'hint.structure.hut': '小屋 — 近くで休むコロニストの気分の回復が速くなります。',
+    'hint.structure.stockpile':
+      'ストックパイル — 備蓄置き場。タイルが多いほど虫害の損失を抑えます。',
+    'hint.targetOne':
+      '{name}に指示中。以降の作業はこの人へ — 「全コロニスト」で全体指示に戻ります。',
+    'hint.targetAll': 'コロニー全体に指示中 — 作業は全員で分担します。',
+    'stat.spoiled': '虫害ロス',
+    'out.built': '{structure}を建てた',
+    'log.pests': '虫害で食料{n}が傷んだ',
+    'note.pests': '虫害発生 — 備蓄食料が傷みました。ストックパイルで被害を軽減できます。',
   },
 };
 

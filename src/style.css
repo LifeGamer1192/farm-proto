@@ -375,6 +375,20 @@ button.primary:hover {
   display: flex;
   flex-direction: column;
   gap: 4px;
+  cursor: pointer;
+  padding: 4px 6px;
+  margin: 0 -6px;
+  border: 1px solid transparent;
+  border-radius: 5px;
+}
+
+.colonist-row:hover {
+  background: var(--panel-2);
+}
+
+.colonist-row.selected {
+  border-color: #7fd4ff;
+  background: rgba(127, 212, 255, 0.12);
 }
 
 .crow-head {
@@ -456,4 +470,50 @@ button.primary:hover {
 .gameover-box .primary {
   width: auto;
   padding: 8px 20px;
+}
+
+/* Pause control and its on-canvas indicator. */
+.pause-btn {
+  width: 100%;
+  margin-top: 8px;
+}
+
+.pause-btn.paused {
+  background: #d8a23c;
+  color: #11240f;
+  border-color: #d8a23c;
+  font-weight: 600;
+}
+
+.paused-badge {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  background: rgba(12, 15, 20, 0.9);
+  border: 1px solid #d8a23c;
+  color: #f0d29a;
+  padding: 4px 12px;
+  border-radius: 12px;
+  font-size: 0.74rem;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  line-height: 1.5;
+  z-index: 5;
+}
+
+.paused-badge[hidden] {
+  display: none;
+}
+
+/* "All colonists" work-order target toggle. */
+.target-all {
+  width: 100%;
+  margin-bottom: 10px;
+}
+
+.target-all.active {
+  background: var(--accent);
+  color: #11240f;
+  border-color: var(--accent);
+  font-weight: 600;
 }

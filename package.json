@@ -1,7 +1,7 @@
 {
   "name": "farm-proto",
   "private": true,
-  "version": "0.7.0-alpha.7",
+  "version": "0.8.0-alpha.8",
   "description": "A farming-focused colony simulation game (alpha prototype).",
   "type": "module",
   "scripts": {

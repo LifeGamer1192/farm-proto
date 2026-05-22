@@ -1,11 +1,15 @@
 // A* pathfinding on the tile grid (4-directional movement).
-// Water tiles are impassable, so paths route around them.
+// Water tiles are impassable, so paths route around them. Callers that
+// pass blockFences=true (wild animals) also route around fences.
 
 import { TileType } from '../map/tile.js';
 
-function isWalkable(map, x, y) {
+function isWalkable(map, x, y, blockFences) {
   if (x < 0 || y < 0 || x >= map.cols || y >= map.rows) return false;
-  return map.tiles[y][x].type !== TileType.WATER;
+  const tile = map.tiles[y][x];
+  if (tile.type === TileType.WATER) return false;
+  if (blockFences && tile.structure === 'fence') return false;
+  return true;
 }
 
 // Binary min-heap of open nodes, keyed by f-score.
@@ -55,12 +59,15 @@ class MinHeap {
  * @param {{cols:number, rows:number, tiles:object[][]}} map
  * @param {{x:number, y:number}} start
  * @param {{x:number, y:number}} goal
+ * @param {boolean} [blockFences] route around fence structures (wild animals)
  * @returns {{x:number,y:number}[]|null} waypoints from the tile after `start`
  *   through `goal` (inclusive); `[]` if start === goal; `null` if unreachable.
  */
-export function findPath(map, start, goal) {
-  if (!isWalkable(map, start.x, start.y)) return null;
-  if (!isWalkable(map, goal.x, goal.y)) return null;
+export function findPath(map, start, goal, blockFences = false) {
+  // The start tile is always allowed to leave (an animal pinned on a fresh
+  // fence can still walk off it); the goal and every step honour blockFences.
+  if (!isWalkable(map, start.x, start.y, false)) return null;
+  if (!isWalkable(map, goal.x, goal.y, blockFences)) return null;
   if (start.x === goal.x && start.y === goal.y) return [];
 
   const { cols, rows } = map;
@@ -99,7 +106,7 @@ export function findPath(map, start, goal) {
     for (let d = 0; d < 8; d += 2) {
       const nx = cur.x + dirs[d];
       const ny = cur.y + dirs[d + 1];
-      if (!isWalkable(map, nx, ny)) continue;
+      if (!isWalkable(map, nx, ny, blockFences)) continue;
       const ni = idx(nx, ny);
       if (closed[ni]) continue;
       const tentative = gScore[ci] + 1;

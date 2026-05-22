@@ -1,6 +1,7 @@
 // A wild animal. It strolls slowly around the map and, on a cooldown,
 // lands a minor attack on any colonist that strays too close. Colonists
-// can hunt it down for meat.
+// can hunt it down for meat. Animals route around fences, so a ringed
+// farm keeps them out.
 
 import { findPath } from '../core/pathfinder.js';
 import { TileType } from '../map/tile.js';
@@ -45,7 +46,8 @@ export class Animal {
       const ty = this.tileY + Math.floor((Math.random() * 2 - 1) * WANDER_RADIUS);
       const row = map.tiles[ty];
       if (!row || !row[tx] || row[tx].type === TileType.WATER) continue;
-      const path = findPath(map, { x: this.tileX, y: this.tileY }, { x: tx, y: ty });
+      if (row[tx].structure === 'fence') continue;
+      const path = findPath(map, { x: this.tileX, y: this.tileY }, { x: tx, y: ty }, true);
       if (path && path.length > 0) {
         this.path = path;
         return;

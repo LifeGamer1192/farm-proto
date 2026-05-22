@@ -33,15 +33,20 @@ const gameoverEl = $('gameover');
 const viewModesEl = $('view-modes');
 const toolsEl = $('tools');
 const cropsEl = $('crops');
+const structuresEl = $('structures');
 const speedsEl = $('speeds');
 const zoomsEl = $('zooms');
 const langsEl = $('langs');
 const envStatsEl = $('env-stats');
+const pauseBtn = $('pause-btn');
+const pausedBadge = $('paused-badge');
+const targetAllBtn = $('target-all');
 
 const PAN_DIRS = { up: [0, -1], down: [0, 1], left: [-1, 0], right: [1, 0] };
 
 let tool = 'move';
 let cropId = 'wheat';
+let structure = 'fence';
 
 const archiveLink = $('archive-link');
 if (archiveLink && location.pathname.includes('/versions/')) {
@@ -128,20 +133,26 @@ function statBar(key, value) {
 }
 
 function updateColonistsPanel() {
+  // Drop a stale selection if that colonist is no longer with us.
+  if (game.selectedColonist && !game.colonists.some((c) => c.name === game.selectedColonist)) {
+    game.selectedColonist = null;
+  }
   colonistsEl.innerHTML = game.colonists
     .map((c) => {
       const bars =
         statBar('stat.fed', 1 - c.hunger) +
         statBar('stat.health', c.health) +
         statBar('stat.mood', c.mood);
+      const sel = c.name === game.selectedColonist ? ' selected' : '';
       return (
-        '<div class="colonist-row">' +
+        `<div class="colonist-row${sel}" data-colonist="${c.name}">` +
         `<div class="crow-head"><span>${c.name}</span>` +
         `<span class="cstate">${t('state.' + c.state)}</span></div>` +
         `<div class="crow-bars">${bars}</div></div>`
       );
     })
     .join('');
+  targetAllBtn.classList.toggle('active', !game.selectedColonist);
 }
 
 function updateTaskPanel() {
@@ -160,6 +171,7 @@ function updateColonyStats() {
     [t('stat.forage'), s.forage],
     [t('stat.meat'), s.meat],
     [t('stat.cropsLost'), game.cropsLost],
+    [t('stat.spoiled'), game.pestsLost],
     [t('stat.meals'), game.meals.eaten],
     [t('stat.missed'), game.meals.missed],
   ]);
@@ -196,6 +208,7 @@ function applyI18n() {
   }
   document.documentElement.lang = getLang();
   refreshPanels();
+  updatePauseBtn();
 }
 
 // --- map lifecycle --------------------------------------------------------
@@ -315,7 +328,11 @@ function endPointer(ev) {
   if (!dragged) {
     const pos = tileAt(ev.clientX, ev.clientY);
     if (pos) {
-      game.enqueueTask(tool, pos.x, pos.y, cropId);
+      game.enqueueTask(tool, pos.x, pos.y, {
+        cropId,
+        structure,
+        assignee: game.selectedColonist,
+      });
       updateTaskPanel();
     }
   }
@@ -341,6 +358,11 @@ window.addEventListener('keydown', (ev) => {
   const el = document.activeElement;
   if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA')) return;
   const k = ev.key.toLowerCase();
+  if (k === ' ') {
+    togglePause();
+    ev.preventDefault();
+    return;
+  }
   if (k === 'w' || k === 'a' || k === 's' || k === 'd') {
     game.keys.add(k);
     ev.preventDefault();
@@ -393,6 +415,13 @@ cropsEl.addEventListener('click', (ev) => {
   showToast(t('hint.crop.' + cropId));
 });
 
+structuresEl.addEventListener('click', (ev) => {
+  const btn = ev.target.closest('button[data-structure]');
+  if (!btn) return;
+  structure = selectIn(structuresEl, btn, 'structure');
+  showToast(t('hint.structure.' + structure));
+});
+
 speedsEl.addEventListener('click', (ev) => {
   const btn = ev.target.closest('button[data-speed]');
   if (!btn) return;
@@ -436,6 +465,37 @@ $('gameover-new').addEventListener('click', () => {
   gameoverEl.hidden = true;
 });
 
+// --- pause / resume -------------------------------------------------------
+
+function updatePauseBtn() {
+  pauseBtn.textContent = t(game.paused ? 'btn.resume' : 'btn.pause');
+  pauseBtn.classList.toggle('paused', game.paused);
+  pausedBadge.hidden = !game.paused;
+}
+
+function togglePause() {
+  game.togglePause();
+  updatePauseBtn();
+}
+
+pauseBtn.addEventListener('click', togglePause);
+
+// --- work-order target: the whole colony, or one named colonist -----------
+
+colonistsEl.addEventListener('click', (ev) => {
+  const row = ev.target.closest('.colonist-row');
+  if (!row) return;
+  game.selectedColonist = row.dataset.colonist;
+  showToast(t('hint.targetOne', { name: game.selectedColonist }));
+  updateColonistsPanel();
+});
+
+targetAllBtn.addEventListener('click', () => {
+  game.selectedColonist = null;
+  showToast(t('hint.targetAll'));
+  updateColonistsPanel();
+});
+
 // --- start ----------------------------------------------------------------
 
 newMap(randomSeed());
@@ -451,4 +511,5 @@ setInterval(() => {
   if (gameoverEl.hidden === game.over) gameoverEl.hidden = !game.over;
   const season = game.consumeSeasonChange();
   if (season) showToast(t('note.' + season));
+  if (game.consumePestEvent()) showToast(t('note.pests'));
 }, 150);

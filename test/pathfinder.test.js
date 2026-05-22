@@ -67,3 +67,22 @@ test('finds the shortest route on open ground', () => {
   const path = findPath(map, { x: 0, y: 0 }, { x: 9, y: 9 });
   assert.equal(path.length, 18); // = Manhattan distance
 });
+
+test('a fence wall stops animals but not colonists', () => {
+  const map = makeMap(['.....', '.....', '.....', '.....']);
+  for (let y = 0; y < map.rows; y++) map.tiles[y][2].structure = 'fence';
+  // Colonists ignore fences — the straight route is still open.
+  assert.ok(findPath(map, { x: 0, y: 0 }, { x: 4, y: 0 }));
+  // Animals route around fences, and this wall seals every row off.
+  assert.equal(findPath(map, { x: 0, y: 0 }, { x: 4, y: 0 }, true), null);
+});
+
+test('an animal slips through a gap in a fence', () => {
+  const map = makeMap(['.....', '.....', '.....', '.....']);
+  for (let y = 0; y < 3; y++) map.tiles[y][2].structure = 'fence'; // row 3 is open
+  const path = findPath(map, { x: 0, y: 0 }, { x: 4, y: 0 }, true);
+  assert.ok(path, 'expected a path through the fence gap');
+  for (const step of path) {
+    assert.notEqual(map.tiles[step.y][step.x].structure, 'fence');
+  }
+});

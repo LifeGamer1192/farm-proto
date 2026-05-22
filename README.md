@@ -74,6 +74,18 @@ and surviving the winter.
 - A new **Hunt** tool: click a boar to send a colonist after it for meat
 - If every colonist falls, the colony is lost — start over to try again
 
+### Alpha 8 — building, storage & pests
+
+- A new **Build** tool raises three structures: **fences** (wild animals
+  will not cross them — ring the farm to keep boar out), **huts** (a
+  colonist resting nearby recovers its mood faster), and **stockpiles**
+  (a storage ground that blunts pest losses)
+- **Pests** strike the food store on a timer; the more stockpile tiles
+  the colony has built, the less food they spoil
+- **Pause / resume** the simulation at any time (button or spacebar)
+- Work orders can be addressed to the **whole colony** or to **one
+  colonist** — pick a worker in the Colonists panel to direct their tasks
+
 ## Version archive
 
 Every released version stays playable. The live site links to an

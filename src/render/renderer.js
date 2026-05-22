@@ -41,6 +41,7 @@ const TASK_COLORS = {
   [TaskType.TILL]: '#b98a52',
   [TaskType.WATER]: '#5ba8d8',
   [TaskType.HUNT]: '#d2603a',
+  [TaskType.BUILD]: '#c8a06a',
 };
 
 export class Renderer {
@@ -52,6 +53,7 @@ export class Renderer {
 
   draw(scene) {
     const { map, camera, mode, colonists, animals, hover, taskQueue } = scene;
+    const selectedColonist = scene.selectedColonist || null;
     this.ts = scene.tileSize;
     const ctx = this.ctx;
     const ts = this.ts;
@@ -119,6 +121,20 @@ export class Renderer {
       ctx.fillRect(0, 0, cw, ch);
     }
 
+    // --- structures (fences, huts, stockpiles) ---
+    for (let row = 0; row < visRows; row++) {
+      const mapY = startRow + row;
+      if (mapY < 0 || mapY >= map.rows) continue;
+      for (let col = 0; col < visCols; col++) {
+        const mapX = startCol + col;
+        if (mapX < 0 || mapX >= map.cols) continue;
+        const structure = map.tiles[mapY][mapX].structure;
+        if (structure) {
+          this._drawStructure(structure, col * ts - offX, row * ts - offY);
+        }
+      }
+    }
+
     // --- plants & crops ---
     for (let row = 0; row < visRows; row++) {
       const mapY = startRow + row;
@@ -178,7 +194,67 @@ export class Renderer {
 
     // --- colonists ---
     for (const c of colonists) {
-      this._drawColonist(c, sx(c.x + 0.5), sy(c.y + 0.5));
+      this._drawColonist(c, sx(c.x + 0.5), sy(c.y + 0.5), c.name === selectedColonist);
+    }
+  }
+
+  // A built structure, drawn from the tile's top-left corner (px, py).
+  _drawStructure(structure, px, py) {
+    const ctx = this.ctx;
+    const ts = this.ts;
+    if (structure === 'stockpile') {
+      ctx.fillStyle = 'rgba(190,160,95,0.35)';
+      ctx.fillRect(px + 1, py + 1, ts - 2, ts - 2);
+      ctx.strokeStyle = '#b9923f';
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([4, 3]);
+      ctx.strokeRect(px + 2.5, py + 2.5, ts - 5, ts - 5);
+      ctx.setLineDash([]);
+      ctx.fillStyle = '#a9762f';
+      ctx.fillRect(px + ts * 0.34, py + ts * 0.34, ts * 0.32, ts * 0.32);
+      ctx.strokeStyle = '#6e4a18';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(px + ts * 0.34, py + ts * 0.34, ts * 0.32, ts * 0.32);
+      return;
+    }
+    if (structure === 'hut') {
+      ctx.fillStyle = '#caa06a';
+      ctx.fillRect(px + ts * 0.22, py + ts * 0.4, ts * 0.56, ts * 0.42);
+      ctx.lineWidth = 1.5;
+      ctx.strokeStyle = '#5a3a1e';
+      ctx.strokeRect(px + ts * 0.22, py + ts * 0.4, ts * 0.56, ts * 0.42);
+      ctx.fillStyle = '#8a4f2c';
+      ctx.beginPath();
+      ctx.moveTo(px + ts * 0.12, py + ts * 0.42);
+      ctx.lineTo(px + ts * 0.5, py + ts * 0.13);
+      ctx.lineTo(px + ts * 0.88, py + ts * 0.42);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+      ctx.fillStyle = '#5a3a1e';
+      ctx.fillRect(px + ts * 0.43, py + ts * 0.58, ts * 0.14, ts * 0.24);
+      return;
+    }
+    // fence — corner posts joined by crossed rails.
+    ctx.strokeStyle = '#9a7042';
+    ctx.lineWidth = 2;
+    const a = ts * 0.18;
+    const b = ts * 0.82;
+    ctx.strokeRect(px + a, py + a, b - a, b - a);
+    ctx.beginPath();
+    ctx.moveTo(px + a, py + a);
+    ctx.lineTo(px + b, py + b);
+    ctx.moveTo(px + b, py + a);
+    ctx.lineTo(px + a, py + b);
+    ctx.stroke();
+    ctx.fillStyle = '#6e4a26';
+    for (const [fx, fy] of [
+      [a, a],
+      [b, a],
+      [a, b],
+      [b, b],
+    ]) {
+      ctx.fillRect(px + fx - ts * 0.07, py + fy - ts * 0.07, ts * 0.14, ts * 0.14);
     }
   }
 
@@ -299,8 +375,9 @@ export class Renderer {
     }
   }
 
-  // A small top-down figure; a progress ring while it works.
-  _drawColonist(colonist, cx, cy) {
+  // A small top-down figure; a progress ring while it works. `selected`
+  // marks the colonist the player's work orders are currently directed at.
+  _drawColonist(colonist, cx, cy, selected) {
     const ctx = this.ctx;
     const r = this.ts * 0.34;
 
@@ -308,6 +385,16 @@ export class Renderer {
     ctx.beginPath();
     ctx.ellipse(cx, cy + r * 0.7, r, r * 0.45, 0, 0, Math.PI * 2);
     ctx.fill();
+
+    if (selected) {
+      ctx.beginPath();
+      ctx.arc(cx, cy, r * 1.32, 0, Math.PI * 2);
+      ctx.strokeStyle = '#7fd4ff';
+      ctx.lineWidth = 2.5;
+      ctx.setLineDash([4, 3]);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
 
     ctx.beginPath();
     ctx.arc(cx, cy, r, 0, Math.PI * 2);

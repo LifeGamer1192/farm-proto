@@ -20,6 +20,7 @@ export const TileType = {
  * @property {number} sunlight   0..1 light exposure
  * @property {?object} plant     a plant on the tile, or null
  * @property {boolean} tilled    whether the soil has been tilled
+ * @property {?string} structure a built structure ('fence'|'hut'|'stockpile'), or null
  */
 
 /**
@@ -27,5 +28,16 @@ export const TileType = {
  * @returns {Tile}
  */
 export function createTile({ x, y, type, elevation, fertility, moisture, sunlight }) {
-  return { x, y, type, elevation, fertility, moisture, sunlight, plant: null, tilled: false };
+  return {
+    x,
+    y,
+    type,
+    elevation,
+    fertility,
+    moisture,
+    sunlight,
+    plant: null,
+    tilled: false,
+    structure: null,
+  };
 }
