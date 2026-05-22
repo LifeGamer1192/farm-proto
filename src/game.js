@@ -37,6 +37,14 @@ import {
   PEST_BITE,
   PEST_PROTECTION_PER_TILE,
   PEST_PROTECTION_CAP,
+  WILD_WOOD_YIELD,
+  WOOD_BURN_RATE,
+  HEARTH_RANGE,
+  COLD_THRESHOLD,
+  COLD_DAMAGE,
+  COLD_MOOD_DROP,
+  COOK_BATCH,
+  MEAL_MOOD_BONUS,
 } from './config.js';
 import { generateMap, mapStats } from './map/mapGenerator.js';
 import { TileType } from './map/tile.js';
@@ -79,6 +87,7 @@ export class Game {
     this.camera = null;
     this.colonists = [];
     this.animals = [];
+    this.hearths = []; // built hearth positions {x, y}
     this.stats = null;
     this.over = false;
     this.paused = false;
@@ -87,12 +96,14 @@ export class Game {
 
     this.taskQueue = [];
     this.crops = [];
-    this.storage = { forage: 0, wheat: 0, potato: 0, bean: 0, meat: 0 };
+    this.storage = { forage: 0, wheat: 0, potato: 0, bean: 0, meat: 0, wood: 0, meal: 0 };
     this.meals = { eaten: 0, missed: 0 };
     this.cropsLost = 0;
     this.pestsLost = 0;
     this.pestTimer = 0;
     this._pestEvent = false;
+    this._coldEvent = false;
+    this._coldActive = false;
     this.log = [];
     this.lastAssignReason = '';
 
@@ -110,8 +121,16 @@ export class Game {
   get speed() {
     return SPEED_LEVELS[this.speedIndex];
   }
-  get totalFood() {
+  // Raw, uncooked food only — what pests can spoil.
+  get rawFood() {
     return FOOD_TYPES.reduce((sum, ft) => sum + this.storage[ft], 0);
+  }
+  get totalFood() {
+    return this.rawFood + this.storage.meal;
+  }
+  // A hearth warms and cooks only while the colony has firewood to burn.
+  get hearthsLit() {
+    return this.hearths.length > 0 && this.storage.wood > 0;
   }
   // Colonists currently on a player work task.
   get busyColonists() {
@@ -145,12 +164,15 @@ export class Game {
 
     this.taskQueue = [];
     this.crops = [];
-    this.storage = { forage: 0, wheat: 0, potato: 0, bean: 0, meat: 0 };
+    this.hearths = [];
+    this.storage = { forage: 0, wheat: 0, potato: 0, bean: 0, meat: 0, wood: 0, meal: 0 };
     this.meals = { eaten: 0, missed: 0 };
     this.cropsLost = 0;
     this.pestsLost = 0;
     this.pestTimer = 0;
     this._pestEvent = false;
+    this._coldEvent = false;
+    this._coldActive = false;
     this.over = false;
     this.selectedColonist = null;
     this.log = [];
@@ -229,6 +251,13 @@ export class Game {
     return e;
   }
 
+  // True once when a cold snap first bites — drives a one-shot UI toast.
+  consumeColdEvent() {
+    const e = this._coldEvent;
+    this._coldEvent = false;
+    return e;
+  }
+
   /** Freeze or resume the simulation. Returns the new paused state. */
   togglePause() {
     this.paused = !this.paused;
@@ -266,6 +295,7 @@ export class Game {
       const p = tile.plant;
       if (!p || p.kind !== PlantKind.CROP || p.withered) return false;
     }
+    if (type === TaskType.COOK && tile.structure !== 'hearth') return false;
     if (type === TaskType.BUILD) {
       if (tile.type === TileType.WATER || tile.plant || tile.structure) return false;
       this.taskQueue.push(
@@ -320,8 +350,17 @@ export class Game {
   }
 
   // Feed a colonist from the shared store (called when an eat task ends).
+  // A cooked meal is eaten first and lifts the mood; raw food just fills.
   _feed(colonist) {
     colonist.eatCooldown = EAT_RETRY;
+    if (this.storage.meal > 0) {
+      this.storage.meal -= 1;
+      colonist.hunger = 0;
+      colonist.mood = Math.min(1, colonist.mood + MEAL_MOOD_BONUS);
+      this.meals.eaten += 1;
+      this._pushLog({ icon: '🍲', text: t('log.ate', { name: colonist.name }), cls: 'log-meal' });
+      return;
+    }
     let pick = null;
     for (const ft of FOOD_TYPES) {
       if (this.storage[ft] > 0 && (pick === null || this.storage[ft] > this.storage[pick])) {
@@ -361,6 +400,7 @@ export class Game {
         if (i >= 0) this.crops.splice(i, 1);
       } else if (plant) {
         this.storage.forage += 1;
+        this.storage.wood += WILD_WOOD_YIELD;
         task.outcome = 'foraged';
       }
       tile.plant = null;
@@ -408,10 +448,38 @@ export class Game {
     } else if (task.type === TaskType.BUILD) {
       if (tile.type !== TileType.WATER && !tile.plant && !tile.structure) {
         tile.structure = task.structure;
+        if (task.structure === 'hearth') this.hearths.push({ x: task.x, y: task.y });
         task.outcome = 'built';
         task.outcomeData = { structure: task.structure };
       } else {
         task.outcome = 'occupied';
+      }
+    } else if (task.type === TaskType.COOK) {
+      if (tile.structure !== 'hearth') {
+        task.outcome = 'noHearth';
+      } else if (!this.hearthsLit) {
+        task.outcome = 'noFuel';
+      } else {
+        let cooked = 0;
+        // Turn raw food into cooked meals, drawing from the largest store.
+        while (cooked < COOK_BATCH) {
+          let pick = null;
+          for (const ft of FOOD_TYPES) {
+            if (this.storage[ft] > 0 && (pick === null || this.storage[ft] > this.storage[pick])) {
+              pick = ft;
+            }
+          }
+          if (pick === null) break;
+          this.storage[pick] -= 1;
+          this.storage.meal += 1;
+          cooked += 1;
+        }
+        if (cooked === 0) {
+          task.outcome = 'noFood';
+        } else {
+          task.outcome = 'cooked';
+          task.outcomeData = { n: cooked };
+        }
       }
     } else if (task.type === TaskType.EAT) {
       this._feed(colonist);
@@ -428,6 +496,17 @@ export class Game {
       for (let dx = -HUT_RANGE; dx <= HUT_RANGE; dx++) {
         const tile = row[x + dx];
         if (tile && tile.structure === 'hut') return true;
+      }
+    }
+    return false;
+  }
+
+  // True if a lit hearth stands within HEARTH_RANGE tiles of (x, y).
+  _hearthWarm(x, y) {
+    if (!this.hearthsLit) return false;
+    for (const h of this.hearths) {
+      if (Math.abs(h.x - x) <= HEARTH_RANGE && Math.abs(h.y - y) <= HEARTH_RANGE) {
+        return true;
       }
     }
     return false;
@@ -475,6 +554,8 @@ export class Game {
   }
 
   _updateColonists(dt) {
+    const coldWeather = this.environment.temperature <= COLD_THRESHOLD;
+    let anyCold = false;
     for (const c of this.colonists) {
       const task = c.currentTask;
       if (task && (task.status === 'done' || task.status === 'failed')) {
@@ -497,7 +578,21 @@ export class Game {
       ) {
         c.mood = Math.min(1, c.mood + HUT_MOOD_BONUS * dt);
       }
+      // Cold weather bites colonists who are not by a lit hearth.
+      c.cold = coldWeather && !this._hearthWarm(c.tileX, c.tileY);
+      if (c.cold) {
+        anyCold = true;
+        c.health = Math.max(0, c.health - COLD_DAMAGE * dt);
+        c.mood = Math.max(0, c.mood - COLD_MOOD_DROP * dt);
+        if (c.health <= 0) c.dead = true;
+      }
     }
+    // Announce a cold snap once, on the edge it starts to bite.
+    if (anyCold && !this._coldActive) {
+      this._coldEvent = true;
+      this._pushLog({ icon: '🥶', text: t('log.cold'), cls: 'log-warn' });
+    }
+    this._coldActive = anyCold;
     // Carry off the fallen.
     if (this.colonists.some((c) => c.dead)) {
       for (const c of this.colonists) {
@@ -582,7 +677,8 @@ export class Game {
   }
 
   _pestStrike() {
-    if (this.totalFood <= 0) return;
+    // Pests gnaw raw stores only — cooked meals are kept safe.
+    if (this.rawFood <= 0) return;
     let stockpile = 0;
     for (let y = 0; y < this.map.rows; y++) {
       const row = this.map.tiles[y];
@@ -591,7 +687,7 @@ export class Game {
       }
     }
     const protection = Math.min(PEST_PROTECTION_CAP, stockpile * PEST_PROTECTION_PER_TILE);
-    const loss = Math.ceil(this.totalFood * PEST_BITE * (1 - protection));
+    const loss = Math.ceil(this.rawFood * PEST_BITE * (1 - protection));
     let spoiled = 0;
     // Spoil one unit at a time, always from the largest store.
     while (spoiled < loss) {
@@ -609,6 +705,12 @@ export class Game {
     this.pestsLost += spoiled;
     this._pestEvent = true;
     this._pushLog({ icon: '🐛', text: t('log.pests', { n: spoiled }), cls: 'log-fail' });
+  }
+
+  // Lit hearths burn through the colony's firewood over time.
+  _updateFuel(dt) {
+    if (this.hearths.length === 0 || this.storage.wood <= 0) return;
+    this.storage.wood = Math.max(0, this.storage.wood - this.hearths.length * WOOD_BURN_RATE * dt);
   }
 
   _panVector() {
@@ -635,6 +737,7 @@ export class Game {
     if (this.environment.seasonIndex !== prevSeason) {
       this._seasonEvent = this.environment.season;
     }
+    this._updateFuel(simDt);
     this._updateColonists(simDt);
     this._updateAnimals(simDt);
     this._growCrops(simDt);
@@ -654,6 +757,7 @@ export class Game {
       seasonTint: SEASON_TINT[this.environment.season],
       clock: this.clock,
       selectedColonist: this.selectedColonist,
+      hearthsLit: this.hearthsLit,
     });
   }
 

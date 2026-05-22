@@ -42,6 +42,7 @@ const TASK_COLORS = {
   [TaskType.WATER]: '#5ba8d8',
   [TaskType.HUNT]: '#d2603a',
   [TaskType.BUILD]: '#c8a06a',
+  [TaskType.COOK]: '#e0843c',
 };
 
 export class Renderer {
@@ -54,6 +55,7 @@ export class Renderer {
   draw(scene) {
     const { map, camera, mode, colonists, animals, hover, taskQueue } = scene;
     const selectedColonist = scene.selectedColonist || null;
+    const hearthsLit = scene.hearthsLit || false;
     this.ts = scene.tileSize;
     const ctx = this.ctx;
     const ts = this.ts;
@@ -130,7 +132,7 @@ export class Renderer {
         if (mapX < 0 || mapX >= map.cols) continue;
         const structure = map.tiles[mapY][mapX].structure;
         if (structure) {
-          this._drawStructure(structure, col * ts - offX, row * ts - offY);
+          this._drawStructure(structure, col * ts - offX, row * ts - offY, hearthsLit);
         }
       }
     }
@@ -199,9 +201,46 @@ export class Renderer {
   }
 
   // A built structure, drawn from the tile's top-left corner (px, py).
-  _drawStructure(structure, px, py) {
+  _drawStructure(structure, px, py, hearthsLit) {
     const ctx = this.ctx;
     const ts = this.ts;
+    if (structure === 'hearth') {
+      const mx = px + ts * 0.5;
+      const my = py + ts * 0.5;
+      ctx.fillStyle = '#6f6f6f'; // ring of stones
+      ctx.beginPath();
+      ctx.arc(mx, my, ts * 0.36, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#2a2420'; // ash pit
+      ctx.beginPath();
+      ctx.arc(mx, my, ts * 0.24, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = '#7a5230'; // crossed logs
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.moveTo(px + ts * 0.32, py + ts * 0.64);
+      ctx.lineTo(px + ts * 0.68, py + ts * 0.36);
+      ctx.moveTo(px + ts * 0.32, py + ts * 0.36);
+      ctx.lineTo(px + ts * 0.68, py + ts * 0.64);
+      ctx.stroke();
+      if (hearthsLit) {
+        ctx.fillStyle = '#ef9f2e'; // flame
+        ctx.beginPath();
+        ctx.moveTo(mx, py + ts * 0.24);
+        ctx.lineTo(px + ts * 0.64, py + ts * 0.56);
+        ctx.lineTo(px + ts * 0.36, py + ts * 0.56);
+        ctx.closePath();
+        ctx.fill();
+        ctx.fillStyle = '#f7d54a';
+        ctx.beginPath();
+        ctx.moveTo(mx, py + ts * 0.38);
+        ctx.lineTo(px + ts * 0.58, py + ts * 0.56);
+        ctx.lineTo(px + ts * 0.42, py + ts * 0.56);
+        ctx.closePath();
+        ctx.fill();
+      }
+      return;
+    }
     if (structure === 'stockpile') {
       ctx.fillStyle = 'rgba(190,160,95,0.35)';
       ctx.fillRect(px + 1, py + 1, ts - 2, ts - 2);
@@ -430,6 +469,16 @@ export class Renderer {
       const h = Math.max(0, colonist.health);
       ctx.fillStyle = h > 0.5 ? '#5fc46f' : h > 0.25 ? '#e8b23c' : '#d2493a';
       ctx.fillRect(bx, by, bw * h, bh);
+    }
+
+    // A cold colonist shivers — pale-blue specks drift above the head.
+    if (colonist.cold) {
+      ctx.fillStyle = '#bfe4ff';
+      for (const ox of [-0.52, 0, 0.52]) {
+        ctx.beginPath();
+        ctx.arc(cx + ox * r, cy - r * 1.28, r * 0.17, 0, Math.PI * 2);
+        ctx.fill();
+      }
     }
   }
 

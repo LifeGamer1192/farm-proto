@@ -86,6 +86,20 @@ and surviving the winter.
 - Work orders can be addressed to the **whole colony** or to **one
   colonist** — pick a worker in the Colonists panel to direct their tasks
 
+### Alpha 9 — cooking, firewood & the cold
+
+- A fourth structure, the **hearth**: it burns **firewood** to keep
+  nearby colonists warm and to cook on. Firewood is gathered by
+  harvesting wild plants
+- In cold weather a colonist away from a lit hearth suffers — losing
+  health and mood — so the colony must stock firewood for winter
+- A new **Cook** tool turns raw food into **cooked meals** at a hearth;
+  a cooked meal lifts a colonist's mood, and pests cannot spoil it
+- Control panels are compact and collapsible, so the game fits one
+  screen and reads well on a phone
+- **Drag** to apply a range tool (sow, till, water, build, harvest) over
+  many tiles at once; the activity log keeps a longer, scrollable history
+
 ## Version archive
 
 Every released version stays playable. The live site links to an

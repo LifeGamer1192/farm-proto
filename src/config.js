@@ -52,8 +52,8 @@ export const WORK_DURATION = 0.7;
 // Fraction of land tiles that start with a wild (harvestable) plant.
 export const WILD_PLANT_CHANCE = 0.07;
 
-// How many recent events the activity log keeps.
-export const TASK_LOG_SIZE = 7;
+// How many recent events the activity log keeps (the panel scrolls back).
+export const TASK_LOG_SIZE = 50;
 
 // --- colonists -----------------------------------------------------------
 
@@ -107,3 +107,15 @@ export const PEST_INTERVAL = 40; // sim-seconds between pest infestations
 export const PEST_BITE = 0.15; // fraction of stored food a pest strike spoils
 export const PEST_PROTECTION_PER_TILE = 0.05; // each stockpile tile cuts the loss
 export const PEST_PROTECTION_CAP = 0.85; // most a stockpile can mitigate
+
+// --- cooking, fuel & cold (alpha 9) --------------------------------------
+
+export const WILD_WOOD_YIELD = 2; // firewood gained from harvesting a wild plant
+export const WOOD_BURN_RATE = 1 / 24; // firewood a lit hearth burns per sim-second
+export const HEARTH_RANGE = 5; // tiles a lit hearth keeps warm
+export const COLD_THRESHOLD = 4; // °C at or below which the unsheltered suffer
+export const COLD_DAMAGE = 1 / 130; // health lost per sim-second while cold
+export const COLD_MOOD_DROP = 1 / 50; // mood lost per sim-second while cold
+export const COOK_DURATION = 2; // work phase (sim-seconds) to cook a batch
+export const COOK_BATCH = 4; // raw food units turned into meals per cook task
+export const MEAL_MOOD_BONUS = 0.12; // mood lift from eating a cooked meal

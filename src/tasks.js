@@ -16,6 +16,7 @@ export const TaskType = {
   WATER: 'water',
   HUNT: 'hunt',
   BUILD: 'build',
+  COOK: 'cook',
   EAT: 'eat',
   REST: 'rest',
   LEISURE: 'leisure',
@@ -31,10 +32,11 @@ export const WORK_TYPES = [
   TaskType.WATER,
   TaskType.HUNT,
   TaskType.BUILD,
+  TaskType.COOK,
 ];
 
 // Structures a BUILD task can raise.
-export const STRUCTURE_TYPES = ['fence', 'hut', 'stockpile'];
+export const STRUCTURE_TYPES = ['fence', 'hut', 'stockpile', 'hearth'];
 
 let nextId = 1;
 

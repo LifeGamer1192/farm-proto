@@ -17,6 +17,7 @@ const STRINGS = {
     'panel.mapStats': 'Map stats',
     'panel.legend': 'Legend',
     'panel.language': 'Language',
+    'panel.world': 'World',
     'label.seed': 'Seed',
     'label.gameSpeed': 'Game speed',
     'label.mapZoom': 'Map zoom',
@@ -200,6 +201,23 @@ const STRINGS = {
     'out.built': 'built {structure}',
     'log.pests': 'Pests spoiled {n} food',
     'note.pests': 'Pests! Some stored food was spoiled — stockpiles soften the blow.',
+
+    'task.cook': 'Cook',
+    'state.cooking': 'Cooking',
+    'structure.hearth': 'Hearth',
+    'stat.wood': 'Firewood',
+    'stat.cooked': 'Cooked meals',
+    'hint.task.cook':
+      'Cook tool — click a lit hearth; a colonist turns raw food into cooked meals.',
+    'hint.structure.hearth':
+      'Hearth — burns firewood to keep nearby colonists warm, and you can cook on it.',
+    'out.cooked': 'cooked {n} meals',
+    'out.noFuel': 'the hearth is cold — no firewood',
+    'out.noFood': 'nothing to cook',
+    'out.noHearth': 'no hearth here',
+    'log.cold': 'Colonists are suffering in the cold',
+    'note.cold':
+      'Colonists are cold! Keep a hearth lit — gather firewood by harvesting wild plants.',
   },
 
   ja: {
@@ -216,6 +234,7 @@ const STRINGS = {
     'panel.mapStats': 'マップ統計',
     'panel.legend': '凡例',
     'panel.language': '言語',
+    'panel.world': 'ワールド',
     'label.seed': 'シード',
     'label.gameSpeed': 'ゲーム速度',
     'label.mapZoom': 'マップ拡大',
@@ -398,6 +417,23 @@ const STRINGS = {
     'out.built': '{structure}を建てた',
     'log.pests': '虫害で食料{n}が傷んだ',
     'note.pests': '虫害発生 — 備蓄食料が傷みました。ストックパイルで被害を軽減できます。',
+
+    'task.cook': '調理',
+    'state.cooking': '調理中',
+    'structure.hearth': 'かまど',
+    'stat.wood': '薪',
+    'stat.cooked': '調理済み',
+    'hint.task.cook':
+      '調理ツール — 火のついたかまどをクリックすると、コロニストが食材を料理にします。',
+    'hint.structure.hearth':
+      'かまど — 薪を燃やして近くのコロニストを暖めます。調理もここで行います。',
+    'out.cooked': '{n}食分を調理した',
+    'out.noFuel': 'かまどの火が消えている — 薪がない',
+    'out.noFood': '調理する食材がない',
+    'out.noHearth': 'ここにかまどがない',
+    'log.cold': 'コロニストが寒さに苦しんでいる',
+    'note.cold':
+      'コロニストが寒い！かまどの火を絶やさず、野生植物を収穫して薪を集めましょう。',
   },
 };
 

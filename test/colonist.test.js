@@ -93,6 +93,25 @@ test('building on an occupied tile fails', () => {
   assert.equal(task.outcome, 'occupied');
 });
 
+test('a cook task on a hearth runs to completion', () => {
+  const map = makeMap(Array(5).fill('.....'));
+  map.tiles[2][3].structure = 'hearth';
+  const c = new Colonist(0, 0, 'A');
+  const task = createTask(TaskType.COOK, 3, 2);
+  c.assignTask(task, map);
+  simulate(c, 4);
+  assert.equal(task.status, 'done');
+});
+
+test('cooking away from a hearth fails', () => {
+  const map = makeMap(Array(5).fill('.....'));
+  const c = new Colonist(0, 0, 'A');
+  const task = createTask(TaskType.COOK, 3, 2);
+  c.assignTask(task, map);
+  assert.equal(task.status, 'failed');
+  assert.equal(task.outcome, 'noHearth');
+});
+
 test('a till task on land completes', () => {
   const map = makeMap(Array(5).fill('.....'));
   const c = new Colonist(0, 0, 'A');

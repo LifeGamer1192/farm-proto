@@ -19,6 +19,7 @@ import {
   SLEEP_DURATION,
   HUNT_DURATION,
   BUILD_DURATION,
+  COOK_DURATION,
   HUNGER_RATE,
   STARVE_RATE,
   HEALTH_REGEN,
@@ -38,6 +39,7 @@ const WORK_PHASE = {
   [TaskType.WATER]: WORK_DURATION,
   [TaskType.HUNT]: HUNT_DURATION,
   [TaskType.BUILD]: BUILD_DURATION,
+  [TaskType.COOK]: COOK_DURATION,
   [TaskType.EAT]: EAT_DURATION,
   [TaskType.REST]: REST_DURATION,
   [TaskType.SLEEP]: SLEEP_DURATION,
@@ -51,6 +53,7 @@ const WORK_STATE = {
   [TaskType.WATER]: 'working',
   [TaskType.HUNT]: 'hunting',
   [TaskType.BUILD]: 'building',
+  [TaskType.COOK]: 'cooking',
   [TaskType.EAT]: 'eating',
   [TaskType.REST]: 'resting',
   [TaskType.SLEEP]: 'sleeping',
@@ -71,6 +74,7 @@ export class Colonist {
     this.health = 1; // 1 healthy, 0 dead
     this.mood = 0.8; // 1 content, 0 miserable
     this.eatCooldown = 0; // delay before seeking food again
+    this.cold = false; // suffering from the cold (set by the game each tick)
     this.dead = false;
   }
 
@@ -131,6 +135,8 @@ export class Colonist {
     } else if (task.type === TaskType.BUILD) {
       if (tile.type === TileType.WATER) return this._fail(task, 'onWater');
       if (tile.plant || tile.structure) return this._fail(task, 'occupied');
+    } else if (task.type === TaskType.COOK) {
+      if (tile.structure !== 'hearth') return this._fail(task, 'noHearth');
     } else if (task.type === TaskType.MOVE) {
       if (tile.type === TileType.WATER) return this._fail(task, 'onWater');
     }

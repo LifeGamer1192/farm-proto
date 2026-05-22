@@ -34,6 +34,7 @@ test('WORK_TYPES are player-placed types and exclude personal tasks', () => {
   assert.ok(WORK_TYPES.includes(TaskType.WATER));
   assert.ok(WORK_TYPES.includes(TaskType.HUNT));
   assert.ok(WORK_TYPES.includes(TaskType.BUILD));
+  assert.ok(WORK_TYPES.includes(TaskType.COOK));
   assert.ok(!WORK_TYPES.includes(TaskType.EAT));
   assert.ok(!WORK_TYPES.includes(TaskType.SLEEP));
 });

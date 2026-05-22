@@ -170,6 +170,8 @@ function updateColonyStats() {
     [t('stat.harvest'), `${s.wheat} / ${s.potato} / ${s.bean}`],
     [t('stat.forage'), s.forage],
     [t('stat.meat'), s.meat],
+    [t('stat.cooked'), s.meal],
+    [t('stat.wood'), Math.ceil(s.wood)],
     [t('stat.cropsLost'), game.cropsLost],
     [t('stat.spoiled'), game.pestsLost],
     [t('stat.meals'), game.meals.eaten],
@@ -284,12 +286,37 @@ function showTooltip(clientX, clientY, pos) {
   tooltip.style.top = `${clientY - rect.top + 14}px`;
 }
 
+// Range tools paint a task on every tile a drag crosses; single-target
+// tools (move / hunt) keep the classic drag-to-pan.
+const PAINT_TOOLS = new Set(['harvest', 'sow', 'till', 'water', 'build']);
+
 let activePointer = null;
 let dragged = false;
+let painting = false;
 let downX = 0;
 let downY = 0;
 let lastX = 0;
 let lastY = 0;
+const paintedTiles = new Set();
+
+function placeTask(pos) {
+  game.enqueueTask(tool, pos.x, pos.y, {
+    cropId,
+    structure,
+    assignee: game.selectedColonist,
+  });
+  updateTaskPanel();
+}
+
+// Queue a task on the tile under the pointer — at most once per tile per drag.
+function paintTile(clientX, clientY) {
+  const pos = tileAt(clientX, clientY);
+  if (!pos) return;
+  const key = `${pos.x},${pos.y}`;
+  if (paintedTiles.has(key)) return;
+  paintedTiles.add(key);
+  placeTask(pos);
+}
 
 canvas.addEventListener('pointerdown', (ev) => {
   activePointer = ev.pointerId;
@@ -297,10 +324,22 @@ canvas.addEventListener('pointerdown', (ev) => {
   downX = lastX = ev.clientX;
   downY = lastY = ev.clientY;
   canvas.setPointerCapture(ev.pointerId);
+  painting = PAINT_TOOLS.has(tool);
+  paintedTiles.clear();
+  if (painting) {
+    tooltip.hidden = true;
+    paintTile(ev.clientX, ev.clientY);
+  }
 });
 
 canvas.addEventListener('pointermove', (ev) => {
   if (activePointer === ev.pointerId) {
+    if (painting) {
+      // Paint mode: mark tiles, never pan the map.
+      game.hover = tileAt(ev.clientX, ev.clientY);
+      paintTile(ev.clientX, ev.clientY);
+      return;
+    }
     if (!dragged && Math.hypot(ev.clientX - downX, ev.clientY - downY) > DRAG_THRESHOLD) {
       dragged = true;
       game.hover = null;
@@ -325,19 +364,15 @@ canvas.addEventListener('pointermove', (ev) => {
 
 function endPointer(ev) {
   if (activePointer !== ev.pointerId) return;
-  if (!dragged) {
+  // A single-target tool places its task on a tap (paint tools placed
+  // theirs already, tile by tile, as the pointer moved).
+  if (!painting && !dragged) {
     const pos = tileAt(ev.clientX, ev.clientY);
-    if (pos) {
-      game.enqueueTask(tool, pos.x, pos.y, {
-        cropId,
-        structure,
-        assignee: game.selectedColonist,
-      });
-      updateTaskPanel();
-    }
+    if (pos) placeTask(pos);
   }
   activePointer = null;
   dragged = false;
+  painting = false;
 }
 
 canvas.addEventListener('pointerup', endPointer);
@@ -345,6 +380,7 @@ canvas.addEventListener('pointercancel', (ev) => {
   if (activePointer === ev.pointerId) {
     activePointer = null;
     dragged = false;
+    painting = false;
   }
 });
 canvas.addEventListener('pointerleave', () => {
@@ -512,4 +548,5 @@ setInterval(() => {
   const season = game.consumeSeasonChange();
   if (season) showToast(t('note.' + season));
   if (game.consumePestEvent()) showToast(t('note.pests'));
+  if (game.consumeColdEvent()) showToast(t('note.cold'));
 }, 150);

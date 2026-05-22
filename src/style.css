@@ -23,12 +23,12 @@ body {
 #app {
   max-width: 1000px;
   margin: 0 auto;
-  padding: 20px 16px 48px;
+  padding: 12px 12px 28px;
 }
 
 .app-header h1 {
   margin: 0;
-  font-size: 1.6rem;
+  font-size: 1.25rem;
 }
 
 .app-header .version {
@@ -41,8 +41,9 @@ body {
 }
 
 .tagline {
-  margin: 4px 0 20px;
+  margin: 2px 0 12px;
   color: var(--muted);
+  font-size: 0.85rem;
 }
 
 .tagline a {
@@ -51,7 +52,7 @@ body {
 
 .layout {
   display: flex;
-  gap: 20px;
+  gap: 14px;
   align-items: flex-start;
   flex-wrap: wrap;
 }
@@ -145,14 +146,14 @@ body {
   min-width: 220px;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 7px;
 }
 
 .control-group {
   background: var(--panel);
   border: 1px solid var(--border);
   border-radius: 6px;
-  padding: 12px 14px;
+  padding: 7px 10px;
 }
 
 .control-group > label,
@@ -162,7 +163,37 @@ body {
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--muted);
-  margin-bottom: 8px;
+  margin-bottom: 0;
+}
+
+/* Collapsible panels: the summary is the clickable header. */
+summary.label {
+  cursor: pointer;
+  margin-bottom: 0;
+  list-style: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+summary.label::-webkit-details-marker {
+  display: none;
+}
+
+summary.label::before {
+  content: '▸';
+  display: inline-block;
+  margin-right: 5px;
+  font-size: 0.7em;
+  color: var(--accent);
+  transition: transform 0.12s ease;
+}
+
+details[open] > summary.label {
+  margin-bottom: 6px;
+}
+
+details[open] > summary.label::before {
+  transform: rotate(90deg);
 }
 
 .row {
@@ -193,8 +224,9 @@ button {
   color: var(--text);
   border: 1px solid var(--border);
   border-radius: 4px;
-  padding: 7px 10px;
+  padding: 5px 7px;
   font: inherit;
+  font-size: 0.86rem;
   cursor: pointer;
 }
 
@@ -216,7 +248,7 @@ button.primary:hover {
 
 #center-colonist {
   width: 100%;
-  margin-top: 10px;
+  margin-top: 7px;
 }
 
 #clear-tasks {
@@ -239,7 +271,7 @@ button.primary:hover {
 .tools {
   display: grid;
   grid-template-columns: 1fr 1fr 1fr;
-  gap: 6px;
+  gap: 5px;
 }
 
 .tools.speed5 {
@@ -247,8 +279,8 @@ button.primary:hover {
 }
 
 .tools.speed5 button {
-  padding: 7px 2px;
-  font-size: 0.82rem;
+  padding: 5px 2px;
+  font-size: 0.8rem;
 }
 
 .tools button.active {
@@ -259,29 +291,32 @@ button.primary:hover {
 }
 
 .reason-label {
-  margin: 12px 0 4px;
-  font-size: 0.72rem;
+  margin: 7px 0 3px;
+  font-size: 0.7rem;
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--muted);
 }
 
 .reason {
-  margin: 0 0 10px;
-  font-size: 0.8rem;
-  line-height: 1.45;
+  margin: 0 0 7px;
+  font-size: 0.78rem;
+  line-height: 1.4;
   color: var(--text);
 }
 
 .task-log {
   list-style: none;
-  margin: 12px 0 0;
+  margin: 6px 0 0;
   padding: 0;
   display: flex;
   flex-direction: column;
   gap: 3px;
-  font-size: 0.78rem;
+  font-size: 0.76rem;
   font-variant-numeric: tabular-nums;
+  /* Keep a window of recent events; older ones scroll back into view. */
+  max-height: 150px;
+  overflow-y: auto;
 }
 
 .task-log li {
@@ -316,7 +351,7 @@ button.primary:hover {
   display: flex;
   justify-content: space-between;
   gap: 10px;
-  font-size: 0.86rem;
+  font-size: 0.8rem;
 }
 
 .stats dt {
@@ -368,7 +403,7 @@ button.primary:hover {
 .colonists {
   display: flex;
   flex-direction: column;
-  gap: 9px;
+  gap: 6px;
 }
 
 .colonist-row {

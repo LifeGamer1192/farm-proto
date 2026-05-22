@@ -60,3 +60,14 @@ test('alpha-8 keys are translated in both languages', () => {
   }
   setLang('en');
 });
+
+test('alpha-9 keys are translated in both languages', () => {
+  const keys = ['task.cook', 'structure.hearth', 'stat.wood', 'stat.cooked', 'note.cold'];
+  for (const key of keys) {
+    setLang('en');
+    assert.notEqual(t(key), key);
+    setLang('ja');
+    assert.notEqual(t(key), key);
+  }
+  setLang('en');
+});
