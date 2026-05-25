@@ -49,6 +49,7 @@ const taskStatsEl = $('task-stats');
 const taskReasonEl = $('task-reason');
 const colonyStatsEl = $('colony-stats');
 const seedStockEl = $('seed-stock');
+const foodBreakdownEl = $('food-breakdown');
 const codexEl = $('codex');
 const logEl = $('event-log');
 const legendEl = $('legend');
@@ -165,6 +166,45 @@ function statBar(key, value) {
   );
 }
 
+// What the colonist is doing right now, with a parenthetical detail so a
+// row can say "Working (sowing wheat)" or "Building (fence)" instead of
+// just "Working".
+function colonistStateLabel(c) {
+  const base = t('state.' + c.state);
+  const task = c.currentTask;
+  if (!task) return base;
+  let detail = '';
+  if (task.type === 'sow' && task.cropId) {
+    detail = t('detail.sow', { crop: t('crop.' + task.cropId) });
+  } else if (task.type === 'harvest') {
+    const tl = game.map.tiles[task.y]?.[task.x];
+    if (tl?.plant?.kind === 'crop') {
+      detail = t('detail.harvest', { crop: t('crop.' + tl.plant.cropId) });
+    } else if (tl?.plant?.kind === 'tree' || tl?.plant?.kind === 'stump') {
+      detail = t('detail.chop');
+    } else if (tl?.plant?.kind === 'wild') {
+      detail = t('detail.forage');
+    }
+  } else if (task.type === 'build' && task.structure) {
+    detail = t('detail.build', { structure: t('structure.' + task.structure) });
+  } else if (task.type === 'cook') {
+    detail = t('detail.cook');
+  } else if (task.type === 'hunt') {
+    detail = t('detail.hunt');
+  } else if (task.type === 'till') {
+    detail = t('detail.till');
+  } else if (task.type === 'water') {
+    detail = t('detail.water');
+  } else if (task.type === 'weed') {
+    detail = t('detail.weed');
+  } else if (task.type === 'store') {
+    detail = t('detail.store');
+  } else if (task.type === 'fetch') {
+    detail = t('detail.fetch');
+  }
+  return detail ? `${base} (${detail})` : base;
+}
+
 function updateColonistsPanel() {
   // Drop a stale selection if that colonist is no longer with us.
   if (game.selectedColonist && !game.colonists.some((c) => c.name === game.selectedColonist)) {
@@ -180,7 +220,7 @@ function updateColonistsPanel() {
       return (
         `<div class="colonist-row${sel}" data-colonist="${c.name}">` +
         `<div class="crow-head"><span>${c.name}</span>` +
-        `<span class="cstate">${t('state.' + c.state)}</span></div>` +
+        `<span class="cstate">${colonistStateLabel(c)}</span></div>` +
         `<div class="crow-bars">${bars}</div></div>`
       );
     })
@@ -196,29 +236,54 @@ function updateTaskPanel() {
   taskReasonEl.textContent = game.lastAssignReason;
 }
 
+// Mini icons that give each stat row a quick visual handle.
+const STAT_ICON = {
+  population: '👥',
+  food: '🥖',
+  meal: '🍲',
+  wood: '🪵',
+  warehouse: '📦',
+  seeds: '🌱',
+  cropsLost: '🥀',
+  spoiled: '🐛',
+  meals: '🍴',
+  missed: '⚠',
+};
+const labelIcon = (icon, text) => `<span class="stat-ico">${icon}</span>${text}`;
+
 function updateColonyStats() {
   const s = game.storage;
-  // Item rows show the colony's whole holding — on hand plus every stockpile.
   const ti = (it) => game.totalItem(it);
   let spUsed = 0;
   for (const sp of game.stockpiles) spUsed += game.stockpileFood(sp);
   const spCap = game.stockpiles.length * STOCKPILE_CAP;
-  // Crop harvest: total across every crop variety the colony has held.
-  let cropTotal = 0;
-  for (const id of CROP_IDS) cropTotal += ti(id);
+  // Seed total across every crop the colony holds.
+  let seedTotal = 0;
+  for (const id of CROP_IDS) seedTotal += game.seeds[id]?.length || 0;
   renderRows(colonyStatsEl, [
-    [t('stat.foodStored'), game.totalFood],
-    [t('stat.harvest'), cropTotal],
-    [t('stat.forage'), ti('forage')],
-    [t('stat.meat'), ti('meat')],
-    [t('stat.cooked'), ti('meal')],
-    [t('stat.wood'), Math.ceil(s.wood)],
-    [t('stat.stockpiles'), `${spUsed} / ${spCap}`],
-    [t('stat.cropsLost'), game.cropsLost],
-    [t('stat.spoiled'), game.pestsLost],
-    [t('stat.meals'), game.meals.eaten],
-    [t('stat.missed'), game.meals.missed],
+    [labelIcon(STAT_ICON.population, t('stat.population')), game.colonists.length],
+    [labelIcon(STAT_ICON.food, t('stat.foodStored')), game.totalFood],
+    [labelIcon(STAT_ICON.wood, t('stat.wood')), Math.ceil(s.wood)],
+    [labelIcon(STAT_ICON.seeds, t('stat.seedTotal')), seedTotal],
+    [labelIcon(STAT_ICON.warehouse, t('stat.stockpiles')), `${spUsed} / ${spCap}`],
+    [labelIcon(STAT_ICON.meals, t('stat.meals')), game.meals.eaten],
+    [labelIcon(STAT_ICON.missed, t('stat.missed')), game.meals.missed],
+    [labelIcon(STAT_ICON.cropsLost, t('stat.cropsLost')), game.cropsLost],
+    [labelIcon(STAT_ICON.spoiled, t('stat.spoiled')), game.pestsLost],
   ]);
+  // Breakdown sub-panel: per-food on-hand counts (combined raw on-hand and
+  // any cooked meals). Hidden until the user expands the disclosure.
+  const breakdown = [
+    [labelIcon('🍲', t('stat.cooked')), ti('meal')],
+    [labelIcon('🥩', t('stat.meat')), ti('meat')],
+    [labelIcon('🌿', t('stat.forage')), ti('forage')],
+  ];
+  // Per-crop, but only crops the colony has any of.
+  for (const id of CROP_IDS) {
+    const n = ti(id);
+    if (n > 0) breakdown.push([labelIcon('🌾', t('crop.' + id)), n]);
+  }
+  renderRows(foodBreakdownEl, breakdown);
 }
 
 // Show the crop / structure picker only for the tool that uses it.
@@ -244,10 +309,19 @@ function cropHint(id) {
   })}`;
 }
 
-// Rebuild the crop picker from this run's starting crops. The picker is
-// regenerated each new map because the eight starting crops are random.
+// Crops the picker should expose — the run's eight starters plus any
+// extras the colony has picked up since (e.g. a trader gift).
+function pickerCrops() {
+  const set = new Set(game.startingCrops || []);
+  for (const id of CROP_IDS) {
+    if (game.seeds[id] && game.seeds[id].length > 0) set.add(id);
+  }
+  return CROP_IDS.filter((id) => set.has(id));
+}
+
+// Rebuild the crop picker. Called on new map and after a trader visit.
 function rebuildCropPicker() {
-  const ids = game.startingCrops || [];
+  const ids = pickerCrops();
   if (!ids.length) {
     cropsEl.innerHTML = '';
     cropId = null;
@@ -304,6 +378,12 @@ function updateSeedPanel() {
       `<span class="seed-chips">${chips}</span></div>`
     );
   }).join('');
+  // Reflect the running total in the disclosure label so the panel says
+  // "Seed stock · 96" while collapsed.
+  let n = 0;
+  for (const id of CROP_IDS) n += game.seeds[id]?.length || 0;
+  const sum = seedStockEl.parentElement?.querySelector('summary');
+  if (sum) sum.textContent = `${t('label.seeds')} · ${n}`;
 }
 
 // Variety codex: per crop, a picture of the best variety bred so far, its
@@ -899,5 +979,15 @@ setInterval(() => {
   if (season) showToast(t('note.' + season));
   if (game.consumePestEvent()) showToast(t('note.pests'));
   if (game.consumeColdEvent()) showToast(t('note.cold'));
+  const baby = game.consumeBirthEvent();
+  if (baby) showToast(t('note.birth', { name: baby }));
+  const trader = game.consumeTraderEvent();
+  if (trader) {
+    const cropList = trader.seeds.map((id) => t('crop.' + id)).join(', ');
+    showToast(t('note.trader', { wood: trader.wood, crops: cropList }));
+    // Trader gifts may include crops the colony had never grown — rebuild
+    // the picker so they show up as new options to sow.
+    rebuildCropPicker();
+  }
   if (game.consumeWinEvent()) showVictory();
 }, 150);

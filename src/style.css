@@ -352,6 +352,33 @@ button.primary:hover {
   color: var(--text);
 }
 
+/* Collapsible sub-section inside a control-group (alpha 19). */
+.sub-group {
+  margin: 4px 0 8px;
+  padding: 4px 6px;
+  border: 1px solid #2a3f2b;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.02);
+}
+.sub-group > .sub-label {
+  font-size: 0.75rem;
+  color: var(--muted);
+  cursor: pointer;
+  user-select: none;
+  letter-spacing: 0.04em;
+}
+.sub-group[open] > .sub-label {
+  margin-bottom: 4px;
+  color: var(--text);
+}
+/* Mini icon prefix on a stat row label. */
+.stat-ico {
+  display: inline-block;
+  width: 1.15em;
+  margin-right: 0.25em;
+  text-align: center;
+}
+
 .task-log {
   list-style: none;
   margin: 6px 0 0;

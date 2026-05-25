@@ -641,44 +641,65 @@ export class Renderer {
     }
   }
 
-  // Grains: stalks topped with a seed head once they ripen.
+  // Grains: a tuft of slender curving stalks, each topped with a chunky
+  // bristled spike when ripe — a wheat / barley / rye silhouette.
   _paintGrain(ctx, ts, crop, genome, growth, cx, cy) {
     const g = Math.min(1, growth);
     const ripe = g >= 1;
     const look = this._cropLook(genome);
-    const base = cy + ts * 0.32;
-    const stemH = ts * (0.2 + 0.52 * g);
-    // Three or four stalks side by side.
-    ctx.strokeStyle = ripe ? '#bba85a' : '#7ab44d';
-    ctx.lineWidth = Math.max(1.2, ts * 0.06);
+    const base = cy + ts * 0.34;
+    const stemH = ts * (0.22 + 0.55 * g);
+    const stalkColor = ripe ? '#b8a35a' : '#7eb84a';
+    // Five slender stalks splaying out from the same root, each curving
+    // a touch to the side — much closer to how real wheat sits.
+    const stalks = [-0.22, -0.11, 0, 0.11, 0.22];
+    ctx.strokeStyle = stalkColor;
+    ctx.lineWidth = Math.max(0.9, ts * 0.04);
     ctx.lineCap = 'round';
-    for (const off of [-0.18, 0, 0.18]) {
+    for (const off of stalks) {
+      const tipX = cx + ts * off;
+      const tipY = base - stemH * (0.92 + 0.08 * Math.cos(off * 8));
+      const cpX = cx + ts * off * 0.5;
+      const cpY = base - stemH * 0.55;
       ctx.beginPath();
-      ctx.moveTo(cx + ts * off, base);
-      ctx.lineTo(cx + ts * off * 0.6, base - stemH);
+      ctx.moveTo(cx, base);
+      ctx.quadraticCurveTo(cpX, cpY, tipX, tipY);
       ctx.stroke();
     }
     ctx.lineCap = 'butt';
-    if (g > 0.6) {
+    if (g > 0.55) {
       const fill = this._ripeFill(crop, look, ripe);
-      // Small seed heads at the top of each stalk.
-      for (const off of [-0.18, 0, 0.18]) {
-        const hx = cx + ts * off * 0.6;
-        const hy = base - stemH;
-        const w = ts * 0.08 * (0.8 + look.yieldP * 0.5);
-        const h = ts * 0.22 * (0.7 + look.yieldP * 0.6);
-        ctx.beginPath();
-        ctx.ellipse(hx, hy - h * 0.4, w, h * 0.5, 0, 0, Math.PI * 2);
+      const headColor = tintColor(crop.ripeColor, (look.hueP - 0.5) * 200, 0.7);
+      for (const off of stalks) {
+        const tipX = cx + ts * off;
+        const tipY = base - stemH * (0.92 + 0.08 * Math.cos(off * 8));
+        const spikeH = ts * 0.26 * (0.7 + look.yieldP * 0.6);
+        const spikeW = ts * 0.045 * (0.8 + look.yieldP * 0.4);
+        const spikeTop = tipY - spikeH;
+        // Grain kernels stacked along the spike — small offset ellipses
+        // alternating left and right.
         ctx.fillStyle = fill;
-        ctx.fill();
+        ctx.strokeStyle = 'rgba(0,0,0,0.25)';
+        ctx.lineWidth = 0.6;
+        const kernels = 5;
+        for (let i = 0; i < kernels; i++) {
+          const t = i / (kernels - 1);
+          const ky = spikeTop + spikeH * (1 - t);
+          const sideSign = i % 2 === 0 ? -1 : 1;
+          const kx = tipX + sideSign * spikeW * 0.55;
+          ctx.beginPath();
+          ctx.ellipse(kx, ky, spikeW, spikeW * 1.35, 0, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.stroke();
+        }
         if (ripe) {
-          // Awns — tiny lines at the top to suggest bristles.
-          ctx.strokeStyle = tintColor(crop.ripeColor, (look.hueP - 0.5) * 200, 0.6);
-          ctx.lineWidth = 0.8;
-          for (const d of [-0.7, -0.35, 0, 0.35, 0.7]) {
+          // A few long awns rising past the spike top.
+          ctx.strokeStyle = headColor;
+          ctx.lineWidth = 0.7;
+          for (const a of [-0.6, -0.2, 0.2, 0.6]) {
             ctx.beginPath();
-            ctx.moveTo(hx + w * d, hy - h * 0.7);
-            ctx.lineTo(hx + w * d, hy - h * 1.1);
+            ctx.moveTo(tipX + spikeW * a, spikeTop);
+            ctx.lineTo(tipX + spikeW * a * 1.6, spikeTop - spikeH * 0.55);
             ctx.stroke();
           }
         }
@@ -812,43 +833,86 @@ export class Renderer {
       ? tintColor(crop.ripeColor, (look.hueP - 0.5) * 180, 0.6 + look.satP * 0.9)
       : tintColor(crop.color, (look.hueP - 0.5) * 60, 1);
     const base = cy + ts * 0.34;
-    const r = ts * (0.14 + 0.22 * g);
-    ctx.fillStyle = fill;
+    const r = ts * (0.16 + 0.22 * g);
+    // Outer wrap leaves (slightly darker) splay out around a tight head.
+    const outer = tintColor(fill, 0, 0.7);
+    ctx.fillStyle = outer;
     ctx.strokeStyle = '#3f7a2b';
     ctx.lineWidth = 1;
-    // Stack of overlapping leaf lobes.
-    for (const off of [-0.5, 0, 0.5]) {
+    const head = { cx, cy: base - r * 0.45 };
+    const wrapPositions = [
+      [-1.0, 0.05, -0.6],
+      [-0.55, -0.35, -0.25],
+      [0.55, -0.35, 0.25],
+      [1.0, 0.05, 0.6],
+    ];
+    for (const [ox, oy, rot] of wrapPositions) {
       ctx.beginPath();
-      ctx.ellipse(cx + r * off * 0.6, base - r * 0.4, r * 0.85, r * 0.65, 0, 0, Math.PI * 2);
+      ctx.ellipse(head.cx + r * ox * 0.55, head.cy + r * oy, r * 0.55, r * 0.4, rot, 0, Math.PI * 2);
       ctx.fill();
       ctx.stroke();
     }
+    // Inner head — the cabbage ball itself.
+    ctx.fillStyle = fill;
+    ctx.beginPath();
+    ctx.arc(head.cx, head.cy, r * 0.78, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    // Vein lines radiating from the centre of the head, suggesting the
+    // tight inner-leaf wrapping you see on a real cabbage / lettuce.
+    if (g > 0.5) {
+      ctx.strokeStyle = tintColor(fill, 0, 0.55);
+      ctx.lineWidth = 0.8;
+      for (let i = 0; i < 6; i++) {
+        const a = (i / 6) * Math.PI * 2 + 0.2;
+        ctx.beginPath();
+        ctx.moveTo(head.cx, head.cy);
+        ctx.lineTo(head.cx + Math.cos(a) * r * 0.7, head.cy + Math.sin(a) * r * 0.55);
+        ctx.stroke();
+      }
+    }
   }
 
-  // Stem vegetables: a few thick stems clustered together.
+  // Stem vegetables: a tight cluster of asparagus-style spears poking
+  // straight up out of the soil — each spear has a pointed tip and a
+  // few alternating bract scales on the sides.
   _paintStemVeg(ctx, ts, crop, genome, growth, cx, cy) {
     const g = Math.min(1, growth);
     const ripe = g >= 1;
     const look = this._cropLook(genome);
     const fill = this._ripeFill(crop, look, ripe);
-    const base = cy + ts * 0.32;
-    const stemH = ts * (0.22 + 0.48 * g);
-    ctx.strokeStyle = fill;
-    ctx.lineWidth = Math.max(1.6, ts * 0.07);
-    ctx.lineCap = 'round';
-    for (const off of [-0.12, 0, 0.12]) {
+    const base = cy + ts * 0.34;
+    const spearH = ts * (0.28 + 0.52 * g);
+    const spearW = ts * 0.07 * (0.85 + look.yieldP * 0.4);
+    const spears = [-0.16, -0.05, 0.06, 0.17];
+    ctx.fillStyle = fill;
+    ctx.strokeStyle = 'rgba(0,0,0,0.3)';
+    ctx.lineWidth = 0.7;
+    for (const off of spears) {
+      const x = cx + ts * off;
+      const top = base - spearH;
+      // Spear body: a thin rounded rectangle that tapers to a sharp point.
       ctx.beginPath();
-      ctx.moveTo(cx + ts * off, base);
-      ctx.lineTo(cx + ts * off * 0.6, base - stemH);
-      ctx.stroke();
-    }
-    ctx.lineCap = 'butt';
-    if (g > 0.4) {
-      // A small leafy crown at the top.
-      ctx.fillStyle = '#5ba23c';
-      ctx.beginPath();
-      ctx.ellipse(cx, base - stemH - ts * 0.04, ts * 0.12, ts * 0.06, 0, 0, Math.PI * 2);
+      ctx.moveTo(x - spearW * 0.5, base);
+      ctx.lineTo(x - spearW * 0.5, top + spearW * 0.8);
+      ctx.lineTo(x, top - spearW * 0.6); // pointed tip
+      ctx.lineTo(x + spearW * 0.5, top + spearW * 0.8);
+      ctx.lineTo(x + spearW * 0.5, base);
+      ctx.closePath();
       ctx.fill();
+      ctx.stroke();
+      // A few darker bract scales staggered along the spear.
+      ctx.fillStyle = tintColor(crop.color, -10, 0.6);
+      const scales = 3;
+      for (let i = 0; i < scales; i++) {
+        const t = (i + 1) / (scales + 1);
+        const sy = base - spearH * t;
+        const side = i % 2 === 0 ? -1 : 1;
+        ctx.beginPath();
+        ctx.ellipse(x + side * spearW * 0.45, sy, spearW * 0.4, spearW * 0.2, side * 0.4, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.fillStyle = fill;
     }
   }
 

@@ -234,6 +234,21 @@ and surviving the winter.
   warehouse will not auto-queue unless the wood for it is already
   in stock.
 
+### Alpha 19 — autonomous rules, population growth and a winter trader
+
+- The autonomy decision tree has been **extracted into its own
+  module** (`src/autonomy.js`) — a `pickAutonomousTask(game,
+  colonist)` function that returns the next bit of self-directed
+  work. The engine call site is now a thin shim, so future versions
+  can swap in different rule sets without touching the rest of the
+  game.
+- **Population growth** — a new colonist joins on a season change
+  when the colony has plenty of food and a hut for each existing
+  member, capped at ten. A toast and a log line mark the arrival.
+- **Winter trader** — once per winter a travelling merchant passes
+  through and leaves a small gift of wood plus seed packets for a
+  couple of crops. Newly-gifted varieties show up in the Sow picker.
+
 ## Version archive
 
 Every released version stays playable. The live site links to an

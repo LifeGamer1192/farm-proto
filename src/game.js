@@ -63,6 +63,13 @@ import {
   STUMP_REGROW_TIME,
   TREE_GROW_TIME,
   WOOD_LOW,
+  BIRTH_NAMES,
+  BIRTH_FOOD_PER_HEAD,
+  BIRTH_CHANCE,
+  POPULATION_CAP,
+  TRADER_WOOD_GIFT,
+  TRADER_SEED_PACKETS,
+  TRADER_SEED_COUNT,
 } from './config.js';
 import { generateMap, mapStats } from './map/mapGenerator.js';
 import { TileType } from './map/tile.js';
@@ -92,6 +99,7 @@ import {
   SEASON_TINT,
 } from './season.js';
 import { t } from './i18n.js';
+import { pickAutonomousTask } from './autonomy.js';
 
 // Raw food — what pests can spoil and what a cook task turns into meals.
 // 'forage' is the catch-all for wild gatherings; every crop becomes its own
@@ -170,6 +178,12 @@ export class Game {
     this.clock = 0;
     this.environment = null;
     this._seasonEvent = null;
+    // Population + trader event state (alpha 19). Each "consume*" reader
+    // clears its flag so the UI shows the event banner exactly once.
+    this._birthEvent = null; // name of a newborn, or null
+    this._traderEvent = null; // gift summary, or null
+    this._traderYear = 0; // the last year the winter trader visited
+    this._birthCounter = 0; // index into BIRTH_NAMES for the next newborn
 
     this._loop = this._loop.bind(this);
     this._lastTime = 0;
@@ -452,6 +466,10 @@ export class Game {
     this._pestEvent = false;
     this._coldEvent = false;
     this._coldActive = false;
+    this._birthEvent = null;
+    this._traderEvent = null;
+    this._traderYear = 0;
+    this._birthCounter = 0;
     this.over = false;
     this.won = false;
     this._winEvent = false;
@@ -537,6 +555,20 @@ export class Game {
   consumeColdEvent() {
     const e = this._coldEvent;
     this._coldEvent = false;
+    return e;
+  }
+
+  // The name of a colonist born this frame, or null. One-shot toast.
+  consumeBirthEvent() {
+    const e = this._birthEvent;
+    this._birthEvent = null;
+    return e;
+  }
+
+  // The winter trader's gift summary, or null. One-shot toast.
+  consumeTraderEvent() {
+    const e = this._traderEvent;
+    this._traderEvent = null;
     return e;
   }
 
@@ -965,115 +997,11 @@ export class Game {
     return this._idleTask(colonist);
   }
 
-  // Work an idle colonist takes up on its own. Existing chores (harvest,
-  // fetch, water, weed, cook, store, hunt) run regardless of any toggle.
-  // Till, sow and the new auto-builds are gated by the Auto-work toggle.
+  // Work an idle colonist takes up on its own. The actual decision tree
+  // lives in src/autonomy.js so future versions can swap it out without
+  // touching the rest of the engine. This shim keeps the call site stable.
   _autonomousTask(colonist) {
-    // Gather ripe crops.
-    for (const crop of this.crops) {
-      if (isRipe(crop) && !crop.withered && !this._tileClaimed(crop.x, crop.y)) {
-        return createTask(TaskType.HARVEST, crop.x, crop.y);
-      }
-    }
-    // Fetch food back from a stockpile when the on-hand store runs low.
-    if (this.onHandFood < ON_HAND_LOW) {
-      const sp = this._nearestStockpile(colonist, (s) => this.stockpileFood(s) > 0);
-      if (sp && !this._tileClaimed(sp.x, sp.y)) {
-        return createTask(TaskType.FETCH, sp.x, sp.y);
-      }
-    }
-    // Tend crops that have run dry.
-    for (const crop of this.crops) {
-      if (
-        !crop.withered &&
-        !isRipe(crop) &&
-        this.clock >= crop.wateredUntil &&
-        !this._tileClaimed(crop.x, crop.y)
-      ) {
-        return createTask(TaskType.WATER, crop.x, crop.y);
-      }
-    }
-    // Clear away withered, dead crops.
-    for (const crop of this.crops) {
-      if (crop.withered && !this._tileClaimed(crop.x, crop.y)) {
-        return createTask(TaskType.WEED, crop.x, crop.y);
-      }
-    }
-    // Auto-work: throw up a fence between the colony and a nearby boar.
-    // Every colonist serves the same colony-wide plan — see _nextFenceTile.
-    if (
-      this.autoMode &&
-      this._totalFences() < FENCE_AUTO_CAP &&
-      this._canAffordBuild('fence')
-    ) {
-      const spot = this._nextFenceTile(colonist);
-      if (spot) return createTask(TaskType.BUILD, spot.x, spot.y, { structure: 'fence' });
-    }
-    // Cook raw food into meals while a hearth is lit.
-    if (this.hearthsLit && this.rawFood > 0 && this.storage.meal < MEAL_TARGET) {
-      for (const h of this.hearths) {
-        if (!this._tileClaimed(h.x, h.y)) {
-          return createTask(TaskType.COOK, h.x, h.y);
-        }
-      }
-    }
-    // Hunt for food first when colony stores run low — done before infra
-    // and farm work so colonists do not build themselves into starvation.
-    if (this.autoHunt && this.totalFood < this.colonists.length * HUNT_FOOD_PER_HEAD) {
-      const a = this._animalNear(colonist.tileX, colonist.tileY, AUTO_HUNT_RANGE);
-      if (a && !this._tileClaimed(a.tileX, a.tileY)) {
-        return createTask(TaskType.HUNT, a.tileX, a.tileY, { animalId: a.id });
-      }
-    }
-    // Auto-work: chop the nearest tree when the colony's wood reserve has
-    // fallen below the threshold, so building doesn't grind to a halt.
-    if (this.autoMode && this.storage.wood - this._reservedBuildWood() < WOOD_LOW) {
-      const tree = this._nearestTree(colonist, AUTO_SEARCH_RANGE);
-      if (tree) return createTask(TaskType.HARVEST, tree.x, tree.y);
-    }
-    // Auto-work: stand up infrastructure before opening more farmland, so
-    // huts, hearths and a warehouse appear early; once they are up, the
-    // colonists turn to tilling and sowing. Each branch also checks wood —
-    // a hut that cannot be afforded should not jump the queue ahead of
-    // useful work like sowing.
-    if (this.autoMode) {
-      if (
-        this.huts.length + this._pendingBuilds('hut') < this.colonists.length &&
-        this._canAffordBuild('hut')
-      ) {
-        const spot = this._findFreeLandNear(colonist);
-        if (spot) return createTask(TaskType.BUILD, spot.x, spot.y, { structure: 'hut' });
-      }
-      if (
-        this.hearths.length + this._pendingBuilds('hearth') < this.huts.length &&
-        this._canAffordBuild('hearth')
-      ) {
-        const spot = this._findFreeLandNear(colonist);
-        if (spot) return createTask(TaskType.BUILD, spot.x, spot.y, { structure: 'hearth' });
-      }
-      if (this._wantsAutoWarehouse() && this._canAffordBuild('stockpile')) {
-        const spot = this._findFreeLandNear(colonist);
-        if (spot) return createTask(TaskType.BUILD, spot.x, spot.y, { structure: 'stockpile' });
-      }
-      const sowCrop = this._mostStockedCrop();
-      if (sowCrop) {
-        const sowSpot = this._pickAutoSowSpot(colonist);
-        if (sowSpot) {
-          return createTask(TaskType.SOW, sowSpot.x, sowSpot.y, { cropId: sowCrop });
-        }
-        // No tilled tile to sow on — till more ground, clustered together.
-        const tillSpot = this._pickTillSpot(colonist, sowCrop);
-        if (tillSpot) return createTask(TaskType.TILL, tillSpot.x, tillSpot.y);
-      }
-    }
-    // Haul surplus on-hand food into a stockpile, safe from the pests.
-    if (this.onHandFood > ON_HAND_CAP) {
-      const sp = this._nearestStockpile(colonist, (s) => this.stockpileFood(s) < STOCKPILE_CAP);
-      if (sp && !this._tileClaimed(sp.x, sp.y)) {
-        return createTask(TaskType.STORE, sp.x, sp.y);
-      }
-    }
-    return null;
+    return pickAutonomousTask(this, colonist);
   }
 
   // --- Auto-work helpers ---------------------------------------------------
@@ -1548,6 +1476,83 @@ export class Game {
     this.storage.wood = Math.max(0, this.storage.wood - this.hearths.length * WOOD_BURN_RATE * dt);
   }
 
+  // Seasonal events — kept here so the birth roll and the winter trader
+  // both fire at exactly the same beat as the season change banner.
+  _onSeasonChange(season) {
+    if (season === 'winter') this._runWinterTrader();
+    this._maybeBirth();
+  }
+
+  // A new colonist joins when the colony has more than enough food on
+  // hand, at least one hut per existing colonist (so there's somewhere
+  // to live), and the population cap has not been reached. The chance is
+  // rolled per season change — about one season in three when the
+  // conditions hold — so a thriving colony grows over years, not minutes.
+  _maybeBirth() {
+    if (this.colonists.length === 0) return;
+    if (this.colonists.length >= POPULATION_CAP) return;
+    if (this.huts.length < this.colonists.length) return;
+    if (this.totalFood < this.colonists.length * BIRTH_FOOD_PER_HEAD) return;
+    if (Math.random() >= BIRTH_CHANCE) return;
+    // Spawn at a random hut, or a fallback near the first colonist.
+    let pos;
+    if (this.huts.length > 0) {
+      pos = this.huts[Math.floor(Math.random() * this.huts.length)];
+    } else {
+      const c = this.colonists[0];
+      pos = { x: c.tileX, y: c.tileY };
+    }
+    const name = BIRTH_NAMES[this._birthCounter % BIRTH_NAMES.length];
+    this._birthCounter += 1;
+    const baby = new Colonist(pos.x, pos.y, name);
+    this.colonists.push(baby);
+    this._birthEvent = name;
+    this._pushLog({
+      icon: '👶',
+      text: t('log.birth', { name }),
+      cls: 'log-meal',
+    });
+  }
+
+  // A travelling trader visits the colony once per winter, leaving a
+  // small gift of wood and a couple of seed packets so cold-season play
+  // is a little easier. The visit is silent — no UI yet, just a toast
+  // and a log line — but the gift is real, sitting in storage.
+  _runWinterTrader() {
+    const year = this.environment.year;
+    if (year <= this._traderYear) return;
+    this._traderYear = year;
+    this.storage.wood += TRADER_WOOD_GIFT;
+    // Pick a couple of crops to gift seeds for — preferring varieties the
+    // colony already grows so the gift is useful, but any crop will do.
+    const pool = (this.startingCrops && this.startingCrops.length > 0)
+      ? [...this.startingCrops]
+      : CROP_IDS.slice();
+    const gifts = [];
+    while (gifts.length < TRADER_SEED_PACKETS && pool.length > 0) {
+      const idx = Math.floor(Math.random() * pool.length);
+      const id = pool.splice(idx, 1)[0];
+      const list = this.seeds[id] || (this.seeds[id] = []);
+      for (let i = 0; i < TRADER_SEED_COUNT; i++) {
+        list.push({ genome: freshGenome() });
+      }
+      // Codex needs a row for any crop the colony now holds seed of.
+      if (!this.codex[id]) {
+        this.codex[id] = { origin: list[0].genome, best: list[0].genome };
+      }
+      gifts.push(id);
+    }
+    this._traderEvent = { wood: TRADER_WOOD_GIFT, seeds: gifts };
+    this._pushLog({
+      icon: '🛒',
+      text: t('log.trader', {
+        wood: TRADER_WOOD_GIFT,
+        crops: gifts.map((id) => t('crop.' + id)).join(', '),
+      }),
+      cls: 'log-meal',
+    });
+  }
+
   // Trees grow back from stumps after a cooldown, and young trees grow
   // toward full size over the next stretch. Iterating over every tile is
   // cheap at the prototype map size and keeps the bookkeeping simple.
@@ -1592,6 +1597,7 @@ export class Game {
     this._updateEnvironment();
     if (this.environment.seasonIndex !== prevSeason) {
       this._seasonEvent = this.environment.season;
+      this._onSeasonChange(this.environment.season);
     }
     this._updateFuel(simDt);
     this._updateForest(simDt);

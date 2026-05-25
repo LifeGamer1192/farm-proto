@@ -162,3 +162,28 @@ export const STUMP_REGROW_TIME = 60;
 export const TREE_GROW_TIME = 90;
 // Auto-chop kicks in when the colony's wood reserve falls below this.
 export const WOOD_LOW = 6;
+
+// --- population & seasonal events (alpha 19) -----------------------------
+
+// Names a newborn rotates through, after the four hand-picked starters.
+export const BIRTH_NAMES = [
+  'Eli', 'Fae', 'Gus', 'Hen', 'Ina', 'Jon', 'Kit', 'Lex', 'Mio',
+  'Nan', 'Oz', 'Pip', 'Quin', 'Ren', 'Sol', 'Tev', 'Una', 'Vex',
+  'Wyn', 'Xio', 'Yui', 'Zev',
+];
+// Food the colony must have per head (storehouse total) for the birth
+// roll to succeed. Plus there must be at least one hut per colonist.
+export const BIRTH_FOOD_PER_HEAD = 8;
+// Probability of a new colonist joining at a season change when the
+// conditions are met.
+export const BIRTH_CHANCE = 0.35;
+// Hard cap on the colony's population (the prototype was built around
+// four colonists; the renderer and overlap math keep working past that,
+// but this keeps the experience tractable).
+export const POPULATION_CAP = 10;
+
+// Winter trader: always arrives once per winter, drops a small gift of
+// wood and a few seed packets to help the colony through.
+export const TRADER_WOOD_GIFT = 15;
+export const TRADER_SEED_PACKETS = 2; // how many distinct crops he brings
+export const TRADER_SEED_COUNT = 5; // seeds per crop
