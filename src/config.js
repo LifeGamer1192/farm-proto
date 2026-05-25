@@ -136,3 +136,9 @@ export const ON_HAND_CAP = 30; // above this, colonists haul on-hand food to a s
 export const ON_HAND_LOW = 12; // below this, colonists fetch food back from a stockpile
 export const HAUL_BATCH = 8; // food units moved per store / fetch task
 export const HAUL_DURATION = 1.2; // work phase (sim-seconds) to store or fetch
+
+// --- autonomous mode (alpha 16) ------------------------------------------
+
+export const AUTO_SEARCH_RANGE = 12; // tile radius an idle colonist scans for auto work
+export const FENCE_TRIGGER_RANGE = 10; // build a fence when a wild animal is this close to any colonist
+export const FENCE_AUTO_CAP = 20; // never auto-place more fence tiles than this colony-wide

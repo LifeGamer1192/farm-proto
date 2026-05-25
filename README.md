@@ -187,6 +187,19 @@ and surviving the winter.
   selective breeding) and **Plants** (crop and wild-plant lore)
 - Every tip is written in both English and Japanese
 
+### Alpha 16 — autonomous mode
+
+- A new **Auto-work** toggle (on by default). With it on, idle colonists
+  take up three new kinds of self-directed work on top of the existing
+  autonomy:
+  - **Till** ground for the next sowing — picks growth-friendly soil
+    and prefers tiles next to the existing tilled patch, so farms grow
+    as a cluster
+  - **Sow** the most-stocked seed onto any empty tilled tile
+  - **Build** infrastructure: a hut for each colonist, a hearth for
+    each hut, and short straight fences when a boar wanders close
+    (up to twenty fence tiles in total)
+
 ## Version archive
 
 Every released version stays playable. The live site links to an

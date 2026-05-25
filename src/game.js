@@ -52,6 +52,9 @@ import {
   ON_HAND_CAP,
   ON_HAND_LOW,
   HAUL_BATCH,
+  AUTO_SEARCH_RANGE,
+  FENCE_TRIGGER_RANGE,
+  FENCE_AUTO_CAP,
 } from './config.js';
 import { generateMap, mapStats } from './map/mapGenerator.js';
 import { TileType } from './map/tile.js';
@@ -109,12 +112,15 @@ export class Game {
     this.animals = [];
     this.hearths = []; // built hearth positions {x, y}
     this.stockpiles = []; // built stockpiles: {x, y, items}
+    this.huts = []; // built hut positions {x, y}
+    this.fences = []; // built fence positions {x, y}
     this.stats = null;
     this.over = false;
     this.won = false; // the colony has survived its first full year
     this._winEvent = false;
     this.paused = false;
     this.autoHunt = true; // idle colonists hunt boar when food runs low
+    this.autoMode = true; // idle colonists till, sow and build on their own
     // The colonist new work is addressed to, or null for the whole colony.
     this.selectedColonist = null;
 
@@ -382,6 +388,8 @@ export class Game {
     this.crops = [];
     this.hearths = [];
     this.stockpiles = [];
+    this.huts = [];
+    this.fences = [];
     this.storage = { forage: 0, wheat: 0, potato: 0, bean: 0, meat: 0, wood: 0, meal: 0 };
     this.seeds = this._freshSeeds();
     this.codex = this._freshCodex();
@@ -731,6 +739,8 @@ export class Game {
         if (task.structure === 'stockpile') {
           this.stockpiles.push({ x: task.x, y: task.y, items: this._freshStockpileItems() });
         }
+        if (task.structure === 'hut') this.huts.push({ x: task.x, y: task.y });
+        if (task.structure === 'fence') this.fences.push({ x: task.x, y: task.y });
         task.outcome = 'built';
         task.outcomeData = { structure: task.structure };
       } else {
@@ -866,8 +876,9 @@ export class Game {
     return this._idleTask(colonist);
   }
 
-  // Work an idle colonist takes up on its own: gather ripe crops, fetch and
-  // stockpile food, tend dry crops, clear withered ones, cook, and hunt.
+  // Work an idle colonist takes up on its own. Existing chores (harvest,
+  // fetch, water, weed, cook, store, hunt) run regardless of any toggle.
+  // Till, sow and the new auto-builds are gated by the Auto-work toggle.
   _autonomousTask(colonist) {
     // Gather ripe crops.
     for (const crop of this.crops) {
@@ -899,12 +910,40 @@ export class Game {
         return createTask(TaskType.WEED, crop.x, crop.y);
       }
     }
+    // Auto-work: throw up a fence between the colony and a nearby boar.
+    if (this.autoMode && this._totalFences() < FENCE_AUTO_CAP) {
+      const spot = this._pickFenceSpot(colonist);
+      if (spot) return createTask(TaskType.BUILD, spot.x, spot.y, { structure: 'fence' });
+    }
     // Cook raw food into meals while a hearth is lit.
     if (this.hearthsLit && this.rawFood > 0 && this.storage.meal < MEAL_TARGET) {
       for (const h of this.hearths) {
         if (!this._tileClaimed(h.x, h.y)) {
           return createTask(TaskType.COOK, h.x, h.y);
         }
+      }
+    }
+    // Auto-work: keep the farm growing.
+    if (this.autoMode) {
+      const sowCrop = this._mostStockedCrop();
+      if (sowCrop) {
+        const sowSpot = this._pickAutoSowSpot(colonist);
+        if (sowSpot) {
+          return createTask(TaskType.SOW, sowSpot.x, sowSpot.y, { cropId: sowCrop });
+        }
+        // No tilled tile to sow on — till more ground, clustered together.
+        const tillSpot = this._pickTillSpot(colonist, sowCrop);
+        if (tillSpot) return createTask(TaskType.TILL, tillSpot.x, tillSpot.y);
+      }
+      // One hut per colonist.
+      if (this.huts.length + this._pendingBuilds('hut') < this.colonists.length) {
+        const spot = this._findFreeLandNear(colonist);
+        if (spot) return createTask(TaskType.BUILD, spot.x, spot.y, { structure: 'hut' });
+      }
+      // One hearth per hut.
+      if (this.hearths.length + this._pendingBuilds('hearth') < this.huts.length) {
+        const spot = this._findFreeLandNear(colonist);
+        if (spot) return createTask(TaskType.BUILD, spot.x, spot.y, { structure: 'hearth' });
       }
     }
     // Haul surplus on-hand food into a stockpile, safe from the pests.
@@ -921,6 +960,193 @@ export class Game {
       if (a && !this._tileClaimed(a.tileX, a.tileY)) {
         return createTask(TaskType.HUNT, a.tileX, a.tileY, { animalId: a.id });
       }
+    }
+    return null;
+  }
+
+  // --- Auto-work helpers ---------------------------------------------------
+
+  // Count BUILD tasks of `structure` already queued or in colonists' hands.
+  _pendingBuilds(structure) {
+    let n = 0;
+    for (const t of this.taskQueue) {
+      if (t.type === TaskType.BUILD && t.structure === structure) n++;
+    }
+    for (const c of this.colonists) {
+      const ct = c.currentTask;
+      if (ct && ct.type === TaskType.BUILD && ct.structure === structure) n++;
+    }
+    return n;
+  }
+
+  // The crop with the largest seed stock (used to choose what to auto-sow).
+  _mostStockedCrop() {
+    let best = null;
+    let bestN = 0;
+    for (const id of CROP_IDS) {
+      const n = this.seedCount(id);
+      if (n > bestN) {
+        bestN = n;
+        best = id;
+      }
+    }
+    return best;
+  }
+
+  // True if (x, y) is plain land — buildable, plantable, free of anything.
+  _isFreeLand(x, y) {
+    const row = this.map.tiles[y];
+    const t = row && row[x];
+    if (!t) return false;
+    return t.type === TileType.LAND && !t.tilled && !t.plant && !t.structure;
+  }
+
+  // Spiral out from a colonist looking for an unclaimed plain land tile —
+  // a spot for auto-built huts and hearths.
+  _findFreeLandNear(colonist) {
+    const cx = colonist.tileX;
+    const cy = colonist.tileY;
+    for (let r = 1; r <= AUTO_SEARCH_RANGE; r++) {
+      for (let dy = -r; dy <= r; dy++) {
+        for (let dx = -r; dx <= r; dx++) {
+          if (Math.abs(dx) !== r && Math.abs(dy) !== r) continue;
+          const x = cx + dx;
+          const y = cy + dy;
+          if (!this._isFreeLand(x, y)) continue;
+          if (this._tileClaimed(x, y)) continue;
+          return { x, y };
+        }
+      }
+    }
+    return null;
+  }
+
+  // The closest empty tilled tile within range, ready to be sown.
+  _pickAutoSowSpot(colonist) {
+    const cx = colonist.tileX;
+    const cy = colonist.tileY;
+    let best = null;
+    let bestD = Infinity;
+    for (let dy = -AUTO_SEARCH_RANGE; dy <= AUTO_SEARCH_RANGE; dy++) {
+      const y = cy + dy;
+      const row = this.map.tiles[y];
+      if (!row) continue;
+      for (let dx = -AUTO_SEARCH_RANGE; dx <= AUTO_SEARCH_RANGE; dx++) {
+        const x = cx + dx;
+        const t = row[x];
+        if (!t || !t.tilled || t.plant || t.structure) continue;
+        if (this._tileClaimed(x, y)) continue;
+        const d = Math.abs(dx) + Math.abs(dy);
+        if (d < bestD) {
+          bestD = d;
+          best = { x, y };
+        }
+      }
+    }
+    return best;
+  }
+
+  // A spot to till next. Scores tiles by crop suitability and favours ones
+  // adjacent to existing tilled tiles, so the farm grows as a cluster.
+  _pickTillSpot(colonist, cropId) {
+    const cropDef = getCrop(cropId);
+    const cx = colonist.tileX;
+    const cy = colonist.tileY;
+    let best = null;
+    let bestScore = -1;
+    for (let dy = -AUTO_SEARCH_RANGE; dy <= AUTO_SEARCH_RANGE; dy++) {
+      const y = cy + dy;
+      const row = this.map.tiles[y];
+      if (!row) continue;
+      for (let dx = -AUTO_SEARCH_RANGE; dx <= AUTO_SEARCH_RANGE; dx++) {
+        const x = cx + dx;
+        const t = row[x];
+        if (!t || t.type !== TileType.LAND) continue;
+        if (t.tilled || t.plant || t.structure) continue;
+        if (this._tileClaimed(x, y)) continue;
+        let score = cropSuitability(cropDef, t);
+        if (this._touchesTilled(x, y)) score += 0.5;
+        if (score > bestScore) {
+          bestScore = score;
+          best = { x, y };
+        }
+      }
+    }
+    return best;
+  }
+
+  _touchesTilled(x, y) {
+    for (const [ax, ay] of [
+      [1, 0],
+      [-1, 0],
+      [0, 1],
+      [0, -1],
+    ]) {
+      const row = this.map.tiles[y + ay];
+      const nb = row && row[x + ax];
+      if (nb && nb.tilled) return true;
+    }
+    return false;
+  }
+
+  // Total fence tiles the colony has, built plus pending.
+  _totalFences() {
+    return this.fences.length + this._pendingBuilds('fence');
+  }
+
+  // The nearest animal within `range` of any colonist, or null.
+  _nearestAnimalToColony(range) {
+    let best = null;
+    let bestD = range;
+    for (const c of this.colonists) {
+      for (const a of this.animals) {
+        const d = Math.hypot(a.x - c.x, a.y - c.y);
+        if (d < bestD) {
+          bestD = d;
+          best = a;
+        }
+      }
+    }
+    return best;
+  }
+
+  // Where to put a fence — extends an existing fence toward the threat, or
+  // lays a first tile between this colonist and the nearest animal.
+  _pickFenceSpot(colonist) {
+    const animal = this._nearestAnimalToColony(FENCE_TRIGGER_RANGE);
+    if (!animal) return null;
+    if (this.fences.length > 0) {
+      let best = null;
+      let bestD = Infinity;
+      for (const f of this.fences) {
+        for (const [ax, ay] of [
+          [1, 0],
+          [-1, 0],
+          [0, 1],
+          [0, -1],
+        ]) {
+          const x = f.x + ax;
+          const y = f.y + ay;
+          if (!this._isFreeLand(x, y)) continue;
+          if (this._tileClaimed(x, y)) continue;
+          const d = Math.hypot(animal.x - x, animal.y - y);
+          if (d < bestD) {
+            bestD = d;
+            best = { x, y };
+          }
+        }
+      }
+      if (best) return best;
+    }
+    // No fence yet — lay a first tile between the colonist and the animal.
+    const cx = colonist.tileX;
+    const cy = colonist.tileY;
+    const dxSign = Math.sign(animal.x - cx) || 1;
+    const dySign = Math.sign(animal.y - cy);
+    for (const step of [2, 3, 1]) {
+      const x = cx + dxSign * step;
+      const y = cy + (dySign || 0) * step;
+      if (this._isFreeLand(x, y) && !this._tileClaimed(x, y)) return { x, y };
     }
     return null;
   }

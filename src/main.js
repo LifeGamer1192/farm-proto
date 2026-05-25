@@ -45,6 +45,7 @@ const gameoverEl = $('gameover');
 const victoryEl = $('victory');
 const victorySummaryEl = $('victory-summary');
 const autoHuntBtn = $('autohunt-btn');
+const autoModeBtn = $('automode-btn');
 const viewModesEl = $('view-modes');
 const toolsEl = $('tools');
 const cropsEl = $('crops');
@@ -350,6 +351,7 @@ function applyI18n() {
   refreshPanels();
   updatePauseBtn();
   updateAutoHuntBtn();
+  updateAutoModeBtn();
 }
 
 // --- map lifecycle --------------------------------------------------------
@@ -738,6 +740,16 @@ function updateAutoHuntBtn() {
 autoHuntBtn.addEventListener('click', () => {
   game.autoHunt = !game.autoHunt;
   updateAutoHuntBtn();
+});
+
+function updateAutoModeBtn() {
+  autoModeBtn.textContent = `${t('label.autoMode')}: ${t(game.autoMode ? 'val.on' : 'val.off')}`;
+  autoModeBtn.classList.toggle('on', game.autoMode);
+}
+
+autoModeBtn.addEventListener('click', () => {
+  game.autoMode = !game.autoMode;
+  updateAutoModeBtn();
 });
 
 // --- victory: surviving the first year -----------------------------------
