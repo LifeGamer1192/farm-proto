@@ -923,8 +923,30 @@ export class Game {
         }
       }
     }
-    // Auto-work: keep the farm growing.
+    // Hunt for food first when colony stores run low — done before infra
+    // and farm work so colonists do not build themselves into starvation.
+    if (this.autoHunt && this.totalFood < this.colonists.length * HUNT_FOOD_PER_HEAD) {
+      const a = this._animalNear(colonist.tileX, colonist.tileY, AUTO_HUNT_RANGE);
+      if (a && !this._tileClaimed(a.tileX, a.tileY)) {
+        return createTask(TaskType.HUNT, a.tileX, a.tileY, { animalId: a.id });
+      }
+    }
+    // Auto-work: stand up infrastructure before opening more farmland, so
+    // huts, hearths and a warehouse appear early; once they are up, the
+    // colonists turn to tilling and sowing.
     if (this.autoMode) {
+      if (this.huts.length + this._pendingBuilds('hut') < this.colonists.length) {
+        const spot = this._findFreeLandNear(colonist);
+        if (spot) return createTask(TaskType.BUILD, spot.x, spot.y, { structure: 'hut' });
+      }
+      if (this.hearths.length + this._pendingBuilds('hearth') < this.huts.length) {
+        const spot = this._findFreeLandNear(colonist);
+        if (spot) return createTask(TaskType.BUILD, spot.x, spot.y, { structure: 'hearth' });
+      }
+      if (this._wantsAutoWarehouse()) {
+        const spot = this._findFreeLandNear(colonist);
+        if (spot) return createTask(TaskType.BUILD, spot.x, spot.y, { structure: 'stockpile' });
+      }
       const sowCrop = this._mostStockedCrop();
       if (sowCrop) {
         const sowSpot = this._pickAutoSowSpot(colonist);
@@ -935,36 +957,12 @@ export class Game {
         const tillSpot = this._pickTillSpot(colonist, sowCrop);
         if (tillSpot) return createTask(TaskType.TILL, tillSpot.x, tillSpot.y);
       }
-      // One hut per colonist.
-      if (this.huts.length + this._pendingBuilds('hut') < this.colonists.length) {
-        const spot = this._findFreeLandNear(colonist);
-        if (spot) return createTask(TaskType.BUILD, spot.x, spot.y, { structure: 'hut' });
-      }
-      // One hearth per hut.
-      if (this.hearths.length + this._pendingBuilds('hearth') < this.huts.length) {
-        const spot = this._findFreeLandNear(colonist);
-        if (spot) return createTask(TaskType.BUILD, spot.x, spot.y, { structure: 'hearth' });
-      }
-      // A warehouse for storing food — at least one, more when the current
-      // ones fill up. Capped so the colony does not pave itself with them.
-      if (this._wantsAutoWarehouse()) {
-        const spot = this._findFreeLandNear(colonist);
-        if (spot) return createTask(TaskType.BUILD, spot.x, spot.y, { structure: 'stockpile' });
-      }
     }
     // Haul surplus on-hand food into a stockpile, safe from the pests.
     if (this.onHandFood > ON_HAND_CAP) {
       const sp = this._nearestStockpile(colonist, (s) => this.stockpileFood(s) < STOCKPILE_CAP);
       if (sp && !this._tileClaimed(sp.x, sp.y)) {
         return createTask(TaskType.STORE, sp.x, sp.y);
-      }
-    }
-    // Hunting is food-driven: idle colonists go after boar when the
-    // colony's stores run low.
-    if (this.autoHunt && this.totalFood < this.colonists.length * HUNT_FOOD_PER_HEAD) {
-      const a = this._animalNear(colonist.tileX, colonist.tileY, AUTO_HUNT_RANGE);
-      if (a && !this._tileClaimed(a.tileX, a.tileY)) {
-        return createTask(TaskType.HUNT, a.tileX, a.tileY, { animalId: a.id });
       }
     }
     return null;
