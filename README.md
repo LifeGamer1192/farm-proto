@@ -219,6 +219,21 @@ and surviving the winter.
   nourishing lifts mood a little more.
 - Japanese labels include **furigana** (e.g. *根菜類（こんさいるい）*).
 
+### Alpha 18 — trees and the wood economy
+
+- Maps now sprinkle in **trees** alongside the wild bushes. A tree is
+  chopped with the Harvest tool — yielding several wood — and leaves
+  behind a **stump**. After a minute or so the stump grows back into
+  a sapling that matures into a full tree over the next stretch.
+- **Buildings cost wood**: a fence costs one, a hearth three, a
+  warehouse four, a hut five. The colony starts with thirty wood — a
+  rough village starter kit. Try to build with no wood on hand and
+  the order is refused with a clear "not enough wood" message.
+- The autonomous workers **chop trees themselves** whenever the
+  reserve falls below the low-wood threshold, and a hut, hearth or
+  warehouse will not auto-queue unless the wood for it is already
+  in stock.
+
 ## Version archive
 
 Every released version stays playable. The live site links to an

@@ -50,7 +50,9 @@ export const DRAG_THRESHOLD = 6;
 export const WORK_DURATION = 0.7;
 
 // Fraction of land tiles that start with a wild (harvestable) plant.
-export const WILD_PLANT_CHANCE = 0.07;
+export const WILD_PLANT_CHANCE = 0.05;
+// Fraction of land tiles that start with a tree (chopped for wood, alpha 18).
+export const TREE_CHANCE = 0.08;
 
 // How many recent events the activity log keeps (the panel scrolls back).
 export const TASK_LOG_SIZE = 1000;
@@ -144,3 +146,19 @@ export const FENCE_TRIGGER_RANGE = 10; // build a fence when a wild animal is th
 export const FENCE_AUTO_CAP = 20; // never auto-place more fence tiles than this colony-wide
 export const FENCE_PLAN_LENGTH = 5; // tiles in one auto-planned wall row
 export const FENCE_REPLAN_COOLDOWN = 25; // seconds before the colony can plan another wall
+
+// --- wood / trees (alpha 18) ---------------------------------------------
+
+// Wood costs every structure type pays once at build time.
+export const BUILD_COSTS = { fence: 1, hut: 5, hearth: 3, stockpile: 4 };
+// Wood the colony starts with — enough for a hut per colonist, a hearth,
+// a stockpile and a short fence right out of the gate.
+export const STARTING_WOOD = 30;
+// Wood from chopping a fully-grown tree.
+export const TREE_WOOD_YIELD = 4;
+// Seconds for a fresh stump to regrow into a young tree.
+export const STUMP_REGROW_TIME = 60;
+// Seconds for a young tree to grow back to full size.
+export const TREE_GROW_TIME = 90;
+// Auto-chop kicks in when the colony's wood reserve falls below this.
+export const WOOD_LOW = 6;

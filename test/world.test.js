@@ -10,12 +10,16 @@ import { TileType } from '../src/map/tile.js';
 test('scatterPlants places plants only on land', () => {
   const map = generateMap(40, 40, 4321);
   const placed = scatterPlants(map);
-  assert.ok(placed > 0, 'expected some plants to be placed');
+  assert.ok(placed.wild > 0, 'expected some wild bushes to be placed');
+  assert.ok(placed.trees > 0, 'expected some trees to be placed');
+  let trees = 0;
   for (const row of map.tiles) {
     for (const t of row) {
       if (t.plant) assert.equal(t.type, TileType.LAND);
+      if (t.plant && t.plant.kind === 'tree') trees++;
     }
   }
+  assert.equal(trees, placed.trees, 'tree count matches return value');
 });
 
 test('scatterPlants is deterministic for a given seed', () => {

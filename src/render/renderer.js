@@ -436,6 +436,10 @@ export class Renderer {
   _drawPlant(plant, cx, cy, watered) {
     if (plant.kind === PlantKind.WILD) {
       this._drawWild(cx, cy);
+    } else if (plant.kind === PlantKind.TREE) {
+      this._drawTree(plant, cx, cy);
+    } else if (plant.kind === PlantKind.STUMP) {
+      this._drawStump(cx, cy);
     } else {
       this._drawCrop(plant, cx, cy, watered);
     }
@@ -457,6 +461,61 @@ export class Renderer {
       ctx.fill();
       ctx.stroke();
     }
+  }
+
+  // A tree: a brown trunk with a green leafy crown on top. Young trees
+  // (growth < 1) draw smaller — a fresh sprout that grows over time.
+  _drawTree(plant, cx, cy) {
+    const ctx = this.ctx;
+    const ts = this.ts;
+    const g = Math.max(0.25, Math.min(1, plant.growth || 1));
+    const trunkH = ts * 0.32 * g;
+    const trunkW = Math.max(1.2, ts * 0.09 * g);
+    const baseY = cy + ts * 0.34;
+    // Trunk.
+    ctx.fillStyle = '#5a3a20';
+    ctx.fillRect(cx - trunkW * 0.5, baseY - trunkH, trunkW, trunkH);
+    ctx.strokeStyle = '#3b2614';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(cx - trunkW * 0.5, baseY - trunkH, trunkW, trunkH);
+    // Leafy crown — three overlapping circles to suggest a canopy.
+    const cr = ts * 0.22 * g;
+    const crownY = baseY - trunkH - cr * 0.4;
+    ctx.fillStyle = '#2f6b34';
+    ctx.strokeStyle = '#19401f';
+    for (const [ox, oy] of [
+      [-cr * 0.55, cr * 0.25],
+      [cr * 0.55, cr * 0.25],
+      [0, -cr * 0.45],
+    ]) {
+      ctx.beginPath();
+      ctx.arc(cx + ox, crownY + oy, cr * 0.75, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+    }
+  }
+
+  // A stump: a low, flat brown ellipse where a tree used to stand.
+  _drawStump(cx, cy) {
+    const ctx = this.ctx;
+    const ts = this.ts;
+    const baseY = cy + ts * 0.3;
+    ctx.fillStyle = '#6b4a2d';
+    ctx.strokeStyle = '#3b2614';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.ellipse(cx, baseY, ts * 0.16, ts * 0.08, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    // A few growth rings.
+    ctx.strokeStyle = '#4d3320';
+    ctx.lineWidth = 0.8;
+    ctx.beginPath();
+    ctx.ellipse(cx, baseY, ts * 0.1, ts * 0.05, 0, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.ellipse(cx, baseY, ts * 0.05, ts * 0.025, 0, 0, Math.PI * 2);
+    ctx.stroke();
   }
 
   _drawWithered(cx, cy) {

@@ -57,6 +57,12 @@ import {
   FENCE_AUTO_CAP,
   FENCE_PLAN_LENGTH,
   FENCE_REPLAN_COOLDOWN,
+  BUILD_COSTS,
+  STARTING_WOOD,
+  TREE_WOOD_YIELD,
+  STUMP_REGROW_TIME,
+  TREE_GROW_TIME,
+  WOOD_LOW,
 } from './config.js';
 import { generateMap, mapStats } from './map/mapGenerator.js';
 import { TileType } from './map/tile.js';
@@ -191,8 +197,10 @@ export class Game {
   }
 
   // A fresh, empty store: every crop, plus the catch-all foods and meals.
+  // The colony starts with a small stockpile of wood so the first hut and
+  // hearth can go up without an immediate chopping detour.
   _freshStorage() {
-    const s = { wood: 0, meal: 0 };
+    const s = { wood: STARTING_WOOD, meal: 0 };
     for (const id of FOOD_TYPES) s[id] = 0;
     return s;
   }
@@ -600,8 +608,12 @@ export class Game {
     if (type === TaskType.BUILD) {
       if (tile.type === TileType.WATER) return 'err.onWater';
       if (tile.plant || tile.structure) return 'err.occupied';
+      const structure = opts.structure || 'fence';
+      // Wood already reserved by queued / in-flight builds is unavailable;
+      // an order that would put the colony into wood debt is refused now.
+      if (!this._canAffordBuild(structure)) return 'err.noWood';
       this.taskQueue.push(
-        createTask(TaskType.BUILD, x, y, { structure: opts.structure || 'fence', assignee }),
+        createTask(TaskType.BUILD, x, y, { structure, assignee }),
       );
       return null;
     }
@@ -726,6 +738,18 @@ export class Game {
         }
         const i = this.crops.indexOf(plant);
         if (i >= 0) this.crops.splice(i, 1);
+      } else if (plant && plant.kind === PlantKind.TREE) {
+        // Chopping a tree yields wood and leaves a fresh stump behind.
+        const wood = Math.max(1, Math.round(TREE_WOOD_YIELD * (plant.growth || 1)));
+        this.storage.wood += wood;
+        tile.plant = { kind: PlantKind.STUMP, regrowAt: this.clock + STUMP_REGROW_TIME };
+        task.outcome = 'chopped';
+        task.outcomeData = { n: wood };
+        return;
+      } else if (plant && plant.kind === PlantKind.STUMP) {
+        // A stump has no harvest to give — wait for the regrow.
+        task.outcome = 'stump';
+        return;
       } else if (plant) {
         this.storage.forage += 1;
         this.storage.wood += WILD_WOOD_YIELD;
@@ -789,15 +813,25 @@ export class Game {
       }
     } else if (task.type === TaskType.BUILD) {
       if (tile.type !== TileType.WATER && !tile.plant && !tile.structure) {
-        tile.structure = task.structure;
-        if (task.structure === 'hearth') this.hearths.push({ x: task.x, y: task.y });
-        if (task.structure === 'stockpile') {
-          this.stockpiles.push({ x: task.x, y: task.y, items: this._freshStockpileItems() });
+        const cost = BUILD_COSTS[task.structure] || 0;
+        if (this.storage.wood < cost) {
+          // Wood vanished between assignment and apply (a peer used it up);
+          // fail the task so the colonist can replan instead of building
+          // for free or going into wood debt.
+          task.outcome = 'noWood';
+          task.outcomeData = { structure: task.structure, need: cost };
+        } else {
+          this.storage.wood -= cost;
+          tile.structure = task.structure;
+          if (task.structure === 'hearth') this.hearths.push({ x: task.x, y: task.y });
+          if (task.structure === 'stockpile') {
+            this.stockpiles.push({ x: task.x, y: task.y, items: this._freshStockpileItems() });
+          }
+          if (task.structure === 'hut') this.huts.push({ x: task.x, y: task.y });
+          if (task.structure === 'fence') this.fences.push({ x: task.x, y: task.y });
+          task.outcome = 'built';
+          task.outcomeData = { structure: task.structure, wood: cost };
         }
-        if (task.structure === 'hut') this.huts.push({ x: task.x, y: task.y });
-        if (task.structure === 'fence') this.fences.push({ x: task.x, y: task.y });
-        task.outcome = 'built';
-        task.outcomeData = { structure: task.structure };
       } else {
         task.outcome = 'occupied';
       }
@@ -967,7 +1001,11 @@ export class Game {
     }
     // Auto-work: throw up a fence between the colony and a nearby boar.
     // Every colonist serves the same colony-wide plan — see _nextFenceTile.
-    if (this.autoMode && this._totalFences() < FENCE_AUTO_CAP) {
+    if (
+      this.autoMode &&
+      this._totalFences() < FENCE_AUTO_CAP &&
+      this._canAffordBuild('fence')
+    ) {
       const spot = this._nextFenceTile(colonist);
       if (spot) return createTask(TaskType.BUILD, spot.x, spot.y, { structure: 'fence' });
     }
@@ -987,19 +1025,33 @@ export class Game {
         return createTask(TaskType.HUNT, a.tileX, a.tileY, { animalId: a.id });
       }
     }
+    // Auto-work: chop the nearest tree when the colony's wood reserve has
+    // fallen below the threshold, so building doesn't grind to a halt.
+    if (this.autoMode && this.storage.wood - this._reservedBuildWood() < WOOD_LOW) {
+      const tree = this._nearestTree(colonist, AUTO_SEARCH_RANGE);
+      if (tree) return createTask(TaskType.HARVEST, tree.x, tree.y);
+    }
     // Auto-work: stand up infrastructure before opening more farmland, so
     // huts, hearths and a warehouse appear early; once they are up, the
-    // colonists turn to tilling and sowing.
+    // colonists turn to tilling and sowing. Each branch also checks wood —
+    // a hut that cannot be afforded should not jump the queue ahead of
+    // useful work like sowing.
     if (this.autoMode) {
-      if (this.huts.length + this._pendingBuilds('hut') < this.colonists.length) {
+      if (
+        this.huts.length + this._pendingBuilds('hut') < this.colonists.length &&
+        this._canAffordBuild('hut')
+      ) {
         const spot = this._findFreeLandNear(colonist);
         if (spot) return createTask(TaskType.BUILD, spot.x, spot.y, { structure: 'hut' });
       }
-      if (this.hearths.length + this._pendingBuilds('hearth') < this.huts.length) {
+      if (
+        this.hearths.length + this._pendingBuilds('hearth') < this.huts.length &&
+        this._canAffordBuild('hearth')
+      ) {
         const spot = this._findFreeLandNear(colonist);
         if (spot) return createTask(TaskType.BUILD, spot.x, spot.y, { structure: 'hearth' });
       }
-      if (this._wantsAutoWarehouse()) {
+      if (this._wantsAutoWarehouse() && this._canAffordBuild('stockpile')) {
         const spot = this._findFreeLandNear(colonist);
         if (spot) return createTask(TaskType.BUILD, spot.x, spot.y, { structure: 'stockpile' });
       }
@@ -1154,6 +1206,26 @@ export class Game {
     return this.fences.length + this._pendingBuilds('fence');
   }
 
+  // Wood the colony has earmarked for queued or in-progress builds.
+  _reservedBuildWood() {
+    let n = 0;
+    for (const task of this.taskQueue) {
+      if (task.type === TaskType.BUILD) n += BUILD_COSTS[task.structure] || 0;
+    }
+    for (const c of this.colonists) {
+      const t = c.currentTask;
+      if (t && t.type === TaskType.BUILD) n += BUILD_COSTS[t.structure] || 0;
+    }
+    return n;
+  }
+
+  // True if the colony can afford a new build of `structure` without
+  // putting itself into debt against already-reserved wood.
+  _canAffordBuild(structure) {
+    const cost = BUILD_COSTS[structure] || 0;
+    return this.storage.wood - this._reservedBuildWood() >= cost;
+  }
+
   // Whether to auto-build another warehouse. Always wants at least one;
   // builds more if the existing ones are nearly full, up to a hard cap.
   _wantsAutoWarehouse() {
@@ -1165,6 +1237,34 @@ export class Game {
     for (const sp of this.stockpiles) used += this.stockpileFood(sp);
     const cap = this.stockpiles.length * STOCKPILE_CAP;
     return used / cap > 0.85;
+  }
+
+  // The nearest fully-grown tree within `range` of a colonist that no one
+  // is already chopping. Used by the wood-low auto-chop branch.
+  _nearestTree(colonist, range) {
+    const cx = colonist.tileX;
+    const cy = colonist.tileY;
+    let best = null;
+    let bestD = range;
+    const r = Math.ceil(range);
+    for (let dy = -r; dy <= r; dy++) {
+      for (let dx = -r; dx <= r; dx++) {
+        const x = cx + dx;
+        const y = cy + dy;
+        const row = this.map.tiles[y];
+        const tl = row && row[x];
+        if (!tl || !tl.plant) continue;
+        if (tl.plant.kind !== PlantKind.TREE) continue;
+        if (tl.plant.growth < 0.5) continue; // saplings aren't worth chopping
+        if (this._tileClaimed(x, y)) continue;
+        const d = Math.hypot(dx, dy);
+        if (d < bestD) {
+          bestD = d;
+          best = { x, y };
+        }
+      }
+    }
+    return best;
   }
 
   // The nearest animal within `range` of any colonist, or null.
@@ -1448,6 +1548,27 @@ export class Game {
     this.storage.wood = Math.max(0, this.storage.wood - this.hearths.length * WOOD_BURN_RATE * dt);
   }
 
+  // Trees grow back from stumps after a cooldown, and young trees grow
+  // toward full size over the next stretch. Iterating over every tile is
+  // cheap at the prototype map size and keeps the bookkeeping simple.
+  _updateForest(dt) {
+    const rows = this.map.tiles;
+    for (let y = 0; y < rows.length; y++) {
+      const row = rows[y];
+      for (let x = 0; x < row.length; x++) {
+        const p = row[x].plant;
+        if (!p) continue;
+        if (p.kind === PlantKind.STUMP) {
+          if (this.clock >= p.regrowAt) {
+            row[x].plant = { kind: PlantKind.TREE, growth: 0 };
+          }
+        } else if (p.kind === PlantKind.TREE && p.growth < 1) {
+          p.growth = Math.min(1, p.growth + dt / TREE_GROW_TIME);
+        }
+      }
+    }
+  }
+
   _panVector() {
     let dx = this.panDir.x;
     let dy = this.panDir.y;
@@ -1473,6 +1594,7 @@ export class Game {
       this._seasonEvent = this.environment.season;
     }
     this._updateFuel(simDt);
+    this._updateForest(simDt);
     this._updateColonists(simDt);
     this._updateAnimals(simDt);
     this._growCrops(simDt);

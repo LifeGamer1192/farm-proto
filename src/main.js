@@ -6,6 +6,7 @@ import {
   SCROLL_STEP,
   TILL_SURVIVAL_BONUS,
   STOCKPILE_CAP,
+  BUILD_COSTS,
 } from './config.js';
 import { hashSeed, randomSeed } from './core/rng.js';
 import {
@@ -402,7 +403,9 @@ function applyI18n() {
     b.title = cropHint(id);
   }
   for (const b of structuresEl.querySelectorAll('button[data-structure]')) {
-    b.title = t('hint.structure.' + b.dataset.structure);
+    const id = b.dataset.structure;
+    const cost = BUILD_COSTS[id] || 0;
+    b.title = `${t('hint.structure.' + id)} ${t('hint.buildCost', { n: cost })}`;
   }
   showTip();
   document.documentElement.lang = getLang();
@@ -450,6 +453,13 @@ function tileAt(clientX, clientY) {
 function describePlant(plant) {
   if (!plant) return '';
   if (plant.kind === 'wild') return `<br>${t('tip.plantWild')}`;
+  if (plant.kind === 'tree') {
+    return `<br>${t('tip.plantTree', { n: Math.round((plant.growth || 1) * 100) })}`;
+  }
+  if (plant.kind === 'stump') {
+    const left = Math.max(0, Math.ceil(plant.regrowAt - game.clock));
+    return `<br>${t('tip.plantStump', { n: left })}`;
+  }
   let status;
   if (plant.withered) status = t('tip.withered');
   else if (isRipe(plant)) status = t('tip.ripe');
