@@ -572,6 +572,11 @@ export class Renderer {
   // Dispatch by crop category — each plant family has its own silhouette.
   _paintCrop(ctx, ts, cropId, genome, growth, cx, cy) {
     const crop = getCrop(cropId);
+    // Wild greens have their own scruffy painter — distinct from the
+    // tidy cabbage / lettuce silhouette of the leaf category.
+    if (cropId === 'wildgreens') {
+      return this._paintWildgreens(ctx, ts, crop, genome, growth, cx, cy);
+    }
     switch (crop.category) {
       case 'grain':    return this._paintGrain(ctx, ts, crop, genome, growth, cx, cy);
       case 'legume':   return this._paintLegume(ctx, ts, crop, genome, growth, cx, cy);
@@ -854,33 +859,114 @@ export class Renderer {
     }
   }
 
-  // Bulbs: a rounded bulb at the base with narrow green leaves shooting up.
+  // Bulbs: a plump egg-shaped bulb half-buried in the soil with a narrow
+  // tapered tail underneath and a fan of green leaves shooting up. The
+  // bulb gets vertical streaks suggesting onion layers.
   _paintBulb(ctx, ts, crop, genome, growth, cx, cy) {
     const g = Math.min(1, growth);
     const ripe = g >= 1;
     const look = this._cropLook(genome);
-    const base = cy + ts * 0.34;
-    ctx.strokeStyle = '#5fa84a';
-    ctx.lineWidth = Math.max(1.2, ts * 0.05);
+    const base = cy + ts * 0.32;
+    // Slender curved leaves splaying out from the bulb's neck (4 blades).
+    ctx.strokeStyle = ripe ? '#5fa84a' : '#7cba5a';
+    ctx.lineWidth = Math.max(1.2, ts * 0.045);
     ctx.lineCap = 'round';
-    const stemH = ts * (0.18 + 0.34 * g);
-    for (const off of [-0.06, 0, 0.06]) {
+    const leafH = ts * (0.22 + 0.36 * g);
+    for (const off of [-0.6, -0.2, 0.2, 0.6]) {
+      const tipX = cx + ts * off * 0.18;
+      const tipY = base - leafH * (1 - Math.abs(off) * 0.15);
+      const cpX = cx + ts * off * 0.12;
+      const cpY = base - leafH * 0.5;
       ctx.beginPath();
-      ctx.moveTo(cx + ts * off, base);
-      ctx.lineTo(cx + ts * off * 0.4, base - stemH);
+      ctx.moveTo(cx, base);
+      ctx.quadraticCurveTo(cpX, cpY, tipX, tipY);
       ctx.stroke();
     }
     ctx.lineCap = 'butt';
-    if (g > 0.5) {
+    if (g > 0.4) {
       const fill = this._ripeFill(crop, look, ripe);
+      // The bulb body — an egg shape, fatter at the bottom, sitting
+      // half-buried so the bottom slightly clips the soil line.
+      const rw = ts * 0.15 * (0.85 + look.yieldP * 0.4);
+      const rh = ts * 0.2 * (0.85 + look.yieldP * 0.4);
+      const by = base + ts * 0.02;
       ctx.fillStyle = fill;
-      ctx.strokeStyle = 'rgba(0,0,0,0.28)';
+      ctx.strokeStyle = 'rgba(0,0,0,0.32)';
       ctx.lineWidth = 1;
-      const r = ts * 0.14 * (0.8 + look.yieldP * 0.5);
       ctx.beginPath();
-      ctx.ellipse(cx, base + ts * 0.04, r, r * 0.85, 0, 0, Math.PI * 2);
+      ctx.ellipse(cx, by, rw, rh, 0, 0, Math.PI * 2);
       ctx.fill();
       ctx.stroke();
+      // Vertical streaks suggest the onion's papery layers.
+      ctx.strokeStyle = tintColor(fill, 0, 0.55);
+      ctx.lineWidth = 0.8;
+      for (const s of [-0.6, -0.25, 0.25, 0.6]) {
+        const x = cx + rw * s;
+        const lift = rh * Math.cos(s * 1.2) * 0.85;
+        ctx.beginPath();
+        ctx.moveTo(x, by - lift);
+        ctx.lineTo(x, by + lift);
+        ctx.stroke();
+      }
+      // Small root tail at the bottom of the bulb (3 tiny strokes).
+      ctx.strokeStyle = 'rgba(60, 40, 25, 0.55)';
+      ctx.lineWidth = 0.8;
+      ctx.lineCap = 'round';
+      for (const t of [-0.25, 0, 0.25]) {
+        ctx.beginPath();
+        ctx.moveTo(cx + rw * t, by + rh * 0.85);
+        ctx.lineTo(cx + rw * t * 1.3, by + rh * 1.15);
+        ctx.stroke();
+      }
+      ctx.lineCap = 'butt';
+    }
+  }
+
+  // Wild greens: a scruffy, asymmetric tuft of jagged blades sprouting
+  // straight up from the soil. Reads as "wild plant", not "neat cabbage".
+  _paintWildgreens(ctx, ts, crop, genome, growth, cx, cy) {
+    const g = Math.min(1, growth);
+    const ripe = g >= 1;
+    const look = this._cropLook(genome);
+    const base = cy + ts * 0.34;
+    const reach = ts * (0.22 + 0.32 * g);
+    // Six blades, alternating heights and angles so the tuft looks uneven.
+    const fill = this._ripeFill(crop, look, ripe);
+    ctx.fillStyle = fill;
+    ctx.strokeStyle = tintColor(fill, 0, 0.55);
+    ctx.lineWidth = 0.8;
+    const blades = [
+      { off: -0.55, tilt: -0.7, scale: 0.85 },
+      { off: -0.30, tilt: -0.3, scale: 1.05 },
+      { off: -0.05, tilt: 0.1,  scale: 1.00 },
+      { off:  0.18, tilt: 0.05, scale: 1.15 },
+      { off:  0.40, tilt: 0.45, scale: 0.95 },
+      { off:  0.60, tilt: 0.85, scale: 0.80 },
+    ];
+    for (const b of blades) {
+      const x0 = cx + ts * b.off * 0.18;
+      const y0 = base;
+      const len = reach * b.scale;
+      const tipX = x0 + Math.sin(b.tilt) * len * 0.55;
+      const tipY = y0 - len;
+      const wx = ts * 0.04;
+      ctx.beginPath();
+      ctx.moveTo(x0 - wx, y0);
+      ctx.quadraticCurveTo(x0 + Math.sin(b.tilt) * len * 0.2, y0 - len * 0.55, tipX, tipY);
+      ctx.quadraticCurveTo(x0 + Math.sin(b.tilt) * len * 0.3, y0 - len * 0.45, x0 + wx, y0);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+    }
+    // A scatter of small berries / seed heads when ripe, suggesting that
+    // wild-greens DOES drop seed on harvest.
+    if (ripe) {
+      ctx.fillStyle = tintColor(fill, 30, 0.7);
+      for (const [ox, oy] of [[-0.25, -0.55], [0.15, -0.4], [0.4, -0.7]]) {
+        ctx.beginPath();
+        ctx.arc(cx + reach * ox, base + reach * oy, ts * 0.025, 0, Math.PI * 2);
+        ctx.fill();
+      }
     }
   }
 
@@ -1006,32 +1092,61 @@ export class Renderer {
     }
   }
 
-  // Nuts: stem with a cluster of small nuts at the top.
+  // Nuts: a short woody stem topped with a chunky cluster of three
+  // almond-shaped nuts and a sheltering leaf above. Each nut is large
+  // enough to read clearly at the 48px codex preview.
   _paintNutCluster(ctx, ts, crop, genome, growth, cx, cy) {
     const g = Math.min(1, growth);
     const ripe = g >= 1;
     const look = this._cropLook(genome);
-    const base = cy + ts * 0.3;
-    const stemH = ts * (0.2 + 0.4 * g);
-    this._drawStem(ctx, ts, cx, base, stemH, 0.08);
-    if (g > 0.25) {
-      const leafY = base - stemH * 0.55;
-      this._drawLeaf(ctx, cx, leafY, ts, look.leafIdx, -1);
-      this._drawLeaf(ctx, cx, leafY, ts, look.leafIdx, 1);
-    }
+    const base = cy + ts * 0.32;
+    const stemH = ts * (0.18 + 0.32 * g);
+    // Sturdy brown stem.
+    ctx.strokeStyle = '#5a3a20';
+    ctx.lineWidth = Math.max(1.5, ts * 0.08);
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(cx, base);
+    ctx.lineTo(cx, base - stemH);
+    ctx.stroke();
+    ctx.lineCap = 'butt';
     if (g > 0.6) {
       const fill = this._ripeFill(crop, look, ripe);
       const top = base - stemH;
-      const nr = ts * 0.07 * (0.8 + look.yieldP * 0.5);
+      // Three almond/oval nuts in a triangular cluster centred on the
+      // top of the stem. Each is a tall ellipse, large enough to read.
+      const nr = ts * 0.13 * (0.85 + look.yieldP * 0.4);
       ctx.fillStyle = fill;
-      ctx.strokeStyle = 'rgba(0,0,0,0.3)';
-      ctx.lineWidth = 0.8;
-      for (const [ox, oy] of [[-0.7, 0.4], [0.7, 0.4], [-0.2, -0.4], [0.6, -0.2]]) {
+      ctx.strokeStyle = 'rgba(60, 40, 20, 0.55)';
+      ctx.lineWidth = 1;
+      const triad = [[-0.8, 0.4], [0.8, 0.4], [0, -0.5]];
+      for (const [ox, oy] of triad) {
+        const x = cx + nr * ox;
+        const y = top + nr * oy;
         ctx.beginPath();
-        ctx.arc(cx + nr * ox * 2, top + nr * oy * 2, nr, 0, Math.PI * 2);
+        ctx.ellipse(x, y, nr * 0.65, nr * 0.9, 0, 0, Math.PI * 2);
         ctx.fill();
         ctx.stroke();
+        // A subtle seam down the centre of each nut.
+        ctx.strokeStyle = 'rgba(60, 40, 20, 0.45)';
+        ctx.lineWidth = 0.6;
+        ctx.beginPath();
+        ctx.moveTo(x, y - nr * 0.78);
+        ctx.lineTo(x, y + nr * 0.78);
+        ctx.stroke();
+        ctx.strokeStyle = 'rgba(60, 40, 20, 0.55)';
+        ctx.lineWidth = 1;
       }
+      // A sheltering leaf above the cluster.
+      ctx.fillStyle = '#3f7a2b';
+      ctx.beginPath();
+      ctx.ellipse(cx, top - nr * 1.25, nr * 1.15, nr * 0.45, 0, 0, Math.PI * 2);
+      ctx.fill();
+    } else if (g > 0.3) {
+      // Early growth: just a couple of leaves at the top of the stem.
+      const leafY = base - stemH;
+      this._drawLeaf(ctx, cx, leafY, ts, look.leafIdx, -1);
+      this._drawLeaf(ctx, cx, leafY, ts, look.leafIdx, 1);
     }
   }
 
