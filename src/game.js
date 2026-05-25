@@ -685,6 +685,13 @@ export class Game {
       }
       tile.plant = null;
     } else if (task.type === TaskType.SOW) {
+      if (tile.plant) {
+        // Another sow won this tile between assignment and now — bail
+        // without consuming a seed so we do not orphan the earlier crop.
+        task.outcome = 'occupied';
+        task.outcomeData = { crop: task.cropId };
+        return;
+      }
       const seed = this._takeSeed(task.cropId);
       if (!seed) {
         task.outcome = 'noSeed';
@@ -1180,16 +1187,13 @@ export class Game {
   }
 
   // True if a colonist is already working a tile, or a task is queued for it.
+  // A 'done' task still counts as claimed until its effect has been applied
+  // (which happens at the top of the next colonist's turn) — otherwise a
+  // peer can pick the same tile in the same frame and double-up the work.
   _tileClaimed(x, y) {
     for (const c of this.colonists) {
       const task = c.currentTask;
-      if (
-        task &&
-        task.x === x &&
-        task.y === y &&
-        task.status !== 'done' &&
-        task.status !== 'failed'
-      ) {
+      if (task && task.x === x && task.y === y && task.status !== 'failed') {
         return true;
       }
     }
