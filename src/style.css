@@ -379,6 +379,14 @@ button.primary:hover {
   text-align: center;
 }
 
+/* Condition icon next to a colonist's name (alpha 21). */
+.cond-ico {
+  display: inline-block;
+  margin-left: 0.25em;
+  cursor: help;
+  font-size: 0.95em;
+}
+
 .task-log {
   list-style: none;
   margin: 6px 0 0;

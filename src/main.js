@@ -166,6 +166,29 @@ function statBar(key, value) {
   );
 }
 
+// Condition icons next to the colonist's name (alpha 21). Tooltip on
+// each icon explains the reason and the in-game penalty it carries.
+function colonistConditionIcons(c) {
+  const ico = [];
+  if (c.health !== undefined && c.health < 0.5) {
+    ico.push(`<span class="cond-ico" title="${t('cond.injured')}">🤕</span>`);
+  }
+  if (c.sleep !== undefined && c.sleep < 0.3) {
+    ico.push(`<span class="cond-ico" title="${t('cond.sleepy')}">😴</span>`);
+  }
+  // Skill highlight: any skill above 0.7 gets a star tooltip.
+  if (c.skills) {
+    const top = Object.entries(c.skills).reduce((m, e) => (e[1] > m[1] ? e : m), [null, 0]);
+    if (top[0] && top[1] >= 0.7) {
+      const pct = Math.round(top[1] * 100);
+      ico.push(
+        `<span class="cond-ico" title="${t('cond.skilled', { skill: t('skill.' + top[0]), pct })}">⭐</span>`,
+      );
+    }
+  }
+  return ico.length ? ` ${ico.join('')}` : '';
+}
+
 // What the colonist is doing right now, with a parenthetical detail so a
 // row can say "Working (sowing wheat)" or "Building (fence)" instead of
 // just "Working".
@@ -217,9 +240,10 @@ function updateColonistsPanel() {
         statBar('stat.health', c.health) +
         statBar('stat.mood', c.mood);
       const sel = c.name === game.selectedColonist ? ' selected' : '';
+      const icons = colonistConditionIcons(c);
       return (
         `<div class="colonist-row${sel}" data-colonist="${c.name}">` +
-        `<div class="crow-head"><span>${c.name}</span>` +
+        `<div class="crow-head"><span>${c.name}${icons}</span>` +
         `<span class="cstate">${colonistStateLabel(c)}</span></div>` +
         `<div class="crow-bars">${bars}</div></div>`
       );
@@ -909,6 +933,17 @@ autoModeBtn.addEventListener('click', () => {
 
 // --- victory: surviving the first year -----------------------------------
 
+let victoryAutoClose = null;
+function closeVictory() {
+  victoryEl.hidden = true;
+  game.paused = false;
+  updatePauseBtn();
+  if (victoryAutoClose) {
+    clearTimeout(victoryAutoClose);
+    victoryAutoClose = null;
+  }
+}
+
 function showVictory() {
   let bestSeed = 0;
   for (const id of CROP_IDS) bestSeed = Math.max(bestSeed, game.bestSeedRank(id));
@@ -923,13 +958,12 @@ function showVictory() {
   victoryEl.hidden = false;
   game.paused = true; // freeze under the overlay so the summary can be read
   updatePauseBtn();
+  // Auto-close the celebration after a beat — the colony plays on.
+  if (victoryAutoClose) clearTimeout(victoryAutoClose);
+  victoryAutoClose = setTimeout(() => closeVictory(), 10000);
 }
 
-$('victory-continue').addEventListener('click', () => {
-  victoryEl.hidden = true;
-  game.paused = false;
-  updatePauseBtn();
-});
+$('victory-continue').addEventListener('click', closeVictory);
 
 $('victory-new').addEventListener('click', () => {
   newMap(randomSeed());

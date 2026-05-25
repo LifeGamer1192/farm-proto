@@ -72,6 +72,9 @@ import {
   TRADER_WOOD_GIFT,
   TRADER_SEED_PACKETS,
   TRADER_SEED_COUNT,
+  INJURY_THRESHOLD,
+  SLEEP_DEFICIT_THRESHOLD,
+  VICTORY_YEAR,
 } from './config.js';
 import { generateMap, mapStats } from './map/mapGenerator.js';
 import { TileType } from './map/tile.js';
@@ -1005,6 +1008,14 @@ export class Game {
     if (colonist.hunger >= EAT_THRESHOLD && colonist.eatCooldown <= 0) {
       return createTask(TaskType.EAT, colonist.tileX, colonist.tileY);
     }
+    // Injured colonists head home to rest instead of taking new work
+    // (alpha 21). Heavily sleep-deprived colonists prefer SLEEP.
+    if (colonist.health < INJURY_THRESHOLD) {
+      return createTask(TaskType.REST, colonist.tileX, colonist.tileY);
+    }
+    if (colonist.sleep !== undefined && colonist.sleep < SLEEP_DEFICIT_THRESHOLD * 0.6) {
+      return createTask(TaskType.SLEEP, colonist.tileX, colonist.tileY);
+    }
     // A content colonist works; a miserable one may slack off instead.
     const willWork = colonist.mood >= 0.3 || Math.random() < 0.5;
     if (willWork) {
@@ -1645,7 +1656,7 @@ export class Game {
     this._growCrops(simDt);
     this._updatePests(simDt);
     // Surviving a full year is the colony's first goal — but play goes on.
-    if (!this.won && !this.over && this.environment.year >= 2 && this.colonists.length > 0) {
+    if (!this.won && !this.over && this.environment.year >= VICTORY_YEAR && this.colonists.length > 0) {
       this.won = true;
       this._winEvent = true;
     }

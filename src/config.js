@@ -58,6 +58,33 @@ export const TREE_CHANCE = 0.08;
 // Chance a forage harvest also drops a wild-greens seed (alpha 20).
 export const WILDGREENS_SEED_CHANCE = 0.2;
 
+// --- skills, sleep & celebrations (alpha 21) -----------------------------
+
+// Each skill stores experience 0..1 (1 = mastered). The speed/damage
+// multiplier scales linearly from 1× at xp=0 up to MAX_SKILL_MULT× at xp=1.
+export const MAX_SKILL_MULT = 3;
+// Sim-seconds of "doing the right work" needed to fully master a skill.
+// Tuned so a focused colonist reaches roughly half-mastery in one year.
+export const SKILL_TIME_TO_MASTER = 1200;
+// Random skill spread at character creation — keeps the four starting
+// colonists feeling distinct without making any of them helpless.
+export const SKILL_START_RANGE = [0.0, 0.35];
+
+// Sleep stat (1 = well-rested, 0 = exhausted). Drains over time during
+// activity; sleeping fully restores it.
+export const SLEEP_DRAIN_RATE = 1 / (60 * 6); // ~6 sim-minutes from full to empty
+export const SLEEP_RECOVER_RATE = 1 / 4;     // ~4 sim-seconds of SLEEP refills it
+// Below this the colonist is considered sleep-deprived (icon + mood hit).
+export const SLEEP_DEFICIT_THRESHOLD = 0.3;
+// Below this the colonist is considered injured (icon + prefer REST).
+export const INJURY_THRESHOLD = 0.5;
+
+// Years to survive before the celebration overlay fires. Alpha 21 lifts
+// the goal from "one year" to "three years".
+export const VICTORY_YEAR = 4; // environment.year value, year-1 was the previous goal
+// Seconds the celebration overlay shows before auto-closing back to play.
+export const VICTORY_AUTOCLOSE = 10;
+
 // How many recent events the activity log keeps (the panel scrolls back).
 export const TASK_LOG_SIZE = 1000;
 

@@ -177,7 +177,10 @@ test('an animal attack hurts a colonist; enough attacks are fatal', () => {
   c.hurt(0.3);
   assert.ok(c.health < 1);
   assert.equal(c.dead, false);
-  c.hurt(1);
+  // hurt() since alpha 21 is cushioned by the strength skill (up to 3×).
+  // Three points of raw damage are still always fatal: at full strength
+  // mastery the cushion bottoms out at 3/3 = 1 of effective damage.
+  c.hurt(3);
   assert.equal(c.health, 0);
   assert.equal(c.dead, true);
 });

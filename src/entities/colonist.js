@@ -26,6 +26,12 @@ import {
   HEALTH_REGEN,
   HEALTH_REGEN_HUNGER,
   MOOD_ADAPT,
+  MAX_SKILL_MULT,
+  SKILL_TIME_TO_MASTER,
+  SKILL_START_RANGE,
+  SLEEP_DRAIN_RATE,
+  SLEEP_RECOVER_RATE,
+  SLEEP_DEFICIT_THRESHOLD,
 } from '../config.js';
 
 const clamp01 = (v) => (v < 0 ? 0 : v > 1 ? 1 : v);
@@ -47,6 +53,24 @@ const WORK_PHASE = {
   [TaskType.EAT]: EAT_DURATION,
   [TaskType.REST]: REST_DURATION,
   [TaskType.SLEEP]: SLEEP_DURATION,
+};
+
+// Which skill earns experience for each work type.
+const TASK_SKILL = {
+  [TaskType.SOW]: 'farming',
+  [TaskType.HARVEST]: 'farming',
+  [TaskType.TILL]: 'farming',
+  [TaskType.WATER]: 'farming',
+  [TaskType.WEED]: 'farming',
+  [TaskType.COOK]: 'farming',
+  [TaskType.HUNT]: 'strength',
+  [TaskType.BUILD]: 'building',
+};
+
+// A random starting value in the [lo, hi] range.
+const startSkill = () => {
+  const [lo, hi] = SKILL_START_RANGE;
+  return lo + Math.random() * (hi - lo);
 };
 
 // Display state shown while a colonist works a task.
@@ -80,9 +104,32 @@ export class Colonist {
     this.hunger = 0; // 0 full, 1 starving
     this.health = 1; // 1 healthy, 0 dead
     this.mood = 0.8; // 1 content, 0 miserable
+    this.sleep = 1;  // 1 well-rested, 0 exhausted (alpha 21)
     this.eatCooldown = 0; // delay before seeking food again
     this.cold = false; // suffering from the cold (set by the game each tick)
     this.dead = false;
+
+    // Skills (alpha 21) — each 0..1 of experience. Multiplier scales
+    // linearly from 1× at 0 up to MAX_SKILL_MULT× at 1. Starting values
+    // are randomised so the four colonists feel distinct.
+    this.skills = {
+      farming:  startSkill(),
+      agility:  startSkill(),
+      strength: startSkill(),
+      building: startSkill(),
+    };
+  }
+
+  /** Multiplier for a given skill: 1× at xp=0, MAX_SKILL_MULT× at xp=1. */
+  skillMult(name) {
+    const xp = this.skills?.[name] || 0;
+    return 1 + (MAX_SKILL_MULT - 1) * xp;
+  }
+
+  /** Award `sec` sim-seconds of practice to a skill (saturates at 1). */
+  gainSkill(name, sec) {
+    if (!this.skills || !(name in this.skills)) return;
+    this.skills[name] = Math.min(1, this.skills[name] + sec / SKILL_TIME_TO_MASTER);
   }
 
   get tileX() {
@@ -109,9 +156,10 @@ export class Colonist {
     task.outcome = outcomeKey;
   }
 
-  /** Take damage from an animal attack. */
+  /** Take damage from an animal attack. Strength skill cushions it. */
   hurt(amount) {
-    this.health = Math.max(0, this.health - amount);
+    const cushion = amount / this.skillMult('strength');
+    this.health = Math.max(0, this.health - cushion);
     this.mood = Math.max(0, this.mood - 0.12);
     if (this.health <= 0) this.dead = true;
   }
@@ -161,7 +209,9 @@ export class Colonist {
   }
 
   _walk(dt) {
-    let budget = COLONIST_SPEED * dt;
+    let budget = COLONIST_SPEED * this.skillMult('agility') * dt;
+    // Walking practises agility a little.
+    this.gainSkill('agility', dt);
     while (budget > 0 && this.path.length > 0) {
       const wp = this.path[0];
       const dx = wp.x - this.x;
@@ -182,13 +232,27 @@ export class Colonist {
 
   /** Advance survival stats and the current task by dt seconds. */
   update(dt) {
+    // Hunger / starvation. Strength cushions starvation damage too.
     this.hunger = Math.min(1, this.hunger + HUNGER_RATE * dt);
     if (this.hunger >= 1) {
-      this.health = Math.max(0, this.health - STARVE_RATE * dt);
+      this.health = Math.max(0, this.health - (STARVE_RATE * dt) / this.skillMult('strength'));
     } else if (this.hunger < HEALTH_REGEN_HUNGER && this.health < 1) {
       this.health = Math.min(1, this.health + HEALTH_REGEN * dt);
     }
-    const moodTarget = clamp01(1 - this.hunger * 0.6 - (1 - this.health) * 0.5);
+    // Sleep — sleeping refills, anything else drains. SLEEP task is
+    // handled by the work branch below; here we just drain in the
+    // background so even an active colonist tires across a day.
+    const task = this.currentTask;
+    const isSleeping = task && task.type === TaskType.SLEEP && this.path.length === 0;
+    if (isSleeping) {
+      this.sleep = Math.min(1, this.sleep + SLEEP_RECOVER_RATE * dt);
+    } else {
+      this.sleep = Math.max(0, this.sleep - SLEEP_DRAIN_RATE * dt);
+    }
+    const sleepDeficit = this.sleep < SLEEP_DEFICIT_THRESHOLD ? (SLEEP_DEFICIT_THRESHOLD - this.sleep) : 0;
+    const moodTarget = clamp01(
+      1 - this.hunger * 0.6 - (1 - this.health) * 0.5 - sleepDeficit * 0.8,
+    );
     this.mood = clamp01(this.mood + (moodTarget - this.mood) * MOOD_ADAPT * dt);
     if (this.eatCooldown > 0) this.eatCooldown -= dt;
     if (this.health <= 0) {
@@ -196,7 +260,6 @@ export class Colonist {
       return;
     }
 
-    const task = this.currentTask;
     if (!task) {
       this.state = 'idle';
       return;
@@ -208,13 +271,20 @@ export class Colonist {
       this._walk(dt);
       return;
     }
-    const dur = WORK_PHASE[task.type] || 0;
-    if (dur <= 0) {
+    const baseDur = WORK_PHASE[task.type] || 0;
+    if (baseDur <= 0) {
       task.status = 'done';
       return;
     }
+    // Skill scales the EFFECTIVE work rate: a farmer with high farming
+    // finishes a SOW in ~1/3 the time. Sleep deficit drags work back.
+    const skill = TASK_SKILL[task.type];
+    const skillMul = skill ? this.skillMult(skill) : 1;
+    const sleepDrag = 1 - sleepDeficit * 0.6;
+    const rate = skillMul * Math.max(0.3, sleepDrag);
     this.state = WORK_STATE[task.type] || 'working';
-    this.workTimer += dt;
-    if (this.workTimer >= dur) task.status = 'done';
+    this.workTimer += dt * rate;
+    if (skill) this.gainSkill(skill, dt);
+    if (this.workTimer >= baseDur) task.status = 'done';
   }
 }

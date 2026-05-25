@@ -234,6 +234,24 @@ and surviving the winter.
   warehouse will not auto-queue unless the wood for it is already
   in stock.
 
+### Alpha 21 — skills, sleep, and a three-year celebration
+
+- Each colonist now carries four **skills** — farming, agility,
+  strength and building — each scaling from no bonus at all up to
+  3× speed at full mastery. Starting values are random, and
+  experience accrues whenever the colonist does the matching kind
+  of work. A name in the Colonists panel gets a ⭐ tag once any
+  one of its skills crosses 70%.
+- **Sleep** is now a stat too. It drains gently while a colonist
+  is up and about; the SLEEP task refills it. Below 30% the row
+  shows a 😴 icon, mood takes a hit, and work slows down. Heavily
+  exhausted colonists head home to sleep on their own.
+- An **injured** colonist (health below 50%) gets a 🤕 icon and
+  stops taking new orders to rest at home until they recover.
+- The first celebration screen now fires after **three** in-game
+  years instead of one, and the overlay auto-closes after about
+  ten seconds so play continues even when nobody clicks.
+
 ### Alpha 20 — wilder wilderness
 
 - The wild-plant carpet is much thinner now (about 1/4 as many bushes)
