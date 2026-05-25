@@ -200,6 +200,25 @@ and surviving the winter.
     each hut, and short straight fences when a boar wanders close
     (up to twenty fence tiles in total)
 
+### Alpha 17 — a fuller crop catalogue
+
+- The crop catalogue grew from three to about thirty‑five varieties
+  spread across **eleven plant categories** (grains, legumes, root
+  vegetables, tubers, bulbs, leaf greens, stem vegetables, flower
+  vegetables, fruit vegetables, fruits and nuts).
+- Each colony starts with seeds for **eight random crops**, always
+  including **at least one grain** so there is a staple to plant. The
+  Crop picker, Seed stock and Variety codex panels all show only the
+  crops the colony actually holds.
+- Crops draw with **category‑specific looks** — grains as stalks with
+  seed heads, legumes with hanging pods, root vegetables as just a
+  tuft of leaves (the root stays in the soil), tubers showing bumps
+  through the earth, bulbs with narrow leaves over a bulb, leaf
+  greens as overlapping lobes, and so on.
+- Every crop carries a **nutrition** value — eating something more
+  nourishing lifts mood a little more.
+- Japanese labels include **furigana** (e.g. *根菜類（こんさいるい）*).
+
 ## Version archive
 
 Every released version stays playable. The live site links to an

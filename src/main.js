@@ -8,7 +8,16 @@ import {
   STOCKPILE_CAP,
 } from './config.js';
 import { hashSeed, randomSeed } from './core/rng.js';
-import { isRipe, cropSuitability, survivalChance, getCrop, CROP_IDS } from './crops.js';
+import {
+  isRipe,
+  cropSuitability,
+  survivalChance,
+  getCrop,
+  CROP_IDS,
+  CROP_TYPES,
+  CATEGORIES,
+  cropsOfCategory,
+} from './crops.js';
 import {
   qualityRank,
   RANK_MAX,
@@ -27,6 +36,7 @@ const game = new Game(canvas);
 
 // Exposed for debugging and headless checks; harmless in production.
 window.game = game;
+window.crops = { CROP_TYPES, CROP_IDS, CATEGORIES, getCrop, cropsOfCategory };
 
 const $ = (id) => document.getElementById(id);
 const seedInput = $('seed');
@@ -66,7 +76,7 @@ const tipNextEl = $('tip-next');
 const PAN_DIRS = { up: [0, -1], down: [0, 1], left: [-1, 0], right: [1, 0] };
 
 let tool = 'move';
-let cropId = 'wheat';
+let cropId = null; // picked from this run's starting crops after newMap
 let structure = 'fence';
 
 const archiveLink = $('archive-link');
@@ -192,9 +202,12 @@ function updateColonyStats() {
   let spUsed = 0;
   for (const sp of game.stockpiles) spUsed += game.stockpileFood(sp);
   const spCap = game.stockpiles.length * STOCKPILE_CAP;
+  // Crop harvest: total across every crop variety the colony has held.
+  let cropTotal = 0;
+  for (const id of CROP_IDS) cropTotal += ti(id);
   renderRows(colonyStatsEl, [
     [t('stat.foodStored'), game.totalFood],
-    [t('stat.harvest'), `${ti('wheat')} / ${ti('potato')} / ${ti('bean')}`],
+    [t('stat.harvest'), cropTotal],
     [t('stat.forage'), ti('forage')],
     [t('stat.meat'), ti('meat')],
     [t('stat.cooked'), ti('meal')],
@@ -220,6 +233,38 @@ function updateCropButtons() {
   }
 }
 
+// A one-line hover hint built from the crop's own data.
+function cropHint(id) {
+  const c = getCrop(id);
+  return `${t('crop.' + id)} — ${t('cat.' + c.category)} · ${t('hint.cropStats', {
+    grow: c.growthTime,
+    yield: c.yield,
+    nut: Math.round(c.nutrition * 100),
+  })}`;
+}
+
+// Rebuild the crop picker from this run's starting crops. The picker is
+// regenerated each new map because the eight starting crops are random.
+function rebuildCropPicker() {
+  const ids = game.startingCrops || [];
+  if (!ids.length) {
+    cropsEl.innerHTML = '';
+    cropId = null;
+    return;
+  }
+  if (!ids.includes(cropId)) cropId = ids[0];
+  cropsEl.innerHTML = ids
+    .map((id) => {
+      const sel = id === cropId ? ' active' : '';
+      return `<button type="button" data-crop="${id}" class="crop-btn${sel}">${t('crop.' + id)}</button>`;
+    })
+    .join('');
+  for (const btn of cropsEl.querySelectorAll('button[data-crop]')) {
+    btn.title = cropHint(btn.dataset.crop);
+  }
+  updateCropButtons();
+}
+
 // A single random tip from the pool, rotated on a timer or the Next button.
 let tipIndex = randomTipIndex();
 function showTip() {
@@ -234,8 +279,16 @@ function nextTip() {
 }
 
 // Seed stock: each crop's seeds bucketed by quality rank (★).
+// Only the crops the colony has ever held seeds of show up — the catalogue
+// holds many more, but listing every empty row would dwarf the panel.
+function seedPanelCrops() {
+  const set = new Set(game.startingCrops || []);
+  for (const id of CROP_IDS) if (game.seeds[id] && game.seeds[id].length > 0) set.add(id);
+  return CROP_IDS.filter((id) => set.has(id));
+}
+
 function updateSeedPanel() {
-  seedStockEl.innerHTML = CROP_IDS.map((id) => {
+  seedStockEl.innerHTML = seedPanelCrops().map((id) => {
     const buckets = new Array(RANK_MAX + 1).fill(0);
     for (const seed of game.seeds[id]) buckets[qualityRank(seed.genome)]++;
     let chips = '';
@@ -254,9 +307,11 @@ function updateSeedPanel() {
 
 // Variety codex: per crop, a picture of the best variety bred so far, its
 // ★ rank, and a bar per gameplay gene with a notch marking the origin.
+// Only crops the colony has actually held seed of make it into the codex.
 function updateCodexPanel() {
   const legend = QUALITY_GENES.map((g) => t('gene.' + g)).join(' · ');
-  const rows = CROP_IDS.map((id) => {
+  const ids = CROP_IDS.filter((id) => game.codex[id]);
+  const rows = ids.map((id) => {
     const c = game.codex[id];
     const genes = QUALITY_GENES.map((gid) => {
       const cur = Math.round(phenotype(c.best, gid) * 100);
@@ -340,8 +395,11 @@ function applyI18n() {
   for (const b of toolsEl.querySelectorAll('button[data-tool]')) {
     b.title = t('hint.task.' + b.dataset.tool);
   }
+  // The crop picker is built dynamically — relabel & retitle its buttons.
   for (const b of cropsEl.querySelectorAll('button[data-crop]')) {
-    b.title = t('hint.crop.' + b.dataset.crop);
+    const id = b.dataset.crop;
+    b.textContent = t('crop.' + id);
+    b.title = cropHint(id);
   }
   for (const b of structuresEl.querySelectorAll('button[data-structure]')) {
     b.title = t('hint.structure.' + b.dataset.structure);
@@ -359,6 +417,7 @@ function applyI18n() {
 function newMap(seed) {
   game.newMap(seed);
   seedInput.value = String(game.seed);
+  rebuildCropPicker();
   refreshPanels();
 }
 
@@ -396,6 +455,12 @@ function describePlant(plant) {
   else if (isRipe(plant)) status = t('tip.ripe');
   else status = `${Math.round(plant.growth * 100)}%`;
   let line = t('tip.crop', { crop: t('crop.' + plant.cropId), status });
+  const crop = getCrop(plant.cropId);
+  if (crop) {
+    line += `<br>${t('cat.' + crop.category)} · ${t('tip.nutrition', {
+      n: Math.round(crop.nutrition * 100),
+    })}`;
+  }
   if (plant.genome && !plant.withered) {
     line += ` ${'★'.repeat(qualityRank(plant.genome))}`;
     const shape = t('look.shape.' + partIndex(plant.genome, 'shape', 4));
@@ -662,7 +727,7 @@ cropsEl.addEventListener('click', (ev) => {
   const btn = ev.target.closest('button[data-crop]');
   if (!btn) return;
   cropId = selectIn(cropsEl, btn, 'crop');
-  showToast(t('hint.crop.' + cropId));
+  showToast(cropHint(cropId));
 });
 
 structuresEl.addEventListener('click', (ev) => {

@@ -86,9 +86,19 @@ import {
 import { t } from './i18n.js';
 
 // Raw food — what pests can spoil and what a cook task turns into meals.
-const FOOD_TYPES = ['forage', 'wheat', 'potato', 'bean', 'meat'];
+// 'forage' is the catch-all for wild gatherings; every crop becomes its own
+// food entry; 'meat' comes from hunting.
+const FOOD_TYPES = ['forage', ...CROP_IDS, 'meat'];
 // Everything a stockpile can hold: raw food plus cooked meals.
-export const STOCKPILE_ITEMS = ['forage', 'wheat', 'potato', 'bean', 'meat', 'meal'];
+export const STOCKPILE_ITEMS = [...FOOD_TYPES, 'meal'];
+
+// Built-in nutrition for the non-crop foods.
+const NUTRITION = { forage: 0.2, meat: 0.55, meal: 0.6 };
+function nutritionOf(foodId) {
+  if (NUTRITION[foodId] !== undefined) return NUTRITION[foodId];
+  const crop = getCrop(foodId);
+  return crop ? crop.nutrition : 0.3;
+}
 
 export class Game {
   constructor(canvas) {
@@ -128,7 +138,7 @@ export class Game {
     this.crops = [];
     // The colony's on-hand store — freshly gathered goods. Pests gnaw at it;
     // colonists haul surplus food into stockpiles, the safe vaults.
-    this.storage = { forage: 0, wheat: 0, potato: 0, bean: 0, meat: 0, wood: 0, meal: 0 };
+    this.storage = this._freshStorage();
     // Seed stock per crop — a list of seed objects, each carrying a genome.
     this.seeds = this._freshSeeds();
     // Codex: the origin strain and the best variety bred so far, per crop.
@@ -173,24 +183,49 @@ export class Game {
     return n;
   }
 
-  // A fresh seed stock: SEED_START_COUNT seeds of each crop, each an
-  // individual carrying its own (slightly varied) starting genome.
+  // A fresh, empty store: every crop, plus the catch-all foods and meals.
+  _freshStorage() {
+    const s = { wood: 0, meal: 0 };
+    for (const id of FOOD_TYPES) s[id] = 0;
+    return s;
+  }
+
+  // Pick the colony's starting seed assortment — eight random crops, with
+  // at least one grain so there is always a staple to plant.
+  _pickStartingCrops() {
+    const want = 8;
+    const grains = CROP_IDS.filter((id) => getCrop(id).category === 'grain');
+    const others = CROP_IDS.filter((id) => getCrop(id).category !== 'grain');
+    const pick = (pool) => pool.splice(Math.floor(Math.random() * pool.length), 1)[0];
+    const chosen = [pick([...grains])];
+    const pool = [...grains, ...others].filter((id) => !chosen.includes(id));
+    while (chosen.length < want && pool.length) chosen.push(pick(pool));
+    return chosen;
+  }
+
+  // A fresh seed stock: SEED_START_COUNT seeds for each of the (random)
+  // starting crops; every other crop starts empty.
   _freshSeeds() {
     const stock = {};
+    this.startingCrops = this._pickStartingCrops();
     for (const id of CROP_IDS) {
       const list = [];
-      for (let i = 0; i < SEED_START_COUNT; i++) list.push({ genome: freshGenome() });
+      if (this.startingCrops.includes(id)) {
+        for (let i = 0; i < SEED_START_COUNT; i++) list.push({ genome: freshGenome() });
+      }
       stock[id] = list;
     }
     return stock;
   }
 
   // A fresh codex: per crop the origin strain (a starting seed) and the best
-  // variety bred so far (begins as the best of the starting seeds).
+  // variety bred so far (begins as the best of the starting seeds). Crops
+  // not in the starting assortment have no codex entry yet.
   _freshCodex() {
     const codex = {};
     for (const id of CROP_IDS) {
       const list = this.seeds[id];
+      if (!list || list.length === 0) continue;
       let best = list[0].genome;
       for (const s of list) {
         if (genomeQuality(s.genome) > genomeQuality(best)) best = s.genome;
@@ -390,7 +425,7 @@ export class Game {
     this.stockpiles = [];
     this.huts = [];
     this.fences = [];
-    this.storage = { forage: 0, wheat: 0, potato: 0, bean: 0, meat: 0, wood: 0, meal: 0 };
+    this.storage = this._freshStorage();
     this.seeds = this._freshSeeds();
     this.codex = this._freshCodex();
     this.meals = { eaten: 0, missed: 0 };
@@ -637,6 +672,9 @@ export class Game {
     if (onHand) {
       this.storage[onHand] -= 1;
       colonist.hunger = 0;
+      // A more nutritious raw food lifts the mood a little; a bland one
+      // barely budges it. Cooked meals still use the bigger MEAL bonus.
+      colonist.mood = Math.min(1, colonist.mood + nutritionOf(onHand) * 0.04);
       this.meals.eaten += 1;
       this._pushLog({ icon: '🍴', text: t('log.ate', { name }), cls: 'log-meal' });
       return;
@@ -647,6 +685,7 @@ export class Game {
       sp.items[it] -= 1;
       colonist.hunger = 0;
       if (it === 'meal') colonist.mood = Math.min(1, colonist.mood + MEAL_MOOD_BONUS);
+      else colonist.mood = Math.min(1, colonist.mood + nutritionOf(it) * 0.04);
       this.meals.eaten += 1;
       this._pushLog({
         icon: it === 'meal' ? '🍲' : '🍴',

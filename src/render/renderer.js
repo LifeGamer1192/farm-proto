@@ -499,45 +499,349 @@ export class Renderer {
 
   // Compose a crop from its genome: a stem, leaves and fruit, with the
   // fruit shape, leaf style, surface, colour and speckling all gene-driven.
+  // Dispatch by crop category — each plant family has its own silhouette.
   _paintCrop(ctx, ts, cropId, genome, growth, cx, cy) {
     const crop = getCrop(cropId);
-    const g = Math.min(1, growth);
-    const ripe = g >= 1;
-    const leafIdx = partIndex(genome, 'leaf', 3);
+    switch (crop.category) {
+      case 'grain':    return this._paintGrain(ctx, ts, crop, genome, growth, cx, cy);
+      case 'legume':   return this._paintLegume(ctx, ts, crop, genome, growth, cx, cy);
+      case 'root':     return this._paintRoot(ctx, ts, crop, genome, growth, cx, cy);
+      case 'tuber':    return this._paintTuber(ctx, ts, crop, genome, growth, cx, cy);
+      case 'bulb':     return this._paintBulb(ctx, ts, crop, genome, growth, cx, cy);
+      case 'leaf':     return this._paintLeafMass(ctx, ts, crop, genome, growth, cx, cy);
+      case 'stem':     return this._paintStemVeg(ctx, ts, crop, genome, growth, cx, cy);
+      case 'flower':   return this._paintFlowerVeg(ctx, ts, crop, genome, growth, cx, cy);
+      case 'fruit':    return this._paintFruitBearing(ctx, ts, crop, genome, growth, cx, cy, 1.2);
+      case 'nut':      return this._paintNutCluster(ctx, ts, crop, genome, growth, cx, cy);
+      case 'fruitVeg':
+      default:         return this._paintFruitBearing(ctx, ts, crop, genome, growth, cx, cy, 1);
+    }
+  }
 
-    const base = cy + ts * 0.3;
-    const stemH = ts * (0.16 + 0.42 * g);
-    const top = base - stemH;
+  // Genome-derived visual parameters shared by most category painters.
+  _cropLook(genome) {
+    return {
+      shapeIdx: partIndex(genome, 'shape', 4),
+      surfIdx: partIndex(genome, 'surface', 3),
+      leafIdx: partIndex(genome, 'leaf', 3),
+      yieldP: phenotype(genome, 'yield'),
+      hueP: phenotype(genome, 'hue'),
+      satP: phenotype(genome, 'saturation'),
+      spotsP: phenotype(genome, 'spots'),
+    };
+  }
 
+  _ripeFill(crop, look, ripe) {
+    const hueDeg = (look.hueP - 0.5) * 300;
+    const satMul = 0.5 + look.satP * 1.15;
+    return ripe
+      ? tintColor(crop.ripeColor, hueDeg, satMul)
+      : tintColor(crop.color, hueDeg * 0.25, 1);
+  }
+
+  // A green stem from `base` upward by `stemH`.
+  _drawStem(ctx, ts, cx, base, stemH, thickness = 0.1) {
     ctx.strokeStyle = '#3f7a2b';
-    ctx.lineWidth = Math.max(1.6, ts * 0.1);
+    ctx.lineWidth = Math.max(1.4, ts * thickness);
     ctx.lineCap = 'round';
     ctx.beginPath();
     ctx.moveTo(cx, base);
-    ctx.lineTo(cx, top);
+    ctx.lineTo(cx, base - stemH);
     ctx.stroke();
     ctx.lineCap = 'butt';
+  }
 
+  // ----- Category painters ------------------------------------------------
+
+  // Fruit-bearing crops (tomato, eggplant, pepper, strawberry, melon...).
+  // `sizeMul` lets the larger fruit category swell the fruit a touch.
+  _paintFruitBearing(ctx, ts, crop, genome, growth, cx, cy, sizeMul = 1) {
+    const g = Math.min(1, growth);
+    const ripe = g >= 1;
+    const look = this._cropLook(genome);
+    const base = cy + ts * 0.3;
+    const stemH = ts * (0.16 + 0.42 * g);
+    this._drawStem(ctx, ts, cx, base, stemH);
     if (g > 0.2) {
       const leafY = base - stemH * 0.5;
-      this._drawLeaf(ctx, cx, leafY, ts, leafIdx, -1);
-      this._drawLeaf(ctx, cx, leafY, ts, leafIdx, 1);
+      this._drawLeaf(ctx, cx, leafY, ts, look.leafIdx, -1);
+      this._drawLeaf(ctx, cx, leafY, ts, look.leafIdx, 1);
     }
-
     if (g > 0.45) {
-      const yieldP = phenotype(genome, 'yield');
-      const hueP = phenotype(genome, 'hue');
-      const satP = phenotype(genome, 'saturation');
-      const spotsP = phenotype(genome, 'spots');
-      const shapeIdx = partIndex(genome, 'shape', 4);
-      const surfIdx = partIndex(genome, 'surface', 3);
-      const r = ts * (0.07 + 0.15 * g) * (0.78 + yieldP * 0.62);
-      const hueDeg = (hueP - 0.5) * 300;
-      const satMul = 0.5 + satP * 1.15;
-      const fill = ripe
-        ? tintColor(crop.ripeColor, hueDeg, satMul)
-        : tintColor(crop.color, hueDeg * 0.25, 1);
-      this._drawFruit(ctx, cx, top, r, shapeIdx, fill, ripe, surfIdx, spotsP);
+      const top = base - stemH;
+      const r = ts * (0.07 + 0.15 * g) * (0.78 + look.yieldP * 0.62) * sizeMul;
+      const fill = this._ripeFill(crop, look, ripe);
+      this._drawFruit(ctx, cx, top, r, look.shapeIdx, fill, ripe, look.surfIdx, look.spotsP);
+    }
+  }
+
+  // Grains: stalks topped with a seed head once they ripen.
+  _paintGrain(ctx, ts, crop, genome, growth, cx, cy) {
+    const g = Math.min(1, growth);
+    const ripe = g >= 1;
+    const look = this._cropLook(genome);
+    const base = cy + ts * 0.32;
+    const stemH = ts * (0.2 + 0.52 * g);
+    // Three or four stalks side by side.
+    ctx.strokeStyle = ripe ? '#bba85a' : '#7ab44d';
+    ctx.lineWidth = Math.max(1.2, ts * 0.06);
+    ctx.lineCap = 'round';
+    for (const off of [-0.18, 0, 0.18]) {
+      ctx.beginPath();
+      ctx.moveTo(cx + ts * off, base);
+      ctx.lineTo(cx + ts * off * 0.6, base - stemH);
+      ctx.stroke();
+    }
+    ctx.lineCap = 'butt';
+    if (g > 0.6) {
+      const fill = this._ripeFill(crop, look, ripe);
+      // Small seed heads at the top of each stalk.
+      for (const off of [-0.18, 0, 0.18]) {
+        const hx = cx + ts * off * 0.6;
+        const hy = base - stemH;
+        const w = ts * 0.08 * (0.8 + look.yieldP * 0.5);
+        const h = ts * 0.22 * (0.7 + look.yieldP * 0.6);
+        ctx.beginPath();
+        ctx.ellipse(hx, hy - h * 0.4, w, h * 0.5, 0, 0, Math.PI * 2);
+        ctx.fillStyle = fill;
+        ctx.fill();
+        if (ripe) {
+          // Awns — tiny lines at the top to suggest bristles.
+          ctx.strokeStyle = tintColor(crop.ripeColor, (look.hueP - 0.5) * 200, 0.6);
+          ctx.lineWidth = 0.8;
+          for (const d of [-0.7, -0.35, 0, 0.35, 0.7]) {
+            ctx.beginPath();
+            ctx.moveTo(hx + w * d, hy - h * 0.7);
+            ctx.lineTo(hx + w * d, hy - h * 1.1);
+            ctx.stroke();
+          }
+        }
+      }
+    }
+  }
+
+  // Legumes: vine on a stem with a couple of pods hanging off.
+  _paintLegume(ctx, ts, crop, genome, growth, cx, cy) {
+    const g = Math.min(1, growth);
+    const ripe = g >= 1;
+    const look = this._cropLook(genome);
+    const base = cy + ts * 0.3;
+    const stemH = ts * (0.18 + 0.46 * g);
+    this._drawStem(ctx, ts, cx, base, stemH);
+    if (g > 0.2) {
+      const leafY = base - stemH * 0.5;
+      this._drawLeaf(ctx, cx, leafY, ts, look.leafIdx, -1);
+      this._drawLeaf(ctx, cx, leafY, ts, look.leafIdx, 1);
+    }
+    if (g > 0.5) {
+      const fill = this._ripeFill(crop, look, ripe);
+      ctx.fillStyle = fill;
+      ctx.strokeStyle = '#3f7a2b';
+      ctx.lineWidth = 1;
+      // Two pods, one each side, slanting down the stem.
+      for (const side of [-1, 1]) {
+        const px = cx + side * ts * 0.18;
+        const py = base - stemH * 0.7;
+        ctx.beginPath();
+        ctx.ellipse(px, py + ts * 0.06, ts * 0.06, ts * 0.16 * (0.7 + look.yieldP * 0.5), side * 0.45, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+      }
+    }
+  }
+
+  // Roots: only a tuft of leaves shows; the root itself is under ground.
+  _paintRoot(ctx, ts, crop, genome, growth, cx, cy) {
+    const g = Math.min(1, growth);
+    const ripe = g >= 1;
+    const look = this._cropLook(genome);
+    const base = cy + ts * 0.34;
+    // Several short leaf blades sprouting from the soil.
+    ctx.strokeStyle = ripe ? '#4f8f3c' : '#5ea642';
+    ctx.lineWidth = Math.max(1.3, ts * 0.06);
+    ctx.lineCap = 'round';
+    const fan = 0.5 + 0.4 * g;
+    for (const t of [-1, -0.4, 0.2, 0.8]) {
+      const ang = t * fan;
+      const tx = cx + Math.sin(ang) * ts * 0.22;
+      const ty = base - ts * (0.18 + 0.28 * g) * Math.cos(ang);
+      ctx.beginPath();
+      ctx.moveTo(cx, base);
+      ctx.lineTo(tx, ty);
+      ctx.stroke();
+    }
+    ctx.lineCap = 'butt';
+    if (g > 0.7) {
+      // Hint of the root just under the surface (a sliver of its colour).
+      const fill = this._ripeFill(crop, look, ripe);
+      ctx.fillStyle = fill;
+      ctx.beginPath();
+      ctx.ellipse(cx, base + ts * 0.05, ts * 0.12 * (0.7 + look.yieldP * 0.5), ts * 0.05, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  // Tubers: similar to roots but with a couple of round bumps at ground
+  // level when ripe — potatoes pushing up through the soil.
+  _paintTuber(ctx, ts, crop, genome, growth, cx, cy) {
+    const g = Math.min(1, growth);
+    const ripe = g >= 1;
+    const look = this._cropLook(genome);
+    const base = cy + ts * 0.34;
+    if (g > 0.2) {
+      const leafY = base - ts * 0.05;
+      this._drawLeaf(ctx, cx, leafY, ts, look.leafIdx, -1);
+      this._drawLeaf(ctx, cx, leafY, ts, look.leafIdx, 1);
+    }
+    if (g > 0.5) {
+      const fill = this._ripeFill(crop, look, ripe);
+      ctx.fillStyle = fill;
+      ctx.strokeStyle = 'rgba(0,0,0,0.25)';
+      ctx.lineWidth = 1;
+      for (const off of [-0.16, 0.14]) {
+        ctx.beginPath();
+        ctx.ellipse(cx + ts * off, base + ts * 0.08, ts * 0.11 * (0.8 + look.yieldP * 0.4), ts * 0.08, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+      }
+    }
+  }
+
+  // Bulbs: a rounded bulb at the base with narrow green leaves shooting up.
+  _paintBulb(ctx, ts, crop, genome, growth, cx, cy) {
+    const g = Math.min(1, growth);
+    const ripe = g >= 1;
+    const look = this._cropLook(genome);
+    const base = cy + ts * 0.34;
+    ctx.strokeStyle = '#5fa84a';
+    ctx.lineWidth = Math.max(1.2, ts * 0.05);
+    ctx.lineCap = 'round';
+    const stemH = ts * (0.18 + 0.34 * g);
+    for (const off of [-0.06, 0, 0.06]) {
+      ctx.beginPath();
+      ctx.moveTo(cx + ts * off, base);
+      ctx.lineTo(cx + ts * off * 0.4, base - stemH);
+      ctx.stroke();
+    }
+    ctx.lineCap = 'butt';
+    if (g > 0.5) {
+      const fill = this._ripeFill(crop, look, ripe);
+      ctx.fillStyle = fill;
+      ctx.strokeStyle = 'rgba(0,0,0,0.28)';
+      ctx.lineWidth = 1;
+      const r = ts * 0.14 * (0.8 + look.yieldP * 0.5);
+      ctx.beginPath();
+      ctx.ellipse(cx, base + ts * 0.04, r, r * 0.85, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+    }
+  }
+
+  // Leaf greens: a low rounded mass of leaves, no stem, no fruit.
+  _paintLeafMass(ctx, ts, crop, genome, growth, cx, cy) {
+    const g = Math.min(1, growth);
+    const ripe = g >= 1;
+    const look = this._cropLook(genome);
+    const fill = ripe
+      ? tintColor(crop.ripeColor, (look.hueP - 0.5) * 180, 0.6 + look.satP * 0.9)
+      : tintColor(crop.color, (look.hueP - 0.5) * 60, 1);
+    const base = cy + ts * 0.34;
+    const r = ts * (0.14 + 0.22 * g);
+    ctx.fillStyle = fill;
+    ctx.strokeStyle = '#3f7a2b';
+    ctx.lineWidth = 1;
+    // Stack of overlapping leaf lobes.
+    for (const off of [-0.5, 0, 0.5]) {
+      ctx.beginPath();
+      ctx.ellipse(cx + r * off * 0.6, base - r * 0.4, r * 0.85, r * 0.65, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+    }
+  }
+
+  // Stem vegetables: a few thick stems clustered together.
+  _paintStemVeg(ctx, ts, crop, genome, growth, cx, cy) {
+    const g = Math.min(1, growth);
+    const ripe = g >= 1;
+    const look = this._cropLook(genome);
+    const fill = this._ripeFill(crop, look, ripe);
+    const base = cy + ts * 0.32;
+    const stemH = ts * (0.22 + 0.48 * g);
+    ctx.strokeStyle = fill;
+    ctx.lineWidth = Math.max(1.6, ts * 0.07);
+    ctx.lineCap = 'round';
+    for (const off of [-0.12, 0, 0.12]) {
+      ctx.beginPath();
+      ctx.moveTo(cx + ts * off, base);
+      ctx.lineTo(cx + ts * off * 0.6, base - stemH);
+      ctx.stroke();
+    }
+    ctx.lineCap = 'butt';
+    if (g > 0.4) {
+      // A small leafy crown at the top.
+      ctx.fillStyle = '#5ba23c';
+      ctx.beginPath();
+      ctx.ellipse(cx, base - stemH - ts * 0.04, ts * 0.12, ts * 0.06, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  // Flower vegetables (broccoli, cauliflower): stem topped with a domed head.
+  _paintFlowerVeg(ctx, ts, crop, genome, growth, cx, cy) {
+    const g = Math.min(1, growth);
+    const ripe = g >= 1;
+    const look = this._cropLook(genome);
+    const base = cy + ts * 0.32;
+    const stemH = ts * (0.16 + 0.36 * g);
+    this._drawStem(ctx, ts, cx, base, stemH);
+    if (g > 0.3) {
+      const leafY = base - stemH * 0.4;
+      this._drawLeaf(ctx, cx, leafY, ts, look.leafIdx, -1);
+      this._drawLeaf(ctx, cx, leafY, ts, look.leafIdx, 1);
+    }
+    if (g > 0.5) {
+      const fill = this._ripeFill(crop, look, ripe);
+      const top = base - stemH;
+      const r = ts * (0.1 + 0.12 * g) * (0.85 + look.yieldP * 0.45);
+      // A few overlapping bumps to suggest a floret head.
+      ctx.fillStyle = fill;
+      ctx.strokeStyle = 'rgba(0,0,0,0.2)';
+      ctx.lineWidth = 1;
+      for (const [ox, oy] of [[-0.5, 0.1], [0.5, 0.1], [0, -0.3]]) {
+        ctx.beginPath();
+        ctx.arc(cx + r * ox, top + r * oy, r * 0.55, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+      }
+    }
+  }
+
+  // Nuts: stem with a cluster of small nuts at the top.
+  _paintNutCluster(ctx, ts, crop, genome, growth, cx, cy) {
+    const g = Math.min(1, growth);
+    const ripe = g >= 1;
+    const look = this._cropLook(genome);
+    const base = cy + ts * 0.3;
+    const stemH = ts * (0.2 + 0.4 * g);
+    this._drawStem(ctx, ts, cx, base, stemH, 0.08);
+    if (g > 0.25) {
+      const leafY = base - stemH * 0.55;
+      this._drawLeaf(ctx, cx, leafY, ts, look.leafIdx, -1);
+      this._drawLeaf(ctx, cx, leafY, ts, look.leafIdx, 1);
+    }
+    if (g > 0.6) {
+      const fill = this._ripeFill(crop, look, ripe);
+      const top = base - stemH;
+      const nr = ts * 0.07 * (0.8 + look.yieldP * 0.5);
+      ctx.fillStyle = fill;
+      ctx.strokeStyle = 'rgba(0,0,0,0.3)';
+      ctx.lineWidth = 0.8;
+      for (const [ox, oy] of [[-0.7, 0.4], [0.7, 0.4], [-0.2, -0.4], [0.6, -0.2]]) {
+        ctx.beginPath();
+        ctx.arc(cx + nr * ox * 2, top + nr * oy * 2, nr, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+      }
     }
   }
 
