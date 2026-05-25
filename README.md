@@ -234,6 +234,21 @@ and surviving the winter.
   warehouse will not auto-queue unless the wood for it is already
   in stock.
 
+### Alpha 20 — wilder wilderness
+
+- The wild-plant carpet is much thinner now (about 1/4 as many bushes)
+  — the colony has to actually hunt and farm rather than living off
+  easy early-game foraging.
+- The map now sprinkles in **four kinds of wild animal** with a
+  visible mix on the map: aggressive boar and wolf, peaceful deer
+  and rabbit. Each species has its own colour, walk speed and meat
+  yield; only the hostile ones harry colonists or trigger the
+  auto-fence.
+- Foraging a wild plant now has a chance to drop a **wild-greens
+  seed**. The seed can be sown like a regular crop, but it is weak —
+  tiny yield, almost no nutrition — until you breed it up with
+  cross-pollination over generations.
+
 ### Alpha 19 — autonomous rules, population growth and a winter trader
 
 - The autonomy decision tree has been **extracted into its own

@@ -240,7 +240,7 @@ export class Renderer {
     // --- wild animals ---
     if (animals) {
       for (const a of animals) {
-        this._drawAnimal(sx(a.x + 0.5), sy(a.y + 0.5));
+        this._drawAnimal(sx(a.x + 0.5), sy(a.y + 0.5), a.species || 'boar');
       }
     }
 
@@ -1253,8 +1253,20 @@ export class Renderer {
     }
   }
 
+  // Wild animal dispatcher — each species has its own painter so a deer,
+  // wolf or rabbit reads differently from a boar at a glance.
+  _drawAnimal(cx, cy, species = 'boar') {
+    switch (species) {
+      case 'wolf':   return this._drawWolf(cx, cy);
+      case 'deer':   return this._drawDeer(cx, cy);
+      case 'rabbit': return this._drawRabbit(cx, cy);
+      case 'boar':
+      default:       return this._drawBoar(cx, cy);
+    }
+  }
+
   // A wild boar: a bristled body on stubby legs, with a snout and a tusk.
-  _drawAnimal(cx, cy) {
+  _drawBoar(cx, cy) {
     const ctx = this.ctx;
     const ts = this.ts;
     const rx = ts * 0.34;
@@ -1341,6 +1353,198 @@ export class Renderer {
     ctx.fillStyle = '#120d08';
     ctx.beginPath();
     ctx.arc(cx + rx * 0.4, cy - ry * 0.22, 0.9 + ts * 0.03, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // A deer: tan body, slender legs, white belly, antlers and ears.
+  _drawDeer(cx, cy) {
+    const ctx = this.ctx;
+    const ts = this.ts;
+    const rx = ts * 0.34;
+    const ry = ts * 0.20;
+    // Shadow.
+    ctx.fillStyle = 'rgba(0,0,0,0.28)';
+    ctx.beginPath();
+    ctx.ellipse(cx, cy + ry * 0.95, rx * 1.05, ry * 0.45, 0, 0, Math.PI * 2);
+    ctx.fill();
+    // Slender legs.
+    ctx.strokeStyle = '#5a4a30';
+    ctx.lineWidth = Math.max(1.2, ts * 0.05);
+    for (const lx of [-0.55, -0.18, 0.22, 0.58]) {
+      ctx.beginPath();
+      ctx.moveTo(cx + rx * lx, cy + ry * 0.3);
+      ctx.lineTo(cx + rx * lx, cy + ry * 1.1);
+      ctx.stroke();
+    }
+    // Body (tan).
+    ctx.fillStyle = '#a8804f';
+    ctx.beginPath();
+    ctx.ellipse(cx - rx * 0.05, cy, rx * 0.95, ry, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.lineWidth = 1.4;
+    ctx.strokeStyle = '#4d3820';
+    ctx.stroke();
+    // White belly stripe.
+    ctx.fillStyle = '#e3c89a';
+    ctx.beginPath();
+    ctx.ellipse(cx - rx * 0.1, cy + ry * 0.35, rx * 0.7, ry * 0.35, 0, 0, Math.PI * 2);
+    ctx.fill();
+    // Neck + head.
+    ctx.fillStyle = '#a8804f';
+    ctx.beginPath();
+    ctx.ellipse(cx + rx * 0.75, cy - ry * 0.35, rx * 0.32, ry * 0.55, -0.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    // Ears.
+    ctx.fillStyle = '#7d5e3a';
+    for (const off of [-0.12, 0.12]) {
+      ctx.beginPath();
+      ctx.ellipse(cx + rx * 0.85 + off * rx, cy - ry * 0.95, rx * 0.08, ry * 0.22, off * 2, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    // Small antlers.
+    ctx.strokeStyle = '#5e4a2a';
+    ctx.lineWidth = 1.4;
+    for (const side of [-1, 1]) {
+      ctx.beginPath();
+      ctx.moveTo(cx + rx * 0.78 + side * rx * 0.05, cy - ry * 0.85);
+      ctx.lineTo(cx + rx * 0.85 + side * rx * 0.15, cy - ry * 1.45);
+      ctx.moveTo(cx + rx * 0.82 + side * rx * 0.1, cy - ry * 1.2);
+      ctx.lineTo(cx + rx * 0.95 + side * rx * 0.2, cy - ry * 1.3);
+      ctx.stroke();
+    }
+    // Eye.
+    ctx.fillStyle = '#120d08';
+    ctx.beginPath();
+    ctx.arc(cx + rx * 0.92, cy - ry * 0.4, 0.8 + ts * 0.025, 0, Math.PI * 2);
+    ctx.fill();
+    // Tail (white).
+    ctx.fillStyle = '#f0e0bb';
+    ctx.beginPath();
+    ctx.arc(cx - rx * 0.95, cy - ry * 0.05, ts * 0.05, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // A wolf: grey body, sleeker than a boar, pointed ears, long snout.
+  _drawWolf(cx, cy) {
+    const ctx = this.ctx;
+    const ts = this.ts;
+    const rx = ts * 0.36;
+    const ry = ts * 0.20;
+    // Shadow.
+    ctx.fillStyle = 'rgba(0,0,0,0.3)';
+    ctx.beginPath();
+    ctx.ellipse(cx, cy + ry * 0.95, rx * 1.05, ry * 0.45, 0, 0, Math.PI * 2);
+    ctx.fill();
+    // Legs (longer than boar).
+    ctx.strokeStyle = '#3a3a3e';
+    ctx.lineWidth = Math.max(1.5, ts * 0.06);
+    for (const lx of [-0.55, -0.18, 0.22, 0.58]) {
+      ctx.beginPath();
+      ctx.moveTo(cx + rx * lx, cy + ry * 0.25);
+      ctx.lineTo(cx + rx * lx, cy + ry * 1.1);
+      ctx.stroke();
+    }
+    // Tail — long and angled out behind.
+    ctx.lineWidth = Math.max(2, ts * 0.07);
+    ctx.beginPath();
+    ctx.moveTo(cx - rx * 0.9, cy);
+    ctx.quadraticCurveTo(cx - rx * 1.3, cy + ry * 0.1, cx - rx * 1.35, cy - ry * 0.5);
+    ctx.stroke();
+    // Body — leaner ellipse with gradient.
+    const grad = ctx.createLinearGradient(cx, cy - ry, cx, cy + ry);
+    grad.addColorStop(0, '#7a7a80');
+    grad.addColorStop(1, '#3f3f45');
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, rx, ry * 0.95, 0, 0, Math.PI * 2);
+    ctx.fillStyle = grad;
+    ctx.fill();
+    ctx.lineWidth = 1.6;
+    ctx.strokeStyle = '#2a2a30';
+    ctx.stroke();
+    // Head.
+    ctx.fillStyle = '#5c5c63';
+    ctx.beginPath();
+    ctx.ellipse(cx + rx * 0.85, cy - ry * 0.15, rx * 0.35, ry * 0.55, -0.3, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    // Pointed ears.
+    ctx.fillStyle = '#3a3a3e';
+    for (const off of [-0.05, 0.18]) {
+      ctx.beginPath();
+      ctx.moveTo(cx + rx * (0.75 + off), cy - ry * 0.55);
+      ctx.lineTo(cx + rx * (0.78 + off), cy - ry * 1.15);
+      ctx.lineTo(cx + rx * (0.92 + off), cy - ry * 0.45);
+      ctx.closePath();
+      ctx.fill();
+    }
+    // Snout.
+    ctx.fillStyle = '#2a2a30';
+    ctx.beginPath();
+    ctx.ellipse(cx + rx * 1.1, cy + ry * 0.05, rx * 0.18, ry * 0.18, 0, 0, Math.PI * 2);
+    ctx.fill();
+    // Eye (yellow — predator).
+    ctx.fillStyle = '#d8b73a';
+    ctx.beginPath();
+    ctx.arc(cx + rx * 0.88, cy - ry * 0.32, 1.0 + ts * 0.025, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#120d08';
+    ctx.beginPath();
+    ctx.arc(cx + rx * 0.88, cy - ry * 0.32, 0.5 + ts * 0.014, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // A rabbit: small round body, long ears, white tail.
+  _drawRabbit(cx, cy) {
+    const ctx = this.ctx;
+    const ts = this.ts;
+    const rx = ts * 0.20;
+    const ry = ts * 0.16;
+    // Shadow.
+    ctx.fillStyle = 'rgba(0,0,0,0.25)';
+    ctx.beginPath();
+    ctx.ellipse(cx, cy + ry * 1.1, rx * 1.1, ry * 0.4, 0, 0, Math.PI * 2);
+    ctx.fill();
+    // Body (round, sand colour).
+    ctx.fillStyle = '#c8b08a';
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.lineWidth = 1.2;
+    ctx.strokeStyle = '#6e5a3a';
+    ctx.stroke();
+    // Head.
+    ctx.beginPath();
+    ctx.ellipse(cx + rx * 0.85, cy - ry * 0.25, rx * 0.5, ry * 0.55, 0, 0, Math.PI * 2);
+    ctx.fillStyle = '#d4ba90';
+    ctx.fill();
+    ctx.stroke();
+    // Long ears.
+    ctx.fillStyle = '#c8b08a';
+    for (const off of [-0.08, 0.18]) {
+      ctx.beginPath();
+      ctx.ellipse(cx + rx * (0.75 + off), cy - ry * 1.1, rx * 0.13, ry * 0.55, off * 2, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+    }
+    // Inner ear (pink).
+    ctx.fillStyle = '#e8b8a8';
+    for (const off of [-0.08, 0.18]) {
+      ctx.beginPath();
+      ctx.ellipse(cx + rx * (0.75 + off), cy - ry * 1.1, rx * 0.06, ry * 0.4, off * 2, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    // Tiny tail (white puffball).
+    ctx.fillStyle = '#f4ecd6';
+    ctx.beginPath();
+    ctx.arc(cx - rx * 0.95, cy - ry * 0.05, ts * 0.05, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.lineWidth = 0.8;
+    ctx.stroke();
+    // Eye.
+    ctx.fillStyle = '#120d08';
+    ctx.beginPath();
+    ctx.arc(cx + rx * 1.1, cy - ry * 0.35, 0.7 + ts * 0.02, 0, Math.PI * 2);
     ctx.fill();
   }
 }

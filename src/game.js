@@ -26,11 +26,13 @@ import {
   EAT_THRESHOLD,
   EAT_RETRY,
   ANIMAL_COUNT,
+  ANIMAL_SPAWN_MIX,
   ANIMAL_DAMAGE,
   ANIMAL_ATTACK_INTERVAL,
   ANIMAL_ATTACK_RANGE,
   HUNT_RANGE,
   MEAT_YIELD,
+  WILDGREENS_SEED_CHANCE,
   HUT_RANGE,
   HUT_MOOD_BONUS,
   PEST_INTERVAL,
@@ -223,8 +225,11 @@ export class Game {
   // at least one grain so there is always a staple to plant.
   _pickStartingCrops() {
     const want = 8;
-    const grains = CROP_IDS.filter((id) => getCrop(id).category === 'grain');
-    const others = CROP_IDS.filter((id) => getCrop(id).category !== 'grain');
+    // Wild-greens is meant to be DISCOVERED via foraging in alpha 20 —
+    // it never seeds the colony's starter assortment.
+    const eligible = CROP_IDS.filter((id) => id !== 'wildgreens');
+    const grains = eligible.filter((id) => getCrop(id).category === 'grain');
+    const others = eligible.filter((id) => getCrop(id).category !== 'grain');
     const pick = (pool) => pool.splice(Math.floor(Math.random() * pool.length), 1)[0];
     const chosen = [pick([...grains])];
     const pool = [...grains, ...others].filter((id) => !chosen.includes(id));
@@ -443,8 +448,16 @@ export class Game {
     this.colonists = spawns.map(
       (s, i) => new Colonist(s.x, s.y, COLONIST_NAMES[i] || `C${i + 1}`),
     );
+    // Spawn a mix of species at fixed proportions. Build a species list
+    // matching ANIMAL_COUNT, shuffle, then place each on a random tile.
+    const specList = [];
+    for (const { species, n } of ANIMAL_SPAWN_MIX) {
+      for (let i = 0; i < n; i++) specList.push(species);
+    }
+    while (specList.length < ANIMAL_COUNT) specList.push('boar');
+    specList.length = ANIMAL_COUNT;
     this.animals = this._randomLandTiles(ANIMAL_COUNT).map(
-      (s, i) => new Animal(s.x, s.y, i + 1),
+      (s, i) => new Animal(s.x, s.y, i + 1, specList[i]),
     );
     this.camera.centerOn(spawns[0].x + 0.5, spawns[0].y + 0.5);
 
@@ -785,7 +798,26 @@ export class Game {
       } else if (plant) {
         this.storage.forage += 1;
         this.storage.wood += WILD_WOOD_YIELD;
-        task.outcome = 'foraged';
+        // Low chance to gather a wild-greens seed from the foraged plant.
+        // Wild seed is weak — barely any yield or nutrition — but it can
+        // be sown like a regular crop, planting the seed of a future
+        // "real" variety once the colony starts breeding it.
+        let seeds = 0;
+        if (Math.random() < WILDGREENS_SEED_CHANCE) {
+          const list = this.seeds.wildgreens || (this.seeds.wildgreens = []);
+          const seed = { genome: freshGenome() };
+          list.push(seed);
+          if (!this.codex.wildgreens) {
+            this.codex.wildgreens = { origin: seed.genome, best: seed.genome };
+          }
+          seeds = 1;
+        }
+        if (seeds > 0) {
+          task.outcome = 'foragedSeed';
+          task.outcomeData = { n: 1, seeds };
+        } else {
+          task.outcome = 'foraged';
+        }
       }
       tile.plant = null;
     } else if (task.type === TaskType.SOW) {
@@ -836,10 +868,12 @@ export class Game {
       const idx = this.animals.findIndex((a) => a.id === task.animalId);
       const a = idx >= 0 ? this.animals[idx] : null;
       if (a && Math.hypot(a.x - task.x, a.y - task.y) <= HUNT_RANGE) {
+        const meat = a.traits ? a.traits.meat : MEAT_YIELD;
+        const species = a.species || 'boar';
         this.animals.splice(idx, 1);
-        this.storage.meat += MEAT_YIELD;
+        this.storage.meat += meat;
         task.outcome = 'hunted';
-        task.outcomeData = { animal: 'boar', n: MEAT_YIELD };
+        task.outcomeData = { animal: species, n: meat };
       } else {
         task.outcome = 'gotAway';
       }
@@ -1196,11 +1230,14 @@ export class Game {
   }
 
   // The nearest animal within `range` of any colonist, or null.
+  // Used by the fence planner — only HOSTILE animals (boar, wolf) count
+  // as a threat. A grazing deer shouldn't make the colony build walls.
   _nearestAnimalToColony(range) {
     let best = null;
     let bestD = range;
     for (const c of this.colonists) {
       for (const a of this.animals) {
+        if (!a.hostile) continue;
         const d = Math.hypot(a.x - c.x, a.y - c.y);
         if (d < bestD) {
           bestD = d;
@@ -1387,10 +1424,12 @@ export class Game {
     }
   }
 
-  // Animals stroll, and on a cooldown harry a nearby colonist.
+  // Animals stroll, and the hostile ones (boar, wolf) harry a nearby
+  // colonist on a cooldown. Peaceful species (deer, rabbit) just wander.
   _updateAnimals(dt) {
     for (const a of this.animals) {
       a.update(dt, this.map);
+      if (!a.hostile) continue;
       if (a.attackCooldown > 0) continue;
       let victim = null;
       let best = ANIMAL_ATTACK_RANGE;
@@ -1406,7 +1445,7 @@ export class Game {
         a.attackCooldown = ANIMAL_ATTACK_INTERVAL;
         this._pushLog({
           icon: '⚔',
-          text: t('log.attacked', { animal: t('animal.boar'), name: victim.name }),
+          text: t('log.attacked', { animal: t('animal.' + a.species), name: victim.name }),
           cls: 'log-warn',
         });
       }

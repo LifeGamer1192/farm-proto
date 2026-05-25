@@ -50,9 +50,13 @@ export const DRAG_THRESHOLD = 6;
 export const WORK_DURATION = 0.7;
 
 // Fraction of land tiles that start with a wild (harvestable) plant.
-export const WILD_PLANT_CHANCE = 0.05;
+// Lowered in alpha 20 (was 0.05) — the colony has to actually hunt and
+// farm now rather than living off the easy early-game forage carpet.
+export const WILD_PLANT_CHANCE = 0.012;
 // Fraction of land tiles that start with a tree (chopped for wood, alpha 18).
 export const TREE_CHANCE = 0.08;
+// Chance a forage harvest also drops a wild-greens seed (alpha 20).
+export const WILDGREENS_SEED_CHANCE = 0.2;
 
 // How many recent events the activity log keeps (the panel scrolls back).
 export const TASK_LOG_SIZE = 1000;
@@ -88,7 +92,15 @@ export const MOOD_ADAPT = 0.15; // how fast mood drifts toward its target
 
 // --- wild animals (alpha 7) ----------------------------------------------
 
-export const ANIMAL_COUNT = 4;
+export const ANIMAL_COUNT = 8;
+// Mix of wild-animal species spawned at map start (alpha 20). Totals
+// should match ANIMAL_COUNT — first matches use up the budget in order.
+export const ANIMAL_SPAWN_MIX = [
+  { species: 'boar',   n: 2 },
+  { species: 'wolf',   n: 1 },
+  { species: 'deer',   n: 3 },
+  { species: 'rabbit', n: 2 },
+];
 export const ANIMAL_SPEED = 1.6; // tiles per second (slow)
 export const ANIMAL_DAMAGE = 0.07; // colonist health lost per attack
 export const ANIMAL_ATTACK_INTERVAL = 9; // sim-seconds between an animal's attacks

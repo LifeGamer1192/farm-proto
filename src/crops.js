@@ -87,6 +87,13 @@ export const CROP_TYPES = {
 
   // ----- Nuts (堅果類) -----
   almond:      { id:'almond',      label:'Almond',       category:'nut',      growthTime:60, yield:6, color:'#9aa66a', ripeColor:'#c8a47a', soil:{fertility:0.25,moisture:0.20,sunlight:0.55}, nutrition:0.70 },
+
+  // ----- Wild greens (alpha 20) — sown from a seed gathered while
+  //       foraging a wild plant. Very weak: tiny yield, almost no
+  //       nutrition, slow to grow. Selective breeding (cross-pollinate
+  //       on harvest, codex tracks the best variety) is the only way
+  //       to bring it up to a useful crop.
+  wildgreens:  { id:'wildgreens',  label:'Wild greens',  category:'leaf',     growthTime:50, yield:1, color:'#6b8d4a', ripeColor:'#8aa756', soil:{fertility:0.20,moisture:0.30,sunlight:0.30}, nutrition:0.10 },
 };
 
 // Display / iteration order.
