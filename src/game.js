@@ -945,6 +945,12 @@ export class Game {
         const spot = this._findFreeLandNear(colonist);
         if (spot) return createTask(TaskType.BUILD, spot.x, spot.y, { structure: 'hearth' });
       }
+      // A warehouse for storing food — at least one, more when the current
+      // ones fill up. Capped so the colony does not pave itself with them.
+      if (this._wantsAutoWarehouse()) {
+        const spot = this._findFreeLandNear(colonist);
+        if (spot) return createTask(TaskType.BUILD, spot.x, spot.y, { structure: 'stockpile' });
+      }
     }
     // Haul surplus on-hand food into a stockpile, safe from the pests.
     if (this.onHandFood > ON_HAND_CAP) {
@@ -1092,6 +1098,19 @@ export class Game {
   // Total fence tiles the colony has, built plus pending.
   _totalFences() {
     return this.fences.length + this._pendingBuilds('fence');
+  }
+
+  // Whether to auto-build another warehouse. Always wants at least one;
+  // builds more if the existing ones are nearly full, up to a hard cap.
+  _wantsAutoWarehouse() {
+    const AUTO_WAREHOUSE_CAP = 4;
+    const total = this.stockpiles.length + this._pendingBuilds('stockpile');
+    if (total >= AUTO_WAREHOUSE_CAP) return false;
+    if (this.stockpiles.length === 0) return true;
+    let used = 0;
+    for (const sp of this.stockpiles) used += this.stockpileFood(sp);
+    const cap = this.stockpiles.length * STOCKPILE_CAP;
+    return used / cap > 0.85;
   }
 
   // The nearest animal within `range` of any colonist, or null.
