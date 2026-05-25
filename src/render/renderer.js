@@ -554,12 +554,16 @@ export class Renderer {
   drawCropPreview(ctx, w, h, cropId, genome) {
     ctx.clearRect(0, 0, w, h);
     const crop = getCrop(cropId);
-    // Root vegetables, tubers and bulbs draw a slice of the harvest BELOW
-    // the soil-line anchor. In a real tile the tile background sits behind
-    // them; in the bare preview canvas they would clip off the bottom edge,
-    // so lift the anchor up to keep the whole plant inside the box.
+    // Root vegetables, tubers, bulbs and ground fruit all draw with the
+    // body sitting at or below the soil-line anchor. In a real tile the
+    // tile background sits behind them; in the bare preview canvas they
+    // would clip off the bottom edge, so lift the anchor up to keep the
+    // whole plant inside the box.
     const cat = crop && crop.category;
-    const cyMul = cat === 'tuber' || cat === 'root' || cat === 'bulb' ? 0.55 : 0.66;
+    const cyMul =
+      cat === 'tuber' || cat === 'root' || cat === 'bulb' || cat === 'fruit'
+        ? 0.55
+        : 0.66;
     this._paintCrop(ctx, h * 0.82, cropId, genome, 1, w / 2, h * cyMul);
   }
 
@@ -577,7 +581,7 @@ export class Renderer {
       case 'leaf':     return this._paintLeafMass(ctx, ts, crop, genome, growth, cx, cy);
       case 'stem':     return this._paintStemVeg(ctx, ts, crop, genome, growth, cx, cy);
       case 'flower':   return this._paintFlowerVeg(ctx, ts, crop, genome, growth, cx, cy);
-      case 'fruit':    return this._paintFruitBearing(ctx, ts, crop, genome, growth, cx, cy, 1.2);
+      case 'fruit':    return this._paintGroundFruit(ctx, ts, crop, genome, growth, cx, cy);
       case 'nut':      return this._paintNutCluster(ctx, ts, crop, genome, growth, cx, cy);
       case 'fruitVeg':
       default:         return this._paintFruitBearing(ctx, ts, crop, genome, growth, cx, cy, 1);
@@ -619,7 +623,7 @@ export class Renderer {
 
   // ----- Category painters ------------------------------------------------
 
-  // Fruit-bearing crops (tomato, eggplant, pepper, strawberry, melon...).
+  // Fruit-bearing crops (tomato, eggplant, pepper, cucumber...).
   // `sizeMul` lets the larger fruit category swell the fruit a touch.
   _paintFruitBearing(ctx, ts, crop, genome, growth, cx, cy, sizeMul = 1) {
     const g = Math.min(1, growth);
@@ -638,6 +642,62 @@ export class Renderer {
       const r = ts * (0.07 + 0.15 * g) * (0.78 + look.yieldP * 0.62) * sizeMul;
       const fill = this._ripeFill(crop, look, ripe);
       this._drawFruit(ctx, cx, top, r, look.shapeIdx, fill, ripe, look.surfIdx, look.spotsP);
+    }
+  }
+
+  // Ground-growing fruits (strawberry, melon): the fruit body sits low,
+  // close to the soil, with a short green calyx (the "ヘタ") of three to
+  // five little spikes pointing upward on top — no tall hanging stem.
+  _paintGroundFruit(ctx, ts, crop, genome, growth, cx, cy) {
+    const g = Math.min(1, growth);
+    const ripe = g >= 1;
+    const look = this._cropLook(genome);
+    // Body sits a touch above the soil line so the whole shape stays
+    // inside the tile / preview box.
+    const r = ts * (0.1 + 0.18 * g) * (0.8 + look.yieldP * 0.55);
+    const by = cy + ts * 0.18 - r * 0.1;
+    const fill = this._ripeFill(crop, look, ripe);
+    if (g > 0.3) {
+      this._drawFruit(ctx, cx, by, r, look.shapeIdx, fill, ripe, look.surfIdx, look.spotsP);
+      // Calyx: a few short tapered green leaflets fanning UP from the
+      // top of the berry. Three to five of them, alternating angle.
+      const calyxColor = ripe ? '#3f7a2b' : '#5ba23c';
+      ctx.fillStyle = calyxColor;
+      ctx.strokeStyle = '#1f3f17';
+      ctx.lineWidth = 0.7;
+      const blades = 3 + (look.leafIdx % 3); // 3, 4 or 5
+      const baseY = by - r * 0.78; // sit on the top of the fruit
+      const spread = r * 0.55;
+      const blade = r * 0.5;
+      for (let i = 0; i < blades; i++) {
+        const tNorm = blades === 1 ? 0.5 : i / (blades - 1);
+        const ox = (tNorm - 0.5) * 2 * spread;
+        const tilt = (tNorm - 0.5) * 1.1;
+        const tipX = cx + ox + Math.sin(tilt) * blade * 0.35;
+        const tipY = baseY - blade * (0.9 + 0.15 * Math.cos(tilt));
+        const wx = blade * 0.22;
+        // A small triangular leaflet from (cx,baseY) curving to its tip.
+        ctx.beginPath();
+        ctx.moveTo(cx + ox - wx * 0.6, baseY + wx * 0.2);
+        ctx.quadraticCurveTo(cx + ox - wx * 0.3, baseY - blade * 0.45, tipX, tipY);
+        ctx.quadraticCurveTo(cx + ox + wx * 0.3, baseY - blade * 0.45, cx + ox + wx * 0.6, baseY + wx * 0.2);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+      }
+    } else {
+      // Early growth — just a few short shoots, no fruit body yet.
+      const calyxColor = '#5ba23c';
+      ctx.strokeStyle = calyxColor;
+      ctx.lineWidth = Math.max(1.2, ts * 0.05);
+      ctx.lineCap = 'round';
+      for (const t of [-1, 0, 1]) {
+        ctx.beginPath();
+        ctx.moveTo(cx, by);
+        ctx.lineTo(cx + t * r * 0.3, by - r * 0.6);
+        ctx.stroke();
+      }
+      ctx.lineCap = 'butt';
     }
   }
 
