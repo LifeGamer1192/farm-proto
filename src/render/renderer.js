@@ -494,7 +494,14 @@ export class Renderer {
   /** Draw a mature crop of `genome` filling a w×h preview area on `ctx`. */
   drawCropPreview(ctx, w, h, cropId, genome) {
     ctx.clearRect(0, 0, w, h);
-    this._paintCrop(ctx, h * 0.82, cropId, genome, 1, w / 2, h * 0.66);
+    const crop = getCrop(cropId);
+    // Root vegetables, tubers and bulbs draw a slice of the harvest BELOW
+    // the soil-line anchor. In a real tile the tile background sits behind
+    // them; in the bare preview canvas they would clip off the bottom edge,
+    // so lift the anchor up to keep the whole plant inside the box.
+    const cat = crop && crop.category;
+    const cyMul = cat === 'tuber' || cat === 'root' || cat === 'bulb' ? 0.55 : 0.66;
+    this._paintCrop(ctx, h * 0.82, cropId, genome, 1, w / 2, h * cyMul);
   }
 
   // Compose a crop from its genome: a stem, leaves and fruit, with the

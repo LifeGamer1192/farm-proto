@@ -55,6 +55,8 @@ import {
   AUTO_SEARCH_RANGE,
   FENCE_TRIGGER_RANGE,
   FENCE_AUTO_CAP,
+  FENCE_PLAN_LENGTH,
+  FENCE_REPLAN_COOLDOWN,
 } from './config.js';
 import { generateMap, mapStats } from './map/mapGenerator.js';
 import { TileType } from './map/tile.js';
@@ -124,6 +126,11 @@ export class Game {
     this.stockpiles = []; // built stockpiles: {x, y, items}
     this.huts = []; // built hut positions {x, y}
     this.fences = []; // built fence positions {x, y}
+    // One colony-wide wall plan at a time. Every idle colonist serves the
+    // same list of tiles, so the wall ends up a coherent row instead of a
+    // scatter of one-tile detours that follow the animal step by step.
+    this.fencePlan = null;
+    this.fencePlanAt = -Infinity; // clock time of the last plan (for cooldown)
     this.stats = null;
     this.over = false;
     this.won = false; // the colony has survived its first full year
@@ -425,6 +432,8 @@ export class Game {
     this.stockpiles = [];
     this.huts = [];
     this.fences = [];
+    this.fencePlan = null;
+    this.fencePlanAt = -Infinity;
     this.storage = this._freshStorage();
     this.seeds = this._freshSeeds();
     this.codex = this._freshCodex();
@@ -957,8 +966,9 @@ export class Game {
       }
     }
     // Auto-work: throw up a fence between the colony and a nearby boar.
+    // Every colonist serves the same colony-wide plan — see _nextFenceTile.
     if (this.autoMode && this._totalFences() < FENCE_AUTO_CAP) {
-      const spot = this._pickFenceSpot(colonist);
+      const spot = this._nextFenceTile(colonist);
       if (spot) return createTask(TaskType.BUILD, spot.x, spot.y, { structure: 'fence' });
     }
     // Cook raw food into meals while a hearth is lit.
@@ -1173,56 +1183,88 @@ export class Game {
     return best;
   }
 
-  // Where to put a fence — extends an existing fence toward the threat, or
-  // lays a first tile between this colonist and the nearest animal.
-  _pickFenceSpot(colonist) {
-    const animal = this._nearestAnimalToColony(FENCE_TRIGGER_RANGE);
-    if (!animal) return null;
-    if (this.fences.length > 0) {
+  // The colony picks ONE wall row, then every colonist serves that plan
+  // until it is built (or its tiles become invalid). Without a shared plan
+  // each colonist would chase the moving animal independently, scattering
+  // single fence tiles across several rows.
+  _nextFenceTile(colonist) {
+    // Drop plan tiles that have already been built or are no longer free.
+    if (this.fencePlan) {
+      this.fencePlan = this.fencePlan.filter((p) => this._isFreeLand(p.x, p.y));
+      if (this.fencePlan.length === 0) this.fencePlan = null;
+    }
+    // An active plan exists — return its closest unclaimed tile so the
+    // nearest colonist takes the next piece of the wall.
+    if (this.fencePlan) {
       let best = null;
       let bestD = Infinity;
-      for (const f of this.fences) {
-        for (const [ax, ay] of [
-          [1, 0],
-          [-1, 0],
-          [0, 1],
-          [0, -1],
-        ]) {
-          const x = f.x + ax;
-          const y = f.y + ay;
-          if (!this._isFreeLand(x, y)) continue;
-          if (this._tileClaimed(x, y)) continue;
-          const d = Math.hypot(animal.x - x, animal.y - y);
-          if (d < bestD) {
-            bestD = d;
-            best = { x, y };
-          }
+      for (const p of this.fencePlan) {
+        if (this._tileClaimed(p.x, p.y)) continue;
+        const d = Math.hypot(p.x - colonist.tileX, p.y - colonist.tileY);
+        if (d < bestD) {
+          bestD = d;
+          best = p;
         }
       }
-      if (best) return best;
+      return best;
     }
-    // No fence yet — find any free land near the colonist, biased toward
-    // the threat so the first tile faces the animal.
-    const cx = colonist.tileX;
-    const cy = colonist.tileY;
-    const R = 5;
-    let best = null;
-    let bestScore = Infinity;
-    for (let dy = -R; dy <= R; dy++) {
-      for (let dx = -R; dx <= R; dx++) {
-        if (dx === 0 && dy === 0) continue;
-        const x = cx + dx;
-        const y = cy + dy;
-        if (!this._isFreeLand(x, y)) continue;
-        if (this._tileClaimed(x, y)) continue;
-        const d = Math.hypot(animal.x - x, animal.y - y);
-        if (d < bestScore) {
-          bestScore = d;
-          best = { x, y };
-        }
-      }
+    // No active plan — hold off on planning a new one until the cooldown
+    // has elapsed, so a boar wandering one tile per second does not goad
+    // the colony into ratcheting up a fresh wall every step.
+    if (this.clock - this.fencePlanAt < FENCE_REPLAN_COOLDOWN) return null;
+    if (this._totalFences() >= FENCE_AUTO_CAP) return null;
+    this._planFenceLine();
+    return this.fencePlan ? this._nextFenceTile(colonist) : null;
+  }
+
+  // Lay out one wall row of up to FENCE_PLAN_LENGTH tiles, sitting between
+  // the colony's centroid and the nearest animal and running perpendicular
+  // to the threat direction. Stores the plan on `this.fencePlan` and
+  // stamps `fencePlanAt` so the cooldown starts even if no plan was made.
+  _planFenceLine() {
+    const animal = this._nearestAnimalToColony(FENCE_TRIGGER_RANGE);
+    this.fencePlanAt = this.clock;
+    if (!animal) return;
+    // Use huts if any are up; otherwise the colonists themselves.
+    const anchors = this.huts.length > 0
+      ? this.huts
+      : this.colonists.map((c) => ({ x: c.tileX, y: c.tileY }));
+    if (anchors.length === 0) return;
+    let cx = 0;
+    let cy = 0;
+    for (const a of anchors) {
+      cx += a.x;
+      cy += a.y;
     }
-    return best;
+    cx /= anchors.length;
+    cy /= anchors.length;
+    let dx = animal.x - cx;
+    let dy = animal.y - cy;
+    const len = Math.hypot(dx, dy) || 1;
+    dx /= len;
+    dy /= len;
+    // Wall sits a few tiles from the colony, not on top of it and not on
+    // the animal — somewhere in between, closer to the colony's side.
+    const distFromColony = Math.min(Math.max(len * 0.55, 2), len - 1);
+    const midX = cx + dx * distFromColony;
+    const midY = cy + dy * distFromColony;
+    // Perpendicular vector for the wall direction.
+    const px = -dy;
+    const py = dx;
+    const budget = Math.min(FENCE_PLAN_LENGTH, FENCE_AUTO_CAP - this._totalFences());
+    if (budget < 2) return;
+    const plan = [];
+    const half = (budget - 1) / 2;
+    const lo = -Math.floor(half);
+    const hi = Math.ceil(half);
+    for (let i = lo; i <= hi; i++) {
+      const x = Math.round(midX + px * i);
+      const y = Math.round(midY + py * i);
+      if (!this._isFreeLand(x, y)) continue;
+      if (plan.some((p) => p.x === x && p.y === y)) continue;
+      plan.push({ x, y });
+    }
+    if (plan.length >= 2) this.fencePlan = plan;
   }
 
   // True if a colonist is already working a tile, or a task is queued for it.
