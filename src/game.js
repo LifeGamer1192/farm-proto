@@ -1155,17 +1155,28 @@ export class Game {
       }
       if (best) return best;
     }
-    // No fence yet — lay a first tile between the colonist and the animal.
+    // No fence yet — find any free land near the colonist, biased toward
+    // the threat so the first tile faces the animal.
     const cx = colonist.tileX;
     const cy = colonist.tileY;
-    const dxSign = Math.sign(animal.x - cx) || 1;
-    const dySign = Math.sign(animal.y - cy);
-    for (const step of [2, 3, 1]) {
-      const x = cx + dxSign * step;
-      const y = cy + (dySign || 0) * step;
-      if (this._isFreeLand(x, y) && !this._tileClaimed(x, y)) return { x, y };
+    const R = 5;
+    let best = null;
+    let bestScore = Infinity;
+    for (let dy = -R; dy <= R; dy++) {
+      for (let dx = -R; dx <= R; dx++) {
+        if (dx === 0 && dy === 0) continue;
+        const x = cx + dx;
+        const y = cy + dy;
+        if (!this._isFreeLand(x, y)) continue;
+        if (this._tileClaimed(x, y)) continue;
+        const d = Math.hypot(animal.x - x, animal.y - y);
+        if (d < bestScore) {
+          bestScore = d;
+          best = { x, y };
+        }
+      }
     }
-    return null;
+    return best;
   }
 
   // True if a colonist is already working a tile, or a task is queued for it.
