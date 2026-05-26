@@ -367,17 +367,20 @@ export function pickAutonomousTask(game, colonist) {
       }
     }
   }
-  // 7. Hunt first when colony stores run low — done before infra and farm
-  // work so colonists do not build themselves into starvation. Hunting
-  // adds to on-hand, so it is skipped while on-hand is already at cap.
-  if (
-    game.autoHunt &&
-    !onHandFull &&
-    game.totalFood < game.colonists.length * HUNT_FOOD_PER_HEAD
-  ) {
-    const a = game._animalNear(colonist.tileX, colonist.tileY, AUTO_HUNT_RANGE, colonist);
-    if (a && !game._tileClaimed(a.tileX, a.tileY)) {
-      return createTask(TaskType.HUNT, a.tileX, a.tileY, { animalId: a.id });
+  // 7. Hunt first when this colony's own stores run low (I2). Done
+  // before infra and farm work so colonists don't build themselves
+  // into starvation. The food/head check is per-group — a Colony C
+  // sitting on 4.8 food/head no longer gets masked by Colony B's
+  // surplus pushing the colony-wide average up. Hunting still skips
+  // while on-hand is at cap (it adds to it).
+  if (game.autoHunt && !onHandFull) {
+    const ownPop = game.groups?.[gid]?.colonists?.length || game.colonists.length;
+    const ownFood = game._totalFoodFor(gid);
+    if (ownFood < ownPop * HUNT_FOOD_PER_HEAD) {
+      const a = game._animalNear(colonist.tileX, colonist.tileY, AUTO_HUNT_RANGE, colonist);
+      if (a && !game._tileClaimed(a.tileX, a.tileY)) {
+        return createTask(TaskType.HUNT, a.tileX, a.tileY, { animalId: a.id });
+      }
     }
   }
   // 8. Chop the nearest tree when wood reserve has fallen below the

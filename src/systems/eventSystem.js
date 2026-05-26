@@ -68,9 +68,13 @@ export function maybeBirth(game) {
     if (grp.colonists.length === 0) continue;
     if (grp.colonists.length >= perGroupCap) continue;
     if (game.colonists.length >= POPULATION_CAP) break;
-    // Own-group hut count vs own roster
-    const ownHuts = game._hutCountFor ? game._hutCountFor(grp.id) : 0;
-    if (ownHuts < grp.colonists.length) continue;
+    // Own-group BED capacity (not hut count) vs own roster. I1: a
+    // single medium hut covers 4 beds, so the previous "hutCount <
+    // pop" check froze population at 4 even after the colony had
+    // upgraded to a tier-2 hut. Use the same bed-cap helper the
+    // auto-builder uses to decide when more hut space is needed.
+    const beds = game._hutCapacityFor ? game._hutCapacityFor(grp.id) : 0;
+    if (beds < grp.colonists.length) continue;
     // Own-group food / head
     const ownFood = game._totalFoodFor ? game._totalFoodFor(grp.id) : 0;
     if (ownFood < grp.colonists.length * BIRTH_FOOD_PER_HEAD) continue;
