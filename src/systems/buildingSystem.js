@@ -48,7 +48,24 @@ export function tileClaimed(game, x, y) {
 export function findFreeLandNear(game, colonist) {
   const cx = colonist.tileX;
   const cy = colonist.tileY;
-  for (let r = 1; r <= AUTO_SEARCH_RANGE; r++) {
+  return _spiralFreeLand(game, cx, cy, AUTO_SEARCH_RANGE);
+}
+
+/**
+ * α26: wider spiral used by the warehouse expansion fallback. When the
+ * colonist is buried in farmland and AUTO_SEARCH_RANGE can't find a
+ * buildable tile, the autonomy script falls back to this — searches from
+ * the colony centroid (huts → stockpiles → colonist average) outward to
+ * `range` tiles. Returns null only if the entire ring is genuinely full.
+ */
+export function findFreeLandColonyWide(game, range = AUTO_SEARCH_RANGE * 4) {
+  const center = colonyCenter(game);
+  if (!center) return null;
+  return _spiralFreeLand(game, Math.round(center.x), Math.round(center.y), range);
+}
+
+function _spiralFreeLand(game, cx, cy, maxR) {
+  for (let r = 1; r <= maxR; r++) {
     for (let dy = -r; dy <= r; dy++) {
       for (let dx = -r; dx <= r; dx++) {
         if (Math.abs(dx) !== r && Math.abs(dy) !== r) continue;
@@ -61,6 +78,23 @@ export function findFreeLandNear(game, colonist) {
     }
   }
   return null;
+}
+
+/** Centroid of the colony — huts first, else stockpiles, else colonists. */
+export function colonyCenter(game) {
+  const anchors = game.huts.length > 0
+    ? game.huts
+    : (game.stockpiles.length > 0
+        ? game.stockpiles
+        : game.colonists.map((c) => ({ x: c.tileX, y: c.tileY })));
+  if (anchors.length === 0) return null;
+  let sx = 0;
+  let sy = 0;
+  for (const a of anchors) {
+    sx += a.x;
+    sy += a.y;
+  }
+  return { x: sx / anchors.length, y: sy / anchors.length };
 }
 
 /** BUILD tasks of this structure queued or in colonists' hands. */
@@ -116,8 +150,11 @@ export function wantsAutoWarehouse(game) {
 export function warehouseUtilization(game) {
   if (game.stockpiles.length === 0) return 0;
   let used = 0;
-  for (const sp of game.stockpiles) used += stockpileFood(sp);
-  const cap = game.stockpiles.length * STOCKPILE_CAP;
+  let cap = 0;
+  for (const sp of game.stockpiles) {
+    used += stockpileFood(sp);
+    cap += sp.cap || STOCKPILE_CAP;
+  }
   return cap > 0 ? used / cap : 0;
 }
 

@@ -349,8 +349,11 @@ function updateColonyStats() {
   const s = game.storage;
   const ti = (it) => game.totalItem(it);
   let spUsed = 0;
-  for (const sp of game.stockpiles) spUsed += game.stockpileFood(sp);
-  const spCap = game.stockpiles.length * STOCKPILE_CAP;
+  let spCap = 0;
+  for (const sp of game.stockpiles) {
+    spUsed += game.stockpileFood(sp);
+    spCap += sp.cap || STOCKPILE_CAP;
+  }
   // Seed total — either this group's stash, or the colony-wide aggregate.
   const seedSrc = g ? g.seeds : game.seeds;
   let seedTotal = 0;
@@ -795,7 +798,7 @@ if (startGenerateBtn) {
 const groupCountEl = $('group-count');
 const groupCountLabelEl = $('group-count-label');
 const groupListEl = $('group-list');
-const AUTONOMY_OPTIONS = ['balanced', 'farmer', 'scout'];
+const AUTONOMY_OPTIONS = ['balanced', 'farmer', 'farmer_breed', 'scout'];
 
 function readGroupSetup() {
   // Pull current values from the DOM into a setup array.
@@ -958,7 +961,7 @@ function structureHint(pos) {
   if (tl.structure === 'stockpile') {
     const sp = game.stockpileAt(pos.x, pos.y);
     if (sp) {
-      s += ` · ${t('tip.stored', { n: game.stockpileFood(sp), cap: STOCKPILE_CAP })}`;
+      s += ` · ${t('tip.stored', { n: game.stockpileFood(sp), cap: sp.cap || STOCKPILE_CAP })}`;
       const parts = STOCKPILE_ITEMS.filter((it) => sp.items[it] > 0).map(
         (it) => `${itemLabel(it)} ${sp.items[it]}`,
       );
@@ -992,6 +995,54 @@ function sowHint(tile) {
   })}`;
 }
 
+// Entities whose sprite covers (x, y): wild animals first, then any
+// colonist standing on the tile. α26 adds these to the hover tooltip so
+// the player can read a deer's species / a colonist's vitals without
+// clicking. Tile sits underneath the entity blurb.
+function entityHint(pos) {
+  let s = '';
+  for (const a of game.animals || []) {
+    if (a.tileX === pos.x && a.tileY === pos.y) {
+      const sp = t('animal.' + (a.species || 'boar'));
+      const traits = a.traits || {};
+      const cls = traits.hostile ? t('tip.hostile') : t('tip.peaceful');
+      s += `<br><strong>${sp}</strong> · ${cls}` +
+           `<br>${t('tip.animalStats', {
+             meat: traits.meat ?? '?',
+             speed: ((traits.speedMul ?? 1) * 100).toFixed(0),
+           })}`;
+      break; // one animal per tile is plenty
+    }
+  }
+  for (const c of game.colonists) {
+    if (c.tileX === pos.x && c.tileY === pos.y) {
+      const grp = game.groups?.[c.groupId];
+      const groupName = grp ? t('group.label', { letter: String.fromCharCode(65 + c.groupId) }) : '';
+      const pct = (v) => `${Math.round(Math.max(0, Math.min(1, v)) * 100)}%`;
+      s += `<br><strong>${c.name}</strong>` + (groupName ? ` · ${groupName}` : '') +
+           `<br>${t('state.' + c.state)}` +
+           `<br>${t('tip.colonistVitals', {
+             fed: pct(1 - c.hunger),
+             hp: pct(c.health),
+             mood: pct(c.mood),
+             sleep: pct(c.sleep ?? 1),
+           })}`;
+      // Top skill summary — the four xp values are inside c.skills.
+      if (c.skills) {
+        const top = Object.entries(c.skills).sort((a, b) => b[1] - a[1])[0];
+        if (top) {
+          s += `<br>${t('tip.colonistTopSkill', {
+            skill: t('skill.' + top[0]),
+            pct: Math.round(top[1] * 100),
+          })}`;
+        }
+      }
+      break;
+    }
+  }
+  return s;
+}
+
 function showTooltip(clientX, clientY, pos) {
   const tl = game.map.tiles[pos.y][pos.x];
   const f = (v) => v.toFixed(3);
@@ -1001,7 +1052,7 @@ function showTooltip(clientX, clientY, pos) {
     `<strong>(${pos.x}, ${pos.y})</strong> ${t('tile.' + tl.type)}<br>` +
     `${t('tip.elevation')} ${f(tl.elevation)}<br>${t('tip.fertility')} ${f(tl.fertility)}<br>` +
     `${t('tip.moisture')} ${f(tl.moisture)}<br>${t('tip.sunlight')} ${f(tl.sunlight)}` +
-    `${tilled}${describePlant(tl.plant)}${structureHint(pos)}${growthHint(tl)}${sowHint(tl)}`;
+    `${tilled}${describePlant(tl.plant)}${structureHint(pos)}${entityHint(pos)}${growthHint(tl)}${sowHint(tl)}`;
   const { rect } = canvasMetrics();
   tooltip.style.left = `${clientX - rect.left + 14}px`;
   tooltip.style.top = `${clientY - rect.top + 14}px`;

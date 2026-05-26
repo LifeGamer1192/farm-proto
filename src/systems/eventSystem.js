@@ -32,6 +32,10 @@ import { FOOD_TYPES, rawFood, totalFood, largestFood } from './foodSystem.js';
 export function onSeasonChange(game, season) {
   if (season === 'winter') runWinterTrader(game);
   maybeBirth(game);
+  // α26: groups running the Farmer (Selective breeding) script cull
+  // their lowest-quality stock once per season change. The hook lives
+  // on `game` so eventSystem doesn't depend on autonomy.js directly.
+  if (game._runSelectiveBreedingCulls) game._runSelectiveBreedingCulls();
 }
 
 /**

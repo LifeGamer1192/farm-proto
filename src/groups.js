@@ -43,7 +43,7 @@ export const GROUP_COLORS = [
  * boot, so this module stays independent of autonomy.js (avoids a
  * circular import). The id list below is the menu the start UI shows.
  */
-export const AUTONOMY_SCRIPTS = ['balanced', 'farmer', 'scout'];
+export const AUTONOMY_SCRIPTS = ['balanced', 'farmer', 'farmer_breed', 'scout'];
 
 const _scriptRegistry = new Map();
 
@@ -208,5 +208,11 @@ export function createGroup(id, setup = {}) {
     fencePlanAt: -Infinity,
     birthCounter: 0,
     traderYear: 0,
+    // α26: per-group selective-breeding state. fieldPlan is the
+    // rectangular field the breed script tills/sows row-by-row; null
+    // until the script first runs. lastCullSeason gates the quarterly
+    // cull so we don't run it twice on the same season boundary.
+    fieldPlan: null,
+    lastCullSeason: null,
   };
 }

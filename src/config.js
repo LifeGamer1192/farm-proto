@@ -188,8 +188,35 @@ export const FENCE_REPLAN_COOLDOWN = 25; // seconds before the colony can plan a
 
 // --- wood / trees (alpha 18) ---------------------------------------------
 
-// Wood costs every structure type pays once at build time.
-export const BUILD_COSTS = { fence: 1, hut: 5, hearth: 3, stockpile: 4 };
+// Wood costs every structure type pays once at build time. α26 adds
+// upgraded tiers: a medium warehouse costs 3× the base for 4× storage,
+// a large warehouse 6× for 12×. Huts gain a medium (4-bed, 3× cost) and
+// large (8-bed, 5× cost) variant.
+export const BUILD_COSTS = {
+  fence: 1,
+  hut: 5,
+  hut_med: 15,
+  hut_large: 25,
+  hearth: 3,
+  stockpile: 4,
+  stockpile_med: 12,
+  stockpile_large: 24,
+};
+// Per-stockpile food capacity by structure type. Anything not listed
+// here falls back to the base STOCKPILE_CAP (kept for legacy callers
+// that still pass the constant directly).
+export const STOCKPILE_CAP_BY_TYPE = {
+  stockpile: 25,
+  stockpile_med: 100,
+  stockpile_large: 300,
+};
+// Resident slots a hut covers. Auto-build keeps adding huts until the
+// colony has enough slots for every colonist.
+export const HUT_CAPACITY_BY_TYPE = {
+  hut: 1,
+  hut_med: 4,
+  hut_large: 8,
+};
 // Wood the colony starts with — enough for a hut per colonist, a hearth,
 // a stockpile and a short fence right out of the gate.
 export const STARTING_WOOD = 30;

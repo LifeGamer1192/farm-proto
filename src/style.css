@@ -693,6 +693,12 @@ button.primary:hover {
   gap: 3px 12px;
 }
 
+/* Season panel (α26): pack 5 readings into 3 columns so the box
+ * collapses from ~4 rows to 2. Same look, less vertical real estate. */
+.stats-2col {
+  grid-template-columns: repeat(3, 1fr);
+}
+
 .stats > div {
   display: flex;
   justify-content: space-between;

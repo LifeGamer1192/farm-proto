@@ -39,6 +39,8 @@ import {
   COOK_BATCH,
   HUNT_FOOD_PER_HEAD,
   STOCKPILE_CAP,
+  STOCKPILE_CAP_BY_TYPE,
+  HUT_CAPACITY_BY_TYPE,
   ON_HAND_CAP,
   HAUL_BATCH,
   BUILD_COSTS,
@@ -82,7 +84,7 @@ import {
   SEASON_TINT,
 } from './season.js';
 import { t } from './i18n.js';
-import { pickAutonomousTask } from './autonomy.js';
+import { pickAutonomousTask, runSelectiveBreedingCulls } from './autonomy.js';
 
 // --- System modules (refactor split out of this file) --------------------
 //
@@ -137,6 +139,7 @@ import {
   isFreeLand as bsIsFreeLand,
   tileClaimed as bsTileClaimed,
   findFreeLandNear as bsFindFreeLandNear,
+  findFreeLandColonyWide as bsFindFreeLandColonyWide,
   pendingBuilds as bsPendingBuilds,
   totalFences as bsTotalFences,
   reservedBuildWood as bsReservedBuildWood,
@@ -825,10 +828,19 @@ export class Game {
           this.storage.wood -= cost;
           tile.structure = task.structure;
           if (task.structure === 'hearth') this.hearths.push({ x: task.x, y: task.y });
-          if (task.structure === 'stockpile') {
-            this.stockpiles.push({ x: task.x, y: task.y, items: this._freshStockpileItems() });
+          if (task.structure === 'stockpile' || task.structure === 'stockpile_med' || task.structure === 'stockpile_large') {
+            const cap = STOCKPILE_CAP_BY_TYPE[task.structure] || STOCKPILE_CAP;
+            this.stockpiles.push({
+              x: task.x, y: task.y,
+              type: task.structure,
+              cap,
+              items: this._freshStockpileItems(),
+            });
           }
-          if (task.structure === 'hut') this.huts.push({ x: task.x, y: task.y });
+          if (task.structure === 'hut' || task.structure === 'hut_med' || task.structure === 'hut_large') {
+            const cap = HUT_CAPACITY_BY_TYPE[task.structure] || 1;
+            this.huts.push({ x: task.x, y: task.y, type: task.structure, cap });
+          }
           if (task.structure === 'fence') this.fences.push({ x: task.x, y: task.y });
           task.outcome = 'built';
           task.outcomeData = { structure: task.structure, wood: cost };
@@ -904,7 +916,7 @@ export class Game {
       const sp = this.stockpileAt(task.x, task.y);
       let moved = 0;
       if (sp) {
-        let space = STOCKPILE_CAP - this.stockpileFood(sp);
+        let space = (sp.cap || STOCKPILE_CAP) - this.stockpileFood(sp);
         while (moved < HAUL_BATCH && space > 0) {
           const it = this._largestFood(this.storage, FOOD_TYPES);
           const food = it || (this.storage.meal > 0 ? 'meal' : null);
@@ -938,17 +950,27 @@ export class Game {
     }
   }
 
-  // True if a hut stands within HUT_RANGE tiles of (x, y).
+  // True if any hut variant stands within HUT_RANGE tiles of (x, y).
   _hutNear(x, y) {
     for (let dy = -HUT_RANGE; dy <= HUT_RANGE; dy++) {
       const row = this.map.tiles[y + dy];
       if (!row) continue;
       for (let dx = -HUT_RANGE; dx <= HUT_RANGE; dx++) {
         const tile = row[x + dx];
-        if (tile && tile.structure === 'hut') return true;
+        if (!tile) continue;
+        if (tile.structure === 'hut' || tile.structure === 'hut_med' || tile.structure === 'hut_large') {
+          return true;
+        }
       }
     }
     return false;
+  }
+
+  /** Total bed-slots across every hut the colony owns (α26 tier-2 huts). */
+  _hutCapacity() {
+    let n = 0;
+    for (const h of this.huts) n += h.cap || 1;
+    return n;
   }
 
   // True if a lit hearth stands within HEARTH_RANGE tiles of (x, y).
@@ -1019,6 +1041,7 @@ export class Game {
   _pendingBuilds(structure)  { return bsPendingBuilds(this, structure); }
   _isFreeLand(x, y)          { return bsIsFreeLand(this, x, y); }
   _findFreeLandNear(c)       { return bsFindFreeLandNear(this, c); }
+  _findFreeLandColonyWide(r) { return bsFindFreeLandColonyWide(this, r); }
   _totalFences()             { return bsTotalFences(this); }
   _reservedBuildWood()       { return bsReservedBuildWood(this); }
   _canAffordBuild(structure) { return bsCanAffordBuild(this, structure); }
@@ -1168,6 +1191,7 @@ export class Game {
   _updateFuel(dt)         { return esUpdateFuel(this, dt); }
   _updateForest(dt)       { return esUpdateForest(this, dt); }
   _onSeasonChange(season) { return esOnSeasonChange(this, season); }
+  _runSelectiveBreedingCulls() { return runSelectiveBreedingCulls(this); }
 
   _panVector() {
     let dx = this.panDir.x;

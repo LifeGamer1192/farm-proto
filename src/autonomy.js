@@ -24,8 +24,111 @@ import {
   FENCE_AUTO_CAP,
   STOCKPILE_CAP,
   WOOD_LOW,
+  HUT_CAPACITY_BY_TYPE,
+  BIRTH_FOOD_PER_HEAD,
 } from './config.js';
 import { registerScript } from './groups.js';
+import { t } from './i18n.js';
+import { TileType } from './map/tile.js';
+import { genomeQuality } from './genetics.js';
+
+// --- α26 warehouse policy ----------------------------------------------
+//
+// Decision logic for "should we start another warehouse, and where?" now
+// lives in the script tree (each script can override it). The defaults
+// below are what the balanced / farmer / scout scripts all share. The
+// `wantsWarehouse(game, opts)` helper returns:
+//   - { build: 'stockpile_med', spot, reason: 'utilization 0.95' } → fire BUILD
+//   - { build: null, reason: 'no_wood' } → script logs (optional) & moves on
+//   - null → no decision (no warehouses needed)
+//
+// `opts.utilThreshold` lets a script (e.g. selective-breeding farmer)
+// build sooner / later by passing a different fill ratio.
+
+const WAREHOUSE_HARD_CAP = 40;
+// Diagnostic log: emitted at most once per (groupId, reason) per minute
+// so the activity log doesn't flood with "no land for warehouse".
+const _warnedAt = new Map();
+function _maybeWarn(game, c, reason, textKey, params) {
+  const key = `${c?.groupId ?? 0}|${reason}`;
+  const last = _warnedAt.get(key) || -Infinity;
+  if (game.clock - last < 60) return;
+  _warnedAt.set(key, game.clock);
+  if (game._pushLog) {
+    game._pushLog({
+      icon: '⚠',
+      text: t(textKey, params),
+      cls: 'log-warn',
+      groupId: c?.groupId,
+    });
+  }
+}
+
+/** Pick the best warehouse variant the colony can afford right now. */
+function pickWarehouseVariant(game) {
+  // Try large → medium → basic and return the first the colony can pay
+  // for. Tier-2 huts/stockpiles arrived in α26 with steeper costs but
+  // far more storage per ground tile, so the auto-builder prefers them
+  // once the wood reserve catches up.
+  for (const variant of ['stockpile_large', 'stockpile_med', 'stockpile']) {
+    if (game._canAffordBuild(variant)) return variant;
+  }
+  return null;
+}
+
+/**
+ * Script-level decision: should an idle colonist start a warehouse?
+ * Returns an action descriptor or null. Diagnostic warnings are logged
+ * when the answer is "yes but blocked" so the player can tell the
+ * difference between "no space for it" and "no wood for it".
+ */
+export function wantsWarehouse(game, colonist, { utilThreshold = 0.85 } = {}) {
+  const totalSp = game.stockpiles.length + game._pendingBuilds('stockpile')
+    + game._pendingBuilds('stockpile_med') + game._pendingBuilds('stockpile_large');
+  if (totalSp >= WAREHOUSE_HARD_CAP) return null;
+  // First warehouse is always wanted. After that, only when fill is past
+  // the configured threshold for the script.
+  let wants = game.stockpiles.length === 0;
+  if (!wants && game._warehouseUtilization() >= utilThreshold) wants = true;
+  if (!wants) return null;
+  const variant = pickWarehouseVariant(game);
+  if (!variant) {
+    _maybeWarn(game, colonist, 'no_wood', 'log.warehouseNoWood');
+    return { build: null, reason: 'no_wood' };
+  }
+  let spot = game._findFreeLandNear(colonist);
+  if (!spot) spot = game._findFreeLandColonyWide?.();
+  if (!spot) {
+    _maybeWarn(game, colonist, 'no_land', 'log.warehouseNoLand');
+    return { build: null, reason: 'no_land' };
+  }
+  return { build: variant, spot, reason: 'ok' };
+}
+
+/** Beds in flight for already-queued / in-progress hut builds. */
+function autoHutPendingBeds(game) {
+  let n = 0;
+  for (const t of game.taskQueue) {
+    if (t.type === TaskType.BUILD && HUT_CAPACITY_BY_TYPE[t.structure]) {
+      n += HUT_CAPACITY_BY_TYPE[t.structure];
+    }
+  }
+  for (const c of game.colonists) {
+    const ct = c.currentTask;
+    if (ct && ct.type === TaskType.BUILD && HUT_CAPACITY_BY_TYPE[ct.structure]) {
+      n += HUT_CAPACITY_BY_TYPE[ct.structure];
+    }
+  }
+  return n;
+}
+
+/** Pick the most economical hut variant for the colony's current size. */
+function pickAutoHutVariant(game) {
+  const need = game.colonists.length;
+  if (need >= 12) return 'hut_large';
+  if (need >= 4) return 'hut_med';
+  return 'hut';
+}
 
 /**
  * Pick the next bit of self-directed work for `colonist`, or `null` if
@@ -55,13 +158,17 @@ export function pickAutonomousTask(game, colonist) {
   // "on-hand full" rule from α19 stays the same.
   const critical = game._warehousesCritical?.() || false;
   if (critical && game.autoMode) {
-    if (game._canAffordBuild('stockpile')) {
-      const spot = game._findFreeLandNear(colonist);
-      if (spot) return createTask(TaskType.BUILD, spot.x, spot.y, { structure: 'stockpile' });
+    const dec = wantsWarehouse(game, colonist, { utilThreshold: 0.95 });
+    if (dec && dec.build) {
+      return createTask(TaskType.BUILD, dec.spot.x, dec.spot.y, { structure: dec.build });
     }
-    // Not enough wood for a warehouse — go chop a tree right now.
-    const tree = game._nearestTree(colonist, AUTO_SEARCH_RANGE);
-    if (tree) return createTask(TaskType.HARVEST, tree.x, tree.y);
+    // Either no wood (try to chop) or no land near (fall through, the
+    // diagnostic log already explains why). When wood was the blocker,
+    // rush a tree so building unblocks itself.
+    if (dec && dec.reason === 'no_wood') {
+      const tree = game._nearestTree(colonist, AUTO_SEARCH_RANGE);
+      if (tree) return createTask(TaskType.HARVEST, tree.x, tree.y);
+    }
   }
   // On-hand is full. Anything that would *add* to it (harvest a ripe crop,
   // fetch food, hunt, forage by chopping a wild plant) is skipped this
@@ -70,7 +177,7 @@ export function pickAutonomousTask(game, colonist) {
   // perpetually crowded out by farm work.
   const onHandFull = critical || game.onHandFood >= ON_HAND_CAP;
   if (onHandFull) {
-    const sp = game._nearestStockpile(colonist, (s) => game.stockpileFood(s) < STOCKPILE_CAP);
+    const sp = game._nearestStockpile(colonist, (s) => game.stockpileFood(s) < (s.cap || STOCKPILE_CAP));
     if (sp && !game._tileClaimed(sp.x, sp.y)) {
       return createTask(TaskType.STORE, sp.x, sp.y);
     }
@@ -151,12 +258,16 @@ export function pickAutonomousTask(game, colonist) {
   // also checks wood — a hut that cannot be afforded should not jump the
   // queue ahead of useful work like sowing.
   if (game.autoMode) {
-    if (
-      game.huts.length + game._pendingBuilds('hut') < game.colonists.length &&
-      game._canAffordBuild('hut')
-    ) {
-      const spot = game._findFreeLandNear(colonist);
-      if (spot) return createTask(TaskType.BUILD, spot.x, spot.y, { structure: 'hut' });
+    // α26: count beds (not huts). Once the colony goes past 4 colonists
+    // the auto-builder upgrades to medium huts (4-bed), and past 12 to
+    // large huts (8-bed) — same wood-per-bed, fewer ground tiles spent.
+    const beds = game._hutCapacity() + autoHutPendingBeds(game);
+    if (beds < game.colonists.length) {
+      const variant = pickAutoHutVariant(game);
+      if (game._canAffordBuild(variant)) {
+        const spot = game._findFreeLandNear(colonist);
+        if (spot) return createTask(TaskType.BUILD, spot.x, spot.y, { structure: variant });
+      }
     }
     if (
       game.hearths.length + game._pendingBuilds('hearth') < game.huts.length &&
@@ -165,9 +276,9 @@ export function pickAutonomousTask(game, colonist) {
       const spot = game._findFreeLandNear(colonist);
       if (spot) return createTask(TaskType.BUILD, spot.x, spot.y, { structure: 'hearth' });
     }
-    if (game._wantsAutoWarehouse() && game._canAffordBuild('stockpile')) {
-      const spot = game._findFreeLandNear(colonist);
-      if (spot) return createTask(TaskType.BUILD, spot.x, spot.y, { structure: 'stockpile' });
+    const wh = wantsWarehouse(game, colonist);
+    if (wh && wh.build) {
+      return createTask(TaskType.BUILD, wh.spot.x, wh.spot.y, { structure: wh.build });
     }
     // 10. Till new ground and sow the most-stocked crop.
     const sowCrop = game._mostStockedCrop();
@@ -182,7 +293,7 @@ export function pickAutonomousTask(game, colonist) {
   }
   // 11. Haul surplus on-hand food into a stockpile, safe from the pests.
   if (game.onHandFood > ON_HAND_CAP) {
-    const sp = game._nearestStockpile(colonist, (s) => game.stockpileFood(s) < STOCKPILE_CAP);
+    const sp = game._nearestStockpile(colonist, (s) => game.stockpileFood(s) < (s.cap || STOCKPILE_CAP));
     if (sp && !game._tileClaimed(sp.x, sp.y)) {
       return createTask(TaskType.STORE, sp.x, sp.y);
     }
@@ -256,7 +367,168 @@ export function scoutScript(game, colonist) {
   return pickAutonomousTask(game, colonist);
 }
 
-// Register the three scripts so groups can look them up by id.
+// --- α26: Farmer (Selective breeding) -----------------------------------
+//
+// A variant of the farmer that:
+//   1. lays its field out as a contiguous rectangle (no concern for water
+//      proximity — fertility/moisture become the player's irrigation
+//      problem), so the colony's farmland stays orderly,
+//   2. once per season, queues a small cull pass against the lowest-
+//      quality 15% of each crop type. The cull runs as WEED tasks (which
+//      already accept living crops as a deliberate scrap). The food-safety
+//      guard skips the cull when the colony is starving.
+//
+// The rectangular layout lives on each group as `fieldPlan`. The cull
+// state lives as `lastCullSeason`. Both are reset by createGroup.
+
+const FIELD_INIT_W = 6;
+const FIELD_INIT_H = 6;
+const FIELD_MAX_W = 14;
+const FIELD_MAX_H = 14;
+const CULL_FRACTION = 0.15; // bottom 15% per crop type
+const CULL_FOOD_SAFETY_MULT = 0.6; // skip cull if food/head < 60% of birth threshold
+
+function fieldPlanFor(game, colonist) {
+  const grp = game.groups?.[colonist.groupId];
+  if (!grp) return null;
+  if (!grp.fieldPlan) {
+    // Anchor 3-4 tiles from the colonist (treated as colony spawn) so
+    // the field reliably sits on land that was generated walkable.
+    const fx = Math.max(0, Math.min(game.map.cols - FIELD_INIT_W, colonist.tileX - 1));
+    const fy = Math.max(0, Math.min(game.map.rows - FIELD_INIT_H, colonist.tileY + 1));
+    grp.fieldPlan = { x: fx, y: fy, w: FIELD_INIT_W, h: FIELD_INIT_H };
+  }
+  return grp.fieldPlan;
+}
+
+function pickRectSowSpot(game, colonist) {
+  const plan = fieldPlanFor(game, colonist);
+  if (!plan) return null;
+  for (let dy = 0; dy < plan.h; dy++) {
+    for (let dx = 0; dx < plan.w; dx++) {
+      const x = plan.x + dx;
+      const y = plan.y + dy;
+      const t = game.map.tiles[y]?.[x];
+      if (!t || !t.tilled || t.plant || t.structure) continue;
+      if (game._tileClaimed(x, y)) continue;
+      return { x, y };
+    }
+  }
+  return null;
+}
+
+function pickRectTillSpot(game, colonist) {
+  const plan = fieldPlanFor(game, colonist);
+  if (!plan) return null;
+  for (let dy = 0; dy < plan.h; dy++) {
+    for (let dx = 0; dx < plan.w; dx++) {
+      const x = plan.x + dx;
+      const y = plan.y + dy;
+      const t = game.map.tiles[y]?.[x];
+      if (!t || t.type === TileType.WATER) continue;
+      if (t.tilled || t.plant || t.structure) continue;
+      if (game._tileClaimed(x, y)) continue;
+      return { x, y };
+    }
+  }
+  // Whole rectangle exhausted — grow the plan by one in each direction.
+  if (plan.w < FIELD_MAX_W) plan.w += 1;
+  if (plan.h < FIELD_MAX_H) plan.h += 1;
+  return null;
+}
+
+/** "Farmer (Selective breeding)" — rectangular fields + quarterly cull. */
+export function farmerBreedScript(game, colonist) {
+  // Always harvest the ripe ones first — breeding programme depends on
+  // collecting the high-quality seeds back from these.
+  for (const crop of game.crops) {
+    if (isRipe(crop) && !crop.withered && !game._tileClaimed(crop.x, crop.y)) {
+      return createTask(TaskType.HARVEST, crop.x, crop.y);
+    }
+  }
+  if (game.hearthsLit && game.rawFood > 0 && game.storage.meal < MEAL_TARGET) {
+    for (const h of game.hearths) {
+      if (!game._tileClaimed(h.x, h.y)) return createTask(TaskType.COOK, h.x, h.y);
+    }
+  }
+  // Sow / till the rectangular field BEFORE looking at any other work.
+  if (game.autoMode) {
+    const sowCrop = game._mostStockedCrop();
+    if (sowCrop) {
+      const sowSpot = pickRectSowSpot(game, colonist);
+      if (sowSpot) return createTask(TaskType.SOW, sowSpot.x, sowSpot.y, { cropId: sowCrop });
+      const tillSpot = pickRectTillSpot(game, colonist);
+      if (tillSpot) return createTask(TaskType.TILL, tillSpot.x, tillSpot.y);
+    }
+  }
+  return pickAutonomousTask(game, colonist);
+}
+
+/**
+ * Quarterly cull pass. Called from eventSystem.onSeasonChange — for each
+ * group running the breeding script, queue WEED tasks against the
+ * bottom CULL_FRACTION (by genome quality) of every crop type that
+ * group's colonists are growing. Skips the cull when food is critically
+ * short (so we don't starve the colony to chase ★).
+ */
+export function runSelectiveBreedingCulls(game) {
+  if (!game.groups) return;
+  const seasonKey = `${game.environment.year}-${game.environment.season}`;
+  const foodPerHead = game.colonists.length > 0
+    ? game.totalFood / game.colonists.length
+    : 0;
+  const foodSafe = foodPerHead >= BIRTH_FOOD_PER_HEAD * CULL_FOOD_SAFETY_MULT;
+  for (const grp of game.groups) {
+    if (grp.scriptId !== 'farmer_breed') continue;
+    if (grp.lastCullSeason === seasonKey) continue;
+    grp.lastCullSeason = seasonKey;
+    if (!foodSafe) {
+      // Tell the player we deliberately skipped the cull this quarter.
+      game._pushLog({
+        icon: '⏭',
+        text: t('log.cullSkipped'),
+        cls: 'log-warn',
+        groupId: grp.id,
+      });
+      continue;
+    }
+    // Bucket every living crop in this group's field by cropId.
+    const plan = grp.fieldPlan;
+    const inField = (x, y) => plan
+      && x >= plan.x && x < plan.x + plan.w
+      && y >= plan.y && y < plan.y + plan.h;
+    const buckets = new Map();
+    for (const crop of game.crops) {
+      if (crop.withered) continue;
+      if (plan && !inField(crop.x, crop.y)) continue;
+      if (!buckets.has(crop.cropId)) buckets.set(crop.cropId, []);
+      buckets.get(crop.cropId).push(crop);
+    }
+    for (const [cropId, list] of buckets) {
+      if (list.length < 5) continue; // too few to learn anything from culling
+      list.sort((a, b) => genomeQuality(a.genome) - genomeQuality(b.genome));
+      const cullCount = Math.max(1, Math.floor(list.length * CULL_FRACTION));
+      let queued = 0;
+      for (let i = 0; i < cullCount; i++) {
+        const c = list[i];
+        if (game._tileClaimed(c.x, c.y)) continue;
+        game.taskQueue.push(createTask(TaskType.WEED, c.x, c.y));
+        queued += 1;
+      }
+      if (queued > 0) {
+        game._pushLog({
+          icon: '🌱',
+          text: t('log.cull', { crop: t('crop.' + cropId), n: queued }),
+          cls: 'log-ok',
+          groupId: grp.id,
+        });
+      }
+    }
+  }
+}
+
+// Register every script so groups can look them up by id.
 registerScript('balanced', pickAutonomousTask);
 registerScript('farmer', farmerScript);
+registerScript('farmer_breed', farmerBreedScript);
 registerScript('scout', scoutScript);

@@ -221,10 +221,21 @@ export class Renderer {
     }
 
     // --- colonist paths ---
+    // α26: a path uses the owning colony's accent color (the same hue as
+    // the colonist body) so several groups working in the same area stay
+    // legible. The strolling dash stays in the muted "off-duty" tone.
+    const pathColors = scene.groupColors || [];
     for (const c of colonists) {
       if (c.path.length === 0) continue;
       const strolling = c.state === 'strolling';
-      ctx.strokeStyle = strolling ? 'rgba(206,214,228,0.5)' : 'rgba(232,162,60,0.9)';
+      let stroke;
+      if (strolling) {
+        stroke = 'rgba(206,214,228,0.5)';
+      } else {
+        const gc = pathColors[c.groupId || 0];
+        stroke = gc ? `${gc.fill}e6` : 'rgba(232,162,60,0.9)';
+      }
+      ctx.strokeStyle = stroke;
       ctx.lineWidth = strolling ? 2 : 3;
       ctx.setLineDash(strolling ? [5, 5] : []);
       ctx.beginPath();
@@ -349,8 +360,10 @@ export class Renderer {
       return;
     }
 
-    if (structure === 'stockpile') {
+    if (structure === 'stockpile' || structure === 'stockpile_med' || structure === 'stockpile_large') {
       // A warehouse — a plank-walled barn with a gabled roof and a wide door.
+      // Tier-2 (medium / large) variants paint the same silhouette with a
+      // bright pennant on the ridge so the player can tell them apart.
       const ix = px + ts * 0.5;
       ctx.fillStyle = '#bd8e52';
       ctx.fillRect(px + ts * 0.16, py + ts * 0.42, ts * 0.68, ts * 0.42);
@@ -384,10 +397,30 @@ export class Renderer {
       ctx.moveTo(ix, py + ts * 0.54);
       ctx.lineTo(ix, py + ts * 0.84);
       ctx.stroke();
+      if (structure !== 'stockpile') {
+        // Pennant on the gable. Medium = yellow, large = red triangle.
+        const pole_x = ix;
+        const pole_top = py + ts * 0.05;
+        const pole_bot = py + ts * 0.19;
+        ctx.strokeStyle = '#3f2a12';
+        ctx.lineWidth = 1.2;
+        ctx.beginPath();
+        ctx.moveTo(pole_x, pole_top);
+        ctx.lineTo(pole_x, pole_bot);
+        ctx.stroke();
+        ctx.fillStyle = structure === 'stockpile_large' ? '#cc3a2a' : '#e8c34a';
+        ctx.beginPath();
+        ctx.moveTo(pole_x, pole_top);
+        ctx.lineTo(pole_x + ts * 0.18, pole_top + ts * 0.04);
+        ctx.lineTo(pole_x, pole_top + ts * 0.08);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+      }
       return;
     }
 
-    if (structure === 'hut') {
+    if (structure === 'hut' || structure === 'hut_med' || structure === 'hut_large') {
       ctx.fillStyle = '#caa06a'; // body
       ctx.fillRect(px + ts * 0.26, py + ts * 0.44, ts * 0.48, ts * 0.38);
       ctx.lineWidth = 1.4;
@@ -413,6 +446,19 @@ export class Renderer {
       ctx.fillRect(px + ts * 0.6, py + ts * 0.52, ts * 0.1, ts * 0.1);
       ctx.strokeStyle = '#5a3a1e';
       ctx.strokeRect(px + ts * 0.6, py + ts * 0.52, ts * 0.1, ts * 0.1);
+      if (structure !== 'hut') {
+        // Tier-2 huts paint a row of extra lit windows along the eave so
+        // the bigger family hall reads at a glance. Medium = 2, large = 3.
+        const dots = structure === 'hut_large' ? 3 : 2;
+        ctx.fillStyle = '#e8c873';
+        ctx.strokeStyle = '#5a3a1e';
+        for (let i = 0; i < dots; i++) {
+          const wx = px + ts * (0.3 + i * 0.16);
+          const wy = py + ts * 0.7;
+          ctx.fillRect(wx, wy, ts * 0.1, ts * 0.08);
+          ctx.strokeRect(wx, wy, ts * 0.1, ts * 0.08);
+        }
+      }
       return;
     }
 
