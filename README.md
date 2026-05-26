@@ -234,6 +234,20 @@ and surviving the winter.
   warehouse will not auto-queue unless the wood for it is already
   in stock.
 
+### Alpha 23 — multiple colony groups
+
+- A game can now host **1 to 8 colony groups**. Pick the count from
+  the World panel; each group gets its own colour-coded colonists
+  and its own autonomy script (Balanced, Farmer or Scout). Per-group
+  colonist count is settable too.
+- Groups spawn in distinct clusters around the map centre so a
+  4-group game starts with four small camps fanned out around the
+  middle.
+- For this alpha resources (storage, seed stock, codex) remain a
+  single colony-wide pool (matching the spec's "any group can use
+  another's possessions"). Per-group warehouses / ownership flow
+  are queued for α24.
+
 ### Alpha 22 — biomes and a sturdier pathfinder
 
 - **Biomes** — pick one of four starts in the World panel:

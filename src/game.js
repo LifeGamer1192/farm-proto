@@ -56,6 +56,14 @@ import { TaskType, WORK_TYPES, createTask } from './tasks.js';
 import { scatterPlants, PlantKind } from './world.js';
 import { PathCache } from './core/pathfinder.js';
 import { getBiome, DEFAULT_BIOME } from './biomes.js';
+import {
+  createGroup,
+  getScript,
+  GROUP_COLORS,
+  aggregateSeeds,
+  aggregateCodex,
+  aggregateStartingCrops,
+} from './groups.js';
 import { getCrop, cropSuitability, survivalChance, isRipe } from './crops.js';
 import {
   freshGenome,
@@ -166,12 +174,23 @@ export class Game {
 
     this.map = null;
     this.camera = null;
+    // Colony groups (alpha 23). `this.groups` holds the per-group
+    // identity records (name / color / script / starter contribution);
+    // each colonist has a `groupId` pointing back. For this alpha,
+    // resources (storage, seeds, codex) remain colony-wide — the
+    // group identity drives autonomy script + colonist rendering +
+    // starter seed selection. Per-group warehouses + ownership flow
+    // are α24-scoped.
+    this.groups = [];
+    // Saved setup for re-rolls (Regenerate keeps the same group count
+    // and per-group scripts unless the user picks again).
+    this.groupSetup = null;
     this.colonists = [];
     this.animals = [];
-    this.hearths = []; // built hearth positions {x, y}
-    this.stockpiles = []; // built stockpiles: {x, y, items}
-    this.huts = []; // built hut positions {x, y}
-    this.fences = []; // built fence positions {x, y}
+    this.hearths = [];
+    this.stockpiles = [];
+    this.huts = [];
+    this.fences = [];
     // One colony-wide wall plan at a time. Every idle colonist serves the
     // same list of tiles, so the wall ends up a coherent row instead of a
     // scatter of one-tile detours that follow the animal step by step.
@@ -277,12 +296,18 @@ export class Game {
   /**
    * Generate a fresh map, scatter plants, and place colonists and animals.
    * @param {number} seed
-   * @param {?string} [biomeId] one of the BIOME_IDS (alpha 22). Falls
-   *   back to the previous biome (or the default) when omitted.
+   * @param {?string} [biomeId] one of the BIOME_IDS (alpha 22).
+   * @param {?object[]} [groupSetup] alpha 23 — array of per-group
+   *   setup records: `[{ scriptId, colonistCount, name }]`. Length 1-8.
+   *   Omitted → keep the previous setup (or single default group).
    */
-  newMap(seed, biomeId) {
+  newMap(seed, biomeId, groupSetup) {
     if (biomeId) this.biome = getBiome(biomeId);
     if (!this.biome) this.biome = getBiome(DEFAULT_BIOME);
+    if (groupSetup) this.groupSetup = groupSetup;
+    if (!this.groupSetup) {
+      this.groupSetup = [{ scriptId: 'balanced', colonistCount: COLONIST_COUNT }];
+    }
     this.map = generateMap(GRID_COLS, GRID_ROWS, seed, this.biome);
     // Attach a per-frame path cache to the map — colonist.assignTask
     // looks for `map.pathCache` and reuses its results across colonists
@@ -292,13 +317,35 @@ export class Game {
     this.stats = mapStats(this.map);
     this.camera = new Camera(this._viewCols(), this._viewRows(), GRID_COLS, GRID_ROWS);
 
-    const spawns = this._findSpawns(COLONIST_COUNT);
-    this.colonists = spawns.map(
-      (s, i) => new Colonist(s.x, s.y, COLONIST_NAMES[i] || `C${i + 1}`),
-    );
+    // Build per-group records (identity / color / script). For α23 the
+    // resources stay colony-wide (see legacy storage/seeds/codex below).
+    this.groups = this.groupSetup.map((setup, id) => createGroup(id, setup));
+
+    // Spread groups around the map centre — each group gets its own
+    // cluster of spawn tiles. With one group the cluster sits on the
+    // map centre exactly (back-compat).
+    this.colonists = [];
+    const clusters = this._pickGroupClusters(this.groups.length);
+    let totalColonistsSpawned = 0;
+    for (let gid = 0; gid < this.groups.length; gid++) {
+      const group = this.groups[gid];
+      const center = clusters[gid];
+      const want = group.colonistCount;
+      const spawns = this._findSpawnsNear(center.x, center.y, want);
+      for (let i = 0; i < spawns.length; i++) {
+        const s = spawns[i];
+        const name = COLONIST_NAMES[totalColonistsSpawned] ||
+          `${group.name[0]}${i + 1}`;
+        const c = new Colonist(s.x, s.y, name, gid);
+        this.colonists.push(c);
+        group.colonists.push(c);
+        totalColonistsSpawned++;
+      }
+    }
     // Spawn the wild-animal mix on random land tiles (see animalSystem).
     this.animals = asSpawnAnimals(this, this._randomLandTiles(ANIMAL_COUNT));
-    this.camera.centerOn(spawns[0].x + 0.5, spawns[0].y + 0.5);
+    const camAnchor = clusters[0];
+    this.camera.centerOn(camAnchor.x + 0.5, camAnchor.y + 0.5);
 
     this.taskQueue = [];
     this.crops = [];
@@ -309,8 +356,10 @@ export class Game {
     this.fencePlan = null;
     this.fencePlanAt = -Infinity;
     this.storage = this._freshStorage();
-    this.seeds = this._freshSeeds();
-    this.codex = this._freshCodex();
+    // Seed / codex / starting crops are pooled from every group (alpha 23).
+    this.seeds = aggregateSeeds(this.groups);
+    this.codex = aggregateCodex(this.groups);
+    this.startingCrops = aggregateStartingCrops(this.groups);
     this.meals = { eaten: 0, missed: 0 };
     this.cropsLost = 0;
     this.pestsLost = 0;
@@ -333,6 +382,68 @@ export class Game {
     this.clock = 0;
     this._seasonEvent = null;
     this._updateEnvironment();
+  }
+
+  /**
+   * Pick N spawn cluster centres so groups land on different patches
+   * of the map. The first cluster sits on the map centre (back-compat
+   * for the single-group case); subsequent clusters are placed on a
+   * ring around it. Each centre is snapped to the nearest land tile.
+   */
+  _pickGroupClusters(n) {
+    const cx = (this.map.cols / 2) | 0;
+    const cy = (this.map.rows / 2) | 0;
+    if (n <= 1) return [{ x: cx, y: cy }];
+    const out = [];
+    const radius = Math.min(this.map.cols, this.map.rows) * 0.28;
+    for (let i = 0; i < n; i++) {
+      // First slot still at the centre; the rest fan around it.
+      if (i === 0) {
+        out.push(this._snapToLand(cx, cy));
+        continue;
+      }
+      const t = ((i - 1) / Math.max(1, n - 1)) * Math.PI * 2;
+      const x = Math.round(cx + Math.cos(t) * radius);
+      const y = Math.round(cy + Math.sin(t) * radius);
+      out.push(this._snapToLand(x, y));
+    }
+    return out;
+  }
+
+  // Walk a small spiral until we hit a land tile — used to snap a
+  // requested spawn anchor away from water.
+  _snapToLand(x, y) {
+    for (let r = 0; r <= 12; r++) {
+      for (let dy = -r; dy <= r; dy++) {
+        for (let dx = -r; dx <= r; dx++) {
+          if (r > 0 && Math.abs(dx) !== r && Math.abs(dy) !== r) continue;
+          const px = x + dx;
+          const py = y + dy;
+          if (px < 0 || py < 0 || px >= this.map.cols || py >= this.map.rows) continue;
+          if (this.map.tiles[py][px].type === TileType.LAND) return { x: px, y: py };
+        }
+      }
+    }
+    return { x, y };
+  }
+
+  // n land tiles closest to (cx, cy), spiralling outward.
+  _findSpawnsNear(cx, cy, n) {
+    const spawns = [];
+    const maxR = Math.max(this.map.cols, this.map.rows);
+    for (let r = 0; r <= maxR && spawns.length < n; r++) {
+      for (let dy = -r; dy <= r && spawns.length < n; dy++) {
+        for (let dx = -r; dx <= r && spawns.length < n; dx++) {
+          if (Math.abs(dx) !== r && Math.abs(dy) !== r) continue;
+          const x = cx + dx;
+          const y = cy + dy;
+          if (x < 0 || y < 0 || x >= this.map.cols || y >= this.map.rows) continue;
+          if (this.map.tiles[y][x].type === TileType.LAND) spawns.push({ x, y });
+        }
+      }
+    }
+    while (spawns.length < n) spawns.push({ x: cx, y: cy });
+    return spawns;
   }
 
   // The n nearest land tiles to the map center.
@@ -831,7 +942,11 @@ export class Game {
   // lives in src/autonomy.js so future versions can swap it out without
   // touching the rest of the engine. This shim keeps the call site stable.
   _autonomousTask(colonist) {
-    return pickAutonomousTask(this, colonist);
+    // Dispatch by the colonist's group's autonomy script (alpha 23).
+    // Falls back to the legacy balanced script for ungrouped colonists.
+    const g = this.groups[colonist.groupId];
+    const fn = g ? getScript(g.scriptId) : pickAutonomousTask;
+    return fn(this, colonist);
   }
 
   // --- Auto-work helpers ---------------------------------------------------
@@ -1029,6 +1144,7 @@ export class Game {
       tileSize: this.tileSize,
       seasonTint: SEASON_TINT[this.environment.season],
       biomeTint: this.biome?.mapTint || null,
+      groupColors: this.groups.map((g) => g.color),
       clock: this.clock,
       selectedColonist: this.selectedColonist,
       hearthsLit: this.hearthsLit,

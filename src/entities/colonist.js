@@ -91,10 +91,11 @@ const WORK_STATE = {
 };
 
 export class Colonist {
-  constructor(x, y, name) {
+  constructor(x, y, name, groupId = 0) {
     this.x = x;
     this.y = y;
     this.name = name;
+    this.groupId = groupId; // colony group ownership (alpha 23)
     this.path = [];
     this.state = 'idle';
     this.currentTask = null;

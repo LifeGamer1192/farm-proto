@@ -249,8 +249,10 @@ export class Renderer {
     }
 
     // --- colonists ---
+    const groupColors = scene.groupColors || [];
     for (const c of colonists) {
-      this._drawColonist(c, sx(c.x + 0.5), sy(c.y + 0.5), c.name === selectedColonist);
+      const color = groupColors[c.groupId || 0] || null;
+      this._drawColonist(c, sx(c.x + 0.5), sy(c.y + 0.5), c.name === selectedColonist, color);
     }
   }
 
@@ -1272,9 +1274,14 @@ export class Renderer {
 
   // A small top-down figure that faces the way it walks; a progress ring
   // while it works. `selected` marks the colonist work orders go to.
-  _drawColonist(colonist, cx, cy, selected) {
+  _drawColonist(colonist, cx, cy, selected, groupColor) {
     const ctx = this.ctx;
     const r = this.ts * 0.33;
+    // Alpha 23: per-group body palette. Defaults to the amber stand-in
+    // from the original single-colony rendering when no color is set.
+    const bodyLight = groupColor?.fill || '#f3c277';
+    const bodyDark = groupColor?.stroke || '#c47f1e';
+    const outline = groupColor?.stroke || '#3a2606';
 
     // Facing — toward the next path waypoint, else downward.
     let fx = 0;
@@ -1320,14 +1327,14 @@ export class Renderer {
 
     // Body — a rounded torso with a soft top-down highlight.
     const grad = ctx.createRadialGradient(cx - r * 0.3, cy - r * 0.3, r * 0.2, cx, cy, r);
-    grad.addColorStop(0, '#f3c277');
-    grad.addColorStop(1, '#c47f1e');
+    grad.addColorStop(0, bodyLight);
+    grad.addColorStop(1, bodyDark);
     ctx.beginPath();
     ctx.arc(cx, cy, r, 0, Math.PI * 2);
     ctx.fillStyle = grad;
     ctx.fill();
     ctx.lineWidth = 1.6;
-    ctx.strokeStyle = '#3a2606';
+    ctx.strokeStyle = outline;
     ctx.stroke();
 
     // Head — offset toward the facing direction.

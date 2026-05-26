@@ -25,6 +25,7 @@ import {
   STOCKPILE_CAP,
   WOOD_LOW,
 } from './config.js';
+import { registerScript } from './groups.js';
 
 /**
  * Pick the next bit of self-directed work for `colonist`, or `null` if
@@ -174,3 +175,74 @@ export function pickAutonomousTask(game, colonist) {
   }
   return null;
 }
+
+// --- Script variants (alpha 23) -----------------------------------------
+//
+// Each colony group picks an autonomy "script" at setup. The script is
+// the decision function called for every idle colonist in that group.
+// 'balanced' is the default (the function above). 'farmer' shifts the
+// priorities so sowing / tilling beats hunting and fence-building, so
+// a farming-focused group will turn its share of the map into farmland
+// even when a boar is around. 'scout' does the opposite — it leans
+// into hunting and exploration, and only builds infrastructure once
+// the food supply is comfortable.
+
+/** "Farmer" — sow / till / cook before fencing or hunting. */
+export function farmerScript(game, colonist) {
+  // Same chores in the front (harvest / water / weed) — those are
+  // colony-critical regardless of personality.
+  for (const crop of game.crops) {
+    if (isRipe(crop) && !crop.withered && !game._tileClaimed(crop.x, crop.y)) {
+      return createTask(TaskType.HARVEST, crop.x, crop.y);
+    }
+  }
+  // Skip fence-building entirely — let the balanced colonists handle it.
+  if (game.hearthsLit && game.rawFood > 0 && game.storage.meal < MEAL_TARGET) {
+    for (const h of game.hearths) {
+      if (!game._tileClaimed(h.x, h.y)) return createTask(TaskType.COOK, h.x, h.y);
+    }
+  }
+  // Farmer-priority: sow + till BEFORE worrying about hunting / huts.
+  if (game.autoMode) {
+    const sowCrop = game._mostStockedCrop();
+    if (sowCrop) {
+      const sowSpot = game._pickAutoSowSpot(colonist);
+      if (sowSpot) {
+        return createTask(TaskType.SOW, sowSpot.x, sowSpot.y, { cropId: sowCrop });
+      }
+      const tillSpot = game._pickTillSpot(colonist, sowCrop);
+      if (tillSpot) return createTask(TaskType.TILL, tillSpot.x, tillSpot.y);
+    }
+  }
+  // Fall through to the balanced script for everything else (hunting,
+  // tree-chopping, infrastructure, hauling).
+  return pickAutonomousTask(game, colonist);
+}
+
+/** "Scout" — hunt + chop wood early, build last. */
+export function scoutScript(game, colonist) {
+  for (const crop of game.crops) {
+    if (isRipe(crop) && !crop.withered && !game._tileClaimed(crop.x, crop.y)) {
+      return createTask(TaskType.HARVEST, crop.x, crop.y);
+    }
+  }
+  // Hunt is the lead activity — even before food gets low.
+  if (game.autoHunt) {
+    const a = game._animalNear(colonist.tileX, colonist.tileY, AUTO_HUNT_RANGE);
+    if (a && !game._tileClaimed(a.tileX, a.tileY)) {
+      return createTask(TaskType.HUNT, a.tileX, a.tileY, { animalId: a.id });
+    }
+  }
+  // Auto-chop trees aggressively so wood is plentiful.
+  if (game.autoMode) {
+    const tree = game._nearestTree(colonist, AUTO_SEARCH_RANGE);
+    if (tree) return createTask(TaskType.HARVEST, tree.x, tree.y);
+  }
+  // Fall through to balanced for the rest.
+  return pickAutonomousTask(game, colonist);
+}
+
+// Register the three scripts so groups can look them up by id.
+registerScript('balanced', pickAutonomousTask);
+registerScript('farmer', farmerScript);
+registerScript('scout', scoutScript);

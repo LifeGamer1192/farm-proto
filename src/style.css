@@ -387,6 +387,46 @@ button.primary:hover {
   font-size: 0.95em;
 }
 
+/* Group setup widgets (alpha 23). */
+.group-slider {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.85rem;
+  margin: 4px 0 6px;
+}
+.group-slider input[type='range'] { flex: 1; }
+.group-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0 0 8px;
+}
+.group-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.78rem;
+  padding: 3px 5px;
+  border: 1px solid #2a3f2b;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.02);
+}
+.group-chip {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 1px solid rgba(0, 0, 0, 0.3);
+}
+.group-row select,
+.group-row input[type='number'] {
+  font-size: 0.78rem;
+  padding: 1px 3px;
+}
+.group-row input[type='number'] { width: 3em; }
+.group-colcount { display: inline-flex; gap: 4px; align-items: center; }
+
 .task-log {
   list-style: none;
   margin: 6px 0 0;

@@ -30,6 +30,7 @@ import {
 import { tempGrowthFactor, sunGrowthFactor } from './season.js';
 import { t, setLang, getLang } from './i18n.js';
 import { Game, STOCKPILE_ITEMS } from './game.js';
+import { GROUP_COLORS } from './groups.js';
 import { TIPS, randomTipIndex } from './tips.js';
 
 const canvas = document.getElementById('map');
@@ -37,6 +38,7 @@ const game = new Game(canvas);
 
 // Exposed for debugging and headless checks; harmless in production.
 window.game = game;
+window.GROUP_COLORS = GROUP_COLORS;
 window.crops = { CROP_TYPES, CROP_IDS, CATEGORIES, getCrop, cropsOfCategory };
 
 const $ = (id) => document.getElementById(id);
@@ -521,12 +523,91 @@ function applyI18n() {
 
 // --- map lifecycle --------------------------------------------------------
 
-function newMap(seed, biomeId) {
-  game.newMap(seed, biomeId);
+function newMap(seed, biomeId, groupSetup) {
+  game.newMap(seed, biomeId, groupSetup);
   seedInput.value = String(game.seed);
   rebuildCropPicker();
   updateBiomePicker();
+  updateGroupSetup();
   refreshPanels();
+}
+
+// --- Group setup (alpha 23) --------------------------------------------
+//
+// One-shot setup at start (or on Regenerate). Picks the number of
+// colony groups, and for each group, picks an autonomy script. The
+// number-of-groups slider lives in the World panel; the per-group
+// editor is rendered into its sibling list. State persists across
+// Regenerate clicks until the user explicitly changes it.
+const groupCountEl = $('group-count');
+const groupCountLabelEl = $('group-count-label');
+const groupListEl = $('group-list');
+const AUTONOMY_OPTIONS = ['balanced', 'farmer', 'scout'];
+
+function readGroupSetup() {
+  // Pull current values from the DOM into a setup array.
+  if (!groupListEl) return null;
+  const rows = [...groupListEl.querySelectorAll('.group-row')];
+  return rows.map((row, i) => ({
+    name: `Colony ${String.fromCharCode(65 + i)}`,
+    scriptId: row.querySelector('select.group-script')?.value || 'balanced',
+    colonistCount: Math.max(1, Math.min(20,
+      parseInt(row.querySelector('input.group-colonists')?.value, 10) || 4)),
+  }));
+}
+
+function renderGroupRows(n) {
+  if (!groupListEl) return;
+  // Carry forward whatever the user had selected, only adding rows.
+  const prev = readGroupSetup() || [];
+  const setup = [];
+  for (let i = 0; i < n; i++) {
+    setup.push(prev[i] || { scriptId: 'balanced', colonistCount: 4 });
+  }
+  // Group color is decided by the game; the row shows it as a chip so
+  // the user knows what color each colony will be.
+  groupListEl.innerHTML = setup.map((s, i) => {
+    const color = window.GROUP_COLORS?.[i] || null;
+    const chip = color ? `<span class="group-chip" style="background:${color.fill}"></span>` : '';
+    const opts = AUTONOMY_OPTIONS.map(
+      (id) => `<option value="${id}"${id === s.scriptId ? ' selected' : ''}>${t('script.' + id)}</option>`,
+    ).join('');
+    return (
+      `<div class="group-row">` +
+      `${chip}<strong>${t('group.label', { letter: String.fromCharCode(65 + i) })}</strong> ` +
+      `<select class="group-script" data-group="${i}">${opts}</select>` +
+      `<label class="group-colcount">${t('group.colonists')} ` +
+      `<input class="group-colonists" type="number" min="1" max="20" value="${s.colonistCount}"></label>` +
+      `</div>`
+    );
+  }).join('');
+}
+
+function updateGroupSetup() {
+  if (!groupCountEl) return;
+  // After newMap: sync slider + rows to whatever the game currently has.
+  const n = game.groups.length || 1;
+  groupCountEl.value = n;
+  if (groupCountLabelEl) groupCountLabelEl.textContent = n;
+  renderGroupRows(n);
+}
+
+if (groupCountEl) {
+  groupCountEl.addEventListener('input', () => {
+    const n = Math.max(1, Math.min(8, parseInt(groupCountEl.value, 10) || 1));
+    if (groupCountLabelEl) groupCountLabelEl.textContent = n;
+    renderGroupRows(n);
+  });
+}
+
+const applyGroupsBtn = $('apply-groups');
+if (applyGroupsBtn) {
+  applyGroupsBtn.addEventListener('click', () => {
+    const setup = readGroupSetup();
+    if (!setup || setup.length === 0) return;
+    newMap(randomSeed(), null, setup);
+    showToast(t('hint.groupsApplied', { n: setup.length }));
+  });
 }
 
 // --- Biome picker (alpha 22) ---------------------------------------------
