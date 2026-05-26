@@ -441,6 +441,15 @@ export function farmerScript(game, colonist) {
       return createTask(TaskType.HARVEST, crop.x, crop.y);
     }
   }
+  // K1: clear withered own crops so the field doesn't fill up with dead
+  // plots the farmer's sow loop can't reuse.
+  for (const crop of game.crops) {
+    if (crop.ownerId != null && crop.ownerId !== gid) continue;
+    if (colonist.isUnreachable?.(crop.x, crop.y, game.clock)) continue;
+    if (crop.withered && !game._tileClaimed(crop.x, crop.y)) {
+      return createTask(TaskType.WEED, crop.x, crop.y);
+    }
+  }
   // H4: build essential infra before settling into the sow / till loop.
   const infra = urgentInfraBuild(game, colonist);
   if (infra) return infra;
@@ -482,6 +491,14 @@ export function scoutScript(game, colonist) {
     if (colonist.isUnreachable?.(crop.x, crop.y, game.clock)) continue;
     if (isRipe(crop) && !crop.withered && !game._tileClaimed(crop.x, crop.y)) {
       return createTask(TaskType.HARVEST, crop.x, crop.y);
+    }
+  }
+  // K1: clear withered own crops even on a hunt-focused colony.
+  for (const crop of game.crops) {
+    if (crop.ownerId != null && crop.ownerId !== gid) continue;
+    if (colonist.isUnreachable?.(crop.x, crop.y, game.clock)) continue;
+    if (crop.withered && !game._tileClaimed(crop.x, crop.y)) {
+      return createTask(TaskType.WEED, crop.x, crop.y);
     }
   }
   // H4: scout never auto-builds in its specialty (hunt/chop always finds
@@ -594,6 +611,16 @@ export function farmerBreedScript(game, colonist) {
     if (colonist.isUnreachable?.(crop.x, crop.y, game.clock)) continue;
     if (isRipe(crop) && !crop.withered && !game._tileClaimed(crop.x, crop.y)) {
       return createTask(TaskType.HARVEST, crop.x, crop.y);
+    }
+  }
+  // K1: withered own crops get cleared before sowing the next batch —
+  // the breeding programme is what feeds the rect plan, so dead plots
+  // blocking sow spots have to go first.
+  for (const crop of game.crops) {
+    if (crop.ownerId != null && crop.ownerId !== gid) continue;
+    if (colonist.isUnreachable?.(crop.x, crop.y, game.clock)) continue;
+    if (crop.withered && !game._tileClaimed(crop.x, crop.y)) {
+      return createTask(TaskType.WEED, crop.x, crop.y);
     }
   }
   // Critical warehouse pivot — even a breeding-focused colony can't keep
