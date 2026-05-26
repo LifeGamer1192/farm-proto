@@ -109,13 +109,50 @@ export function storageAdd(game, groupId, key, n) {
   if (g && g.storage) g.storage[key] = (g.storage[key] || 0) + n;
 }
 
-/** Counterpart to storageAdd — decrement from colony + group store. */
+/**
+ * Counterpart to storageAdd — decrement from the actual owner's
+ * per-group store and the colony aggregate in lock-step. M1: the old
+ * version always tried to deduct from `groupId`, which clamps at 0
+ * when that group doesn't actually own the food (e.g. Colony B eating
+ * a meal Colony A made). Colony aggregate dropped, sum-of-groups did
+ * not, and "Food stored" drifted away from the truth over time.
+ *
+ * The new version:
+ *   1. picks `groupId` as the deductee if that group has enough,
+ *   2. else picks the largest holder,
+ *   3. else falls back to colony-aggregate only (last resort).
+ * Either way, sum(groups[key]) === game.storage[key] stays an
+ * invariant for the whole run.
+ */
 export function storageSub(game, groupId, key, n) {
   if (!Number.isFinite(n) || n === 0) return;
+  let remaining = n;
+  const groups = game.groups || [];
+  // 1. Try the suggested group first when it has stock.
+  const suggested = groupId != null ? groups[groupId] : null;
+  const takeFrom = (g, take) => {
+    const have = g.storage?.[key] || 0;
+    const amt = Math.min(have, take);
+    if (amt <= 0) return 0;
+    g.storage[key] = have - amt;
+    return amt;
+  };
+  if (suggested?.storage) remaining -= takeFrom(suggested, remaining);
+  // 2. Otherwise iterate other groups by largest holder.
+  while (remaining > 0) {
+    let best = null; let bestN = 0;
+    for (const g of groups) {
+      if (g === suggested) continue;
+      const have = g.storage?.[key] || 0;
+      if (have > bestN) { bestN = have; best = g; }
+    }
+    if (!best) break;
+    remaining -= takeFrom(best, remaining);
+  }
+  // 3. Always decrement the colony aggregate by what was actually
+  //    requested — if no group had stock, this only drops the aggregate
+  //    (and the invariant is preserved because sum-of-groups was 0 too).
   game.storage[key] = Math.max(0, (game.storage[key] || 0) - n);
-  if (groupId == null) return;
-  const g = game.groups?.[groupId];
-  if (g && g.storage) g.storage[key] = Math.max(0, (g.storage[key] || 0) - n);
 }
 
 /**
@@ -249,32 +286,6 @@ function moodFromEating(itemId, quality) {
 }
 
 /**
- * Find which group actually holds `n` of `key` on hand. Prefer the
- * eater's own group, then any other group. Returns the group object or
- * null. L2: the previous feed() always deducted from `eater.storage`
- * which clamps at 0, so eating Colony A's meal from Colony B's mouth
- * left A's per-group view unchanged. With this helper we pick the
- * actual owner and decrement their books, so per-group food counters
- * stay honest.
- */
-function pickStorageOwner(game, eaterGid, key) {
-  const groups = game.groups || [];
-  const eater = groups[eaterGid];
-  if (eater?.storage && (eater.storage[key] || 0) > 0) return eater;
-  for (const g of groups) {
-    if (g.id === eaterGid) continue;
-    if ((g.storage?.[key] || 0) > 0) return g;
-  }
-  return null;
-}
-
-/** Per-group + colony aggregate decrement, with the *lender* group billed. */
-function deductFood(game, ownerGroup, key, n) {
-  if (ownerGroup?.storage) ownerGroup.storage[key] = Math.max(0, (ownerGroup.storage[key] || 0) - n);
-  game.storage[key] = Math.max(0, (game.storage[key] || 0) - n);
-}
-
-/**
  * Feed a colonist (called when an EAT task ends). Priority:
  *  1. cooked meal / dish on hand (big mood lift, quality scales it)
  *  2. raw edible food on hand
@@ -313,9 +324,8 @@ export function feed(game, colonist) {
       return (game.storage.quality?.[b] || 0.5) - (game.storage.quality?.[a] || 0.5);
     });
     const pick = cookedIds[0];
-    const owner = pickStorageOwner(game, groupId, pick);
     const quality = game.storage.quality?.[pick] || 0.5;
-    deductFood(game, owner, pick, 1);
+    storageSub(game, groupId, pick, 1);
     colonist.hunger = 0;
     colonist.mood = Math.min(1, colonist.mood + moodFromEating(pick, quality));
     bumpEaten();
@@ -324,9 +334,8 @@ export function feed(game, colonist) {
   }
   const onHand = largestEdibleRaw(game.storage, FOOD_TYPES);
   if (onHand) {
-    const owner = pickStorageOwner(game, groupId, onHand);
     const quality = game.storage.quality?.[onHand] || 0.5;
-    deductFood(game, owner, onHand, 1);
+    storageSub(game, groupId, onHand, 1);
     colonist.hunger = 0;
     colonist.mood = Math.min(1, colonist.mood + moodFromEating(onHand, quality));
     bumpEaten();
