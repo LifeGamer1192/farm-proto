@@ -46,17 +46,36 @@ export function maybeBirth(game) {
   if (game.huts.length < game.colonists.length) return;
   if (totalFood(game) < game.colonists.length * BIRTH_FOOD_PER_HEAD) return;
   if (Math.random() >= BIRTH_CHANCE) return;
+  // Pick the group that has the fewest colonists (so growth is fair) —
+  // ties broken by lowest id. The baby joins that group, spawning at
+  // one of its huts if any, else next to one of its existing members.
+  let parentGroup = null;
+  if (game.groups && game.groups.length > 0) {
+    for (const grp of game.groups) {
+      if (!parentGroup || grp.colonists.length < parentGroup.colonists.length) {
+        parentGroup = grp;
+      }
+    }
+  }
   let pos;
   if (game.huts.length > 0) {
     pos = game.huts[Math.floor(Math.random() * game.huts.length)];
+  } else if (parentGroup && parentGroup.colonists.length > 0) {
+    const c = parentGroup.colonists[0];
+    pos = { x: c.tileX, y: c.tileY };
   } else {
     const c = game.colonists[0];
     pos = { x: c.tileX, y: c.tileY };
   }
-  const name = BIRTH_NAMES[game._birthCounter % BIRTH_NAMES.length];
+  // Per-group letter prefix keeps names unique across groups (alpha 23 fix).
+  const letter = parentGroup ? String.fromCharCode(65 + parentGroup.id) : 'X';
+  const baseName = BIRTH_NAMES[game._birthCounter % BIRTH_NAMES.length];
+  const name = parentGroup ? `${baseName}·${letter}` : baseName;
   game._birthCounter += 1;
-  const baby = new Colonist(pos.x, pos.y, name);
+  const gid = parentGroup ? parentGroup.id : 0;
+  const baby = new Colonist(pos.x, pos.y, name, gid);
   game.colonists.push(baby);
+  if (parentGroup) parentGroup.colonists.push(baby);
   game._birthEvent = name;
   game._pushLog({
     icon: '👶',

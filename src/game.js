@@ -326,20 +326,25 @@ export class Game {
     // map centre exactly (back-compat).
     this.colonists = [];
     const clusters = this._pickGroupClusters(this.groups.length);
-    let totalColonistsSpawned = 0;
     for (let gid = 0; gid < this.groups.length; gid++) {
       const group = this.groups[gid];
       const center = clusters[gid];
       const want = group.colonistCount;
       const spawns = this._findSpawnsNear(center.x, center.y, want);
+      // Names: first group uses the hand-picked roster (Ada/Bo/Cy/Dot)
+      // for back-compat; later groups always use a unique per-group
+      // letter prefix so names never collide across groups (the second
+      // colonist of group 2 is "C2-2", not the same "C2" as group 1).
+      const letter = String.fromCharCode(65 + gid);
       for (let i = 0; i < spawns.length; i++) {
         const s = spawns[i];
-        const name = COLONIST_NAMES[totalColonistsSpawned] ||
-          `${group.name[0]}${i + 1}`;
+        const fallback = gid === 0 ? `A${i + 1}` : `${letter}${i + 1}`;
+        const name = gid === 0
+          ? (COLONIST_NAMES[i] || fallback)
+          : fallback;
         const c = new Colonist(s.x, s.y, name, gid);
         this.colonists.push(c);
         group.colonists.push(c);
-        totalColonistsSpawned++;
       }
     }
     // Spawn the wild-animal mix on random land tiles (see animalSystem).
@@ -1048,6 +1053,11 @@ export class Game {
         }
       }
       this.colonists = this.colonists.filter((c) => !c.dead);
+      // Mirror the cull into each group's roster so per-group counts
+      // (births / panels) stay consistent.
+      for (const grp of this.groups) {
+        grp.colonists = grp.colonists.filter((c) => !c.dead);
+      }
       if (this.colonists.length === 0) this.over = true;
     }
     if (this.taskQueue.length === 0 && this.busyColonists === 0) {
