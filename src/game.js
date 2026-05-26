@@ -7,6 +7,7 @@
 // colonists; colonists can hunt them. If every colonist falls, the colony
 // is lost.
 
+// Constants directly used by game.js (the rest live in their system modules).
 import {
   GRID_COLS,
   GRID_ROWS,
@@ -24,72 +25,39 @@ import {
   WATER_DURATION,
   WATER_GROWTH_BONUS,
   EAT_THRESHOLD,
-  EAT_RETRY,
   ANIMAL_COUNT,
-  ANIMAL_SPAWN_MIX,
-  ANIMAL_DAMAGE,
-  ANIMAL_ATTACK_INTERVAL,
-  ANIMAL_ATTACK_RANGE,
   HUNT_RANGE,
   MEAT_YIELD,
   WILDGREENS_SEED_CHANCE,
   HUT_RANGE,
   HUT_MOOD_BONUS,
-  PEST_INTERVAL,
-  PEST_BITE,
   WILD_WOOD_YIELD,
-  WOOD_BURN_RATE,
   HEARTH_RANGE,
   COLD_THRESHOLD,
   COLD_DAMAGE,
   COLD_MOOD_DROP,
   COOK_BATCH,
-  MEAL_MOOD_BONUS,
-  AUTO_HUNT_RANGE,
   HUNT_FOOD_PER_HEAD,
-  MEAL_TARGET,
-  SEED_START_COUNT,
-  SEEDS_PER_HARVEST,
   STOCKPILE_CAP,
   ON_HAND_CAP,
-  ON_HAND_LOW,
   HAUL_BATCH,
-  AUTO_SEARCH_RANGE,
-  FENCE_TRIGGER_RANGE,
-  FENCE_AUTO_CAP,
-  FENCE_PLAN_LENGTH,
-  FENCE_REPLAN_COOLDOWN,
   BUILD_COSTS,
-  STARTING_WOOD,
   TREE_WOOD_YIELD,
   STUMP_REGROW_TIME,
-  TREE_GROW_TIME,
-  WOOD_LOW,
-  BIRTH_NAMES,
-  BIRTH_FOOD_PER_HEAD,
-  BIRTH_CHANCE,
-  POPULATION_CAP,
-  TRADER_WOOD_GIFT,
-  TRADER_SEED_PACKETS,
-  TRADER_SEED_COUNT,
   INJURY_THRESHOLD,
   SLEEP_DEFICIT_THRESHOLD,
-  VICTORY_YEAR,
 } from './config.js';
 import { generateMap, mapStats } from './map/mapGenerator.js';
 import { TileType } from './map/tile.js';
 import { Camera } from './render/camera.js';
 import { Renderer } from './render/renderer.js';
 import { Colonist } from './entities/colonist.js';
-import { Animal } from './entities/animal.js';
 import { TaskType, WORK_TYPES, createTask } from './tasks.js';
 import { scatterPlants, PlantKind } from './world.js';
-import { getCrop, cropSuitability, survivalChance, isRipe, CROP_IDS } from './crops.js';
+import { getCrop, cropSuitability, survivalChance, isRipe } from './crops.js';
 import {
   freshGenome,
-  crossGenomes,
   qualityRank,
-  genomeQuality,
   survivalGeneBonus,
   yieldMult,
   vigorMult,
@@ -106,20 +74,77 @@ import {
 import { t } from './i18n.js';
 import { pickAutonomousTask } from './autonomy.js';
 
-// Raw food — what pests can spoil and what a cook task turns into meals.
-// 'forage' is the catch-all for wild gatherings; every crop becomes its own
-// food entry; 'meat' comes from hunting.
-const FOOD_TYPES = ['forage', ...CROP_IDS, 'meat'];
-// Everything a stockpile can hold: raw food plus cooked meals.
-export const STOCKPILE_ITEMS = [...FOOD_TYPES, 'meal'];
+// --- System modules (refactor split out of this file) --------------------
+//
+// game.js owns the simulation skeleton — frame loop, task queue, entity
+// arrays, the assign / apply loop — but the policy and economy logic of
+// each subsystem lives in its own module under src/systems/. The class
+// methods here are thin shims so existing callers (autonomy.js, tests,
+// main.js) keep working unchanged.
+import {
+  FOOD_TYPES,
+  STOCKPILE_ITEMS as _STOCKPILE_ITEMS,
+  nutritionOf,
+  freshStorage,
+  freshStockpileItems,
+  largestFood,
+  rawFood as fsRawFood,
+  onHandFood as fsOnHandFood,
+  totalFood as fsTotalFood,
+  totalItem as fsTotalItem,
+  stockpileFood as fsStockpileFood,
+  stockpileAt as fsStockpileAt,
+  nearestStockpile as fsNearestStockpile,
+  feed as fsFeed,
+} from './systems/foodSystem.js';
+import {
+  freshSeeds as csFreshSeeds,
+  freshCodex as csFreshCodex,
+  recordCodex as csRecordCodex,
+  seedCount as csSeedCount,
+  bestSeed as csBestSeed,
+  bestSeedRank as csBestSeedRank,
+  pendingSows as csPendingSows,
+  canSow as csCanSow,
+  takeSeed as csTakeSeed,
+  addSeed as csAddSeed,
+  gatherSeeds as csGatherSeeds,
+  mostStockedCrop as csMostStockedCrop,
+  pickAutoSowSpot as csPickAutoSowSpot,
+  pickTillSpot as csPickTillSpot,
+  touchesTilled as csTouchesTilled,
+} from './systems/cropSystem.js';
+import {
+  onSeasonChange as esOnSeasonChange,
+  updatePests as esUpdatePests,
+  pestStrike as esPestStrike,
+  updateFuel as esUpdateFuel,
+  updateForest as esUpdateForest,
+  checkVictory as esCheckVictory,
+} from './systems/eventSystem.js';
+import {
+  isFreeLand as bsIsFreeLand,
+  tileClaimed as bsTileClaimed,
+  findFreeLandNear as bsFindFreeLandNear,
+  pendingBuilds as bsPendingBuilds,
+  totalFences as bsTotalFences,
+  reservedBuildWood as bsReservedBuildWood,
+  canAffordBuild as bsCanAffordBuild,
+  wantsAutoWarehouse as bsWantsAutoWarehouse,
+  nextFenceTile as bsNextFenceTile,
+  planFenceLine as bsPlanFenceLine,
+} from './systems/buildingSystem.js';
+import {
+  spawnAnimals as asSpawnAnimals,
+  animalNear as asAnimalNear,
+  nearestAnimalToColony as asNearestAnimalToColony,
+  nearestTree as asNearestTree,
+  updateAnimals as asUpdateAnimals,
+} from './systems/animalSystem.js';
 
-// Built-in nutrition for the non-crop foods.
-const NUTRITION = { forage: 0.2, meat: 0.55, meal: 0.6 };
-function nutritionOf(foodId) {
-  if (NUTRITION[foodId] !== undefined) return NUTRITION[foodId];
-  const crop = getCrop(foodId);
-  return crop ? crop.nutrition : 0.3;
-}
+// Re-exported so main.js (and any other UI consumer) keeps a stable
+// import path even though the data now lives in foodSystem.
+export const STOCKPILE_ITEMS = _STOCKPILE_ITEMS;
 
 export class Game {
   constructor(canvas) {
@@ -200,228 +225,35 @@ export class Game {
   get speed() {
     return SPEED_LEVELS[this.speedIndex];
   }
-  // Raw, uncooked food on hand — what pests can spoil, what a cook task uses.
-  get rawFood() {
-    return FOOD_TYPES.reduce((sum, ft) => sum + this.storage[ft], 0);
-  }
-  // All food the colony holds on hand (raw plus cooked meals).
-  get onHandFood() {
-    return this.rawFood + this.storage.meal;
-  }
-  // Every food unit the colony owns — on hand and tucked away in stockpiles.
-  get totalFood() {
-    let n = this.onHandFood;
-    for (const sp of this.stockpiles) n += this.stockpileFood(sp);
-    return n;
-  }
+  // --- Food / stockpile delegates (foodSystem) ---------------------------
+  get rawFood()    { return fsRawFood(this); }
+  get onHandFood() { return fsOnHandFood(this); }
+  get totalFood()  { return fsTotalFood(this); }
+  _freshStorage()  { return freshStorage(); }
+  _freshStockpileItems() { return freshStockpileItems(); }
+  _largestFood(store, items) { return largestFood(store, items); }
+  totalItem(it)            { return fsTotalItem(this, it); }
+  stockpileAt(x, y)        { return fsStockpileAt(this, x, y); }
+  stockpileFood(sp)        { return fsStockpileFood(sp); }
+  _nearestStockpile(c, p)  { return fsNearestStockpile(this, c, p); }
+  _feed(colonist)          { return fsFeed(this, colonist); }
 
-  // A fresh, empty store: every crop, plus the catch-all foods and meals.
-  // The colony starts with a small stockpile of wood so the first hut and
-  // hearth can go up without an immediate chopping detour.
-  _freshStorage() {
-    const s = { wood: STARTING_WOOD, meal: 0 };
-    for (const id of FOOD_TYPES) s[id] = 0;
-    return s;
-  }
-
-  // Pick the colony's starting seed assortment — eight random crops, with
-  // at least one grain so there is always a staple to plant.
-  _pickStartingCrops() {
-    const want = 8;
-    // Wild-greens is meant to be DISCOVERED via foraging in alpha 20 —
-    // it never seeds the colony's starter assortment.
-    const eligible = CROP_IDS.filter((id) => id !== 'wildgreens');
-    const grains = eligible.filter((id) => getCrop(id).category === 'grain');
-    const others = eligible.filter((id) => getCrop(id).category !== 'grain');
-    const pick = (pool) => pool.splice(Math.floor(Math.random() * pool.length), 1)[0];
-    const chosen = [pick([...grains])];
-    const pool = [...grains, ...others].filter((id) => !chosen.includes(id));
-    while (chosen.length < want && pool.length) chosen.push(pick(pool));
-    return chosen;
-  }
-
-  // A fresh seed stock: SEED_START_COUNT seeds for each of the (random)
-  // starting crops; every other crop starts empty.
-  _freshSeeds() {
-    const stock = {};
-    this.startingCrops = this._pickStartingCrops();
-    for (const id of CROP_IDS) {
-      const list = [];
-      if (this.startingCrops.includes(id)) {
-        for (let i = 0; i < SEED_START_COUNT; i++) list.push({ genome: freshGenome() });
-      }
-      stock[id] = list;
-    }
-    return stock;
-  }
-
-  // A fresh codex: per crop the origin strain (a starting seed) and the best
-  // variety bred so far (begins as the best of the starting seeds). Crops
-  // not in the starting assortment have no codex entry yet.
-  _freshCodex() {
-    const codex = {};
-    for (const id of CROP_IDS) {
-      const list = this.seeds[id];
-      if (!list || list.length === 0) continue;
-      let best = list[0].genome;
-      for (const s of list) {
-        if (genomeQuality(s.genome) > genomeQuality(best)) best = s.genome;
-      }
-      codex[id] = { origin: list[0].genome, best };
-    }
-    return codex;
-  }
-
-  // Note in the codex if this genome is the best variety of its crop yet.
-  _recordCodex(cropId, genome) {
-    const c = this.codex[cropId];
-    if (c && genomeQuality(genome) > genomeQuality(c.best)) c.best = genome;
-  }
-
-  _freshStockpileItems() {
-    const items = {};
-    for (const it of STOCKPILE_ITEMS) items[it] = 0;
-    return items;
-  }
-
-  /** Number of seeds of a crop in stock. */
-  seedCount(cropId) {
-    const s = this.seeds[cropId];
-    return s ? s.length : 0;
-  }
-
-  // The best (highest-quality) seed of a crop in stock, or null.
-  bestSeed(cropId) {
-    const s = this.seeds[cropId];
-    if (!s || s.length === 0) return null;
-    let best = s[0];
-    for (const seed of s) {
-      if (genomeQuality(seed.genome) > genomeQuality(best.genome)) best = seed;
-    }
-    return best;
-  }
-
-  /** Quality rank ★ of the best seed of a crop, or 0 if there are none. */
-  bestSeedRank(cropId) {
-    const seed = this.bestSeed(cropId);
-    return seed ? qualityRank(seed.genome) : 0;
-  }
-
-  // Sow tasks for a crop already lined up — queued plus in colonists' hands.
-  _pendingSows(cropId) {
-    let n = 0;
-    for (const task of this.taskQueue) {
-      if (task.type === TaskType.SOW && task.cropId === cropId) n++;
-    }
-    for (const c of this.colonists) {
-      const ct = c.currentTask;
-      if (ct && ct.type === TaskType.SOW && ct.cropId === cropId) n++;
-    }
-    return n;
-  }
-
-  /** True if a seed of this crop can still be spared for another sow order. */
-  canSow(cropId) {
-    return this.seedCount(cropId) > this._pendingSows(cropId);
-  }
-
-  // Remove and return the best-quality seed of a crop (null if there are none).
-  _takeSeed(cropId) {
-    const seed = this.bestSeed(cropId);
-    if (!seed) return null;
-    const list = this.seeds[cropId];
-    list.splice(list.indexOf(seed), 1);
-    return seed;
-  }
-
-  // Add a bred seed to a crop's stock and record it in the codex.
-  _addSeed(cropId, genome) {
-    const s = this.seeds[cropId];
-    if (s) {
-      s.push({ genome });
-      this._recordCodex(cropId, genome);
-    }
-  }
-
-  // The same-crop plant pollinating `plant` from an adjacent tile, if any —
-  // the second parent for the seeds a harvest breeds.
-  _pollenSource(plant) {
-    const mates = [];
-    for (let dy = -1; dy <= 1; dy++) {
-      const row = this.map.tiles[plant.y + dy];
-      if (!row) continue;
-      for (let dx = -1; dx <= 1; dx++) {
-        if (dx === 0 && dy === 0) continue;
-        const p = row[plant.x + dx] && row[plant.x + dx].plant;
-        if (p && p.kind === PlantKind.CROP && !p.withered && p.cropId === plant.cropId) {
-          mates.push(p);
-        }
-      }
-    }
-    return mates.length ? mates[(Math.random() * mates.length) | 0] : null;
-  }
-
-  // Breed SEEDS_PER_HARVEST seeds from a harvested crop, crossing it with an
-  // adjacent same-crop plant (or self-pollinating). Returns the seed count.
-  _gatherSeeds(plant) {
-    const mate = this._pollenSource(plant);
-    const otherGenome = mate ? mate.genome : plant.genome;
-    for (let i = 0; i < SEEDS_PER_HARVEST; i++) {
-      const child = crossGenomes(plant.genome, otherGenome);
-      this._addSeed(plant.cropId, child.genome);
-      if (child.legendary) {
-        this._pushLog({
-          icon: '✨',
-          text: t('log.mutation', { crop: t('crop.' + plant.cropId) }),
-          cls: 'log-meal',
-        });
-      }
-    }
-    return SEEDS_PER_HARVEST;
-  }
-
-  /** The stockpile built on a tile, or null. */
-  stockpileAt(x, y) {
-    return this.stockpiles.find((sp) => sp.x === x && sp.y === y) || null;
-  }
-
-  /** Food units held in one stockpile. */
-  stockpileFood(sp) {
-    let n = 0;
-    for (const it of STOCKPILE_ITEMS) n += sp.items[it];
-    return n;
-  }
-
-  // The stockpile nearest a colonist that satisfies `pred`, or null.
-  _nearestStockpile(colonist, pred) {
-    let best = null;
-    let bestD = Infinity;
-    for (const sp of this.stockpiles) {
-      if (!pred(sp)) continue;
-      const d = Math.hypot(sp.x - colonist.tileX, sp.y - colonist.tileY);
-      if (d < bestD) {
-        bestD = d;
-        best = sp;
-      }
-    }
-    return best;
-  }
-
-  // The on-hand / stockpile food item with the largest count (or null).
-  _largestFood(store, items) {
-    let pick = null;
-    for (const it of items) {
-      if (store[it] > 0 && (pick === null || store[it] > store[pick])) pick = it;
-    }
-    return pick;
-  }
-
-  /** Total of an item the colony owns — on hand plus every stockpile. */
-  totalItem(it) {
-    let n = this.storage[it] || 0;
-    for (const sp of this.stockpiles) n += sp.items[it] || 0;
-    return n;
-  }
+  // --- Seed / codex / sow delegates (cropSystem) -------------------------
+  _freshSeeds()                  { return csFreshSeeds(this); }
+  _freshCodex()                  { return csFreshCodex(this); }
+  _recordCodex(cropId, genome)   { return csRecordCodex(this, cropId, genome); }
+  seedCount(cropId)              { return csSeedCount(this, cropId); }
+  bestSeed(cropId)               { return csBestSeed(this, cropId); }
+  bestSeedRank(cropId)           { return csBestSeedRank(this, cropId); }
+  _pendingSows(cropId)           { return csPendingSows(this, cropId); }
+  canSow(cropId)                 { return csCanSow(this, cropId); }
+  _takeSeed(cropId)              { return csTakeSeed(this, cropId); }
+  _addSeed(cropId, genome)       { return csAddSeed(this, cropId, genome); }
+  _gatherSeeds(plant)            { return csGatherSeeds(this, plant); }
+  _mostStockedCrop()             { return csMostStockedCrop(this); }
+  _pickAutoSowSpot(colonist)     { return csPickAutoSowSpot(this, colonist); }
+  _pickTillSpot(colonist, crop)  { return csPickTillSpot(this, colonist, crop); }
+  _touchesTilled(x, y)           { return csTouchesTilled(this, x, y); }
   // A hearth warms and cooks only while the colony has firewood to burn.
   get hearthsLit() {
     return this.hearths.length > 0 && this.storage.wood > 0;
@@ -451,17 +283,8 @@ export class Game {
     this.colonists = spawns.map(
       (s, i) => new Colonist(s.x, s.y, COLONIST_NAMES[i] || `C${i + 1}`),
     );
-    // Spawn a mix of species at fixed proportions. Build a species list
-    // matching ANIMAL_COUNT, shuffle, then place each on a random tile.
-    const specList = [];
-    for (const { species, n } of ANIMAL_SPAWN_MIX) {
-      for (let i = 0; i < n; i++) specList.push(species);
-    }
-    while (specList.length < ANIMAL_COUNT) specList.push('boar');
-    specList.length = ANIMAL_COUNT;
-    this.animals = this._randomLandTiles(ANIMAL_COUNT).map(
-      (s, i) => new Animal(s.x, s.y, i + 1, specList[i]),
-    );
+    // Spawn the wild-animal mix on random land tiles (see animalSystem).
+    this.animals = asSpawnAnimals(this, this._randomLandTiles(ANIMAL_COUNT));
     this.camera.centerOn(spawns[0].x + 0.5, spawns[0].y + 0.5);
 
     this.taskQueue = [];
@@ -602,19 +425,10 @@ export class Game {
     return this.paused;
   }
 
-  // The animal nearest to a tile, within `range` tiles (or null).
-  _animalNear(x, y, range) {
-    let best = range;
-    let found = null;
-    for (const a of this.animals) {
-      const d = Math.hypot(a.x - x, a.y - y);
-      if (d <= best) {
-        best = d;
-        found = a;
-      }
-    }
-    return found;
-  }
+  // --- Animal delegates (animalSystem) -----------------------------------
+  _animalNear(x, y, range)        { return asAnimalNear(this, x, y, range); }
+  _nearestAnimalToColony(range)   { return asNearestAnimalToColony(this, range); }
+  _nearestTree(colonist, range)   { return asNearestTree(this, colonist, range); }
 
   /**
    * Queue a work task at a tile, if it makes sense there.
@@ -1052,296 +866,16 @@ export class Game {
   // --- Auto-work helpers ---------------------------------------------------
 
   // Count BUILD tasks of `structure` already queued or in colonists' hands.
-  _pendingBuilds(structure) {
-    let n = 0;
-    for (const t of this.taskQueue) {
-      if (t.type === TaskType.BUILD && t.structure === structure) n++;
-    }
-    for (const c of this.colonists) {
-      const ct = c.currentTask;
-      if (ct && ct.type === TaskType.BUILD && ct.structure === structure) n++;
-    }
-    return n;
-  }
-
-  // The crop with the largest seed stock (used to choose what to auto-sow).
-  _mostStockedCrop() {
-    let best = null;
-    let bestN = 0;
-    for (const id of CROP_IDS) {
-      const n = this.seedCount(id);
-      if (n > bestN) {
-        bestN = n;
-        best = id;
-      }
-    }
-    return best;
-  }
-
-  // True if (x, y) is plain land — buildable, plantable, free of anything.
-  _isFreeLand(x, y) {
-    const row = this.map.tiles[y];
-    const t = row && row[x];
-    if (!t) return false;
-    return t.type === TileType.LAND && !t.tilled && !t.plant && !t.structure;
-  }
-
-  // Spiral out from a colonist looking for an unclaimed plain land tile —
-  // a spot for auto-built huts and hearths.
-  _findFreeLandNear(colonist) {
-    const cx = colonist.tileX;
-    const cy = colonist.tileY;
-    for (let r = 1; r <= AUTO_SEARCH_RANGE; r++) {
-      for (let dy = -r; dy <= r; dy++) {
-        for (let dx = -r; dx <= r; dx++) {
-          if (Math.abs(dx) !== r && Math.abs(dy) !== r) continue;
-          const x = cx + dx;
-          const y = cy + dy;
-          if (!this._isFreeLand(x, y)) continue;
-          if (this._tileClaimed(x, y)) continue;
-          return { x, y };
-        }
-      }
-    }
-    return null;
-  }
-
-  // The closest empty tilled tile within range, ready to be sown.
-  _pickAutoSowSpot(colonist) {
-    const cx = colonist.tileX;
-    const cy = colonist.tileY;
-    let best = null;
-    let bestD = Infinity;
-    for (let dy = -AUTO_SEARCH_RANGE; dy <= AUTO_SEARCH_RANGE; dy++) {
-      const y = cy + dy;
-      const row = this.map.tiles[y];
-      if (!row) continue;
-      for (let dx = -AUTO_SEARCH_RANGE; dx <= AUTO_SEARCH_RANGE; dx++) {
-        const x = cx + dx;
-        const t = row[x];
-        if (!t || !t.tilled || t.plant || t.structure) continue;
-        if (this._tileClaimed(x, y)) continue;
-        const d = Math.abs(dx) + Math.abs(dy);
-        if (d < bestD) {
-          bestD = d;
-          best = { x, y };
-        }
-      }
-    }
-    return best;
-  }
-
-  // A spot to till next. Scores tiles by crop suitability and favours ones
-  // adjacent to existing tilled tiles, so the farm grows as a cluster.
-  _pickTillSpot(colonist, cropId) {
-    const cropDef = getCrop(cropId);
-    const cx = colonist.tileX;
-    const cy = colonist.tileY;
-    let best = null;
-    let bestScore = -1;
-    for (let dy = -AUTO_SEARCH_RANGE; dy <= AUTO_SEARCH_RANGE; dy++) {
-      const y = cy + dy;
-      const row = this.map.tiles[y];
-      if (!row) continue;
-      for (let dx = -AUTO_SEARCH_RANGE; dx <= AUTO_SEARCH_RANGE; dx++) {
-        const x = cx + dx;
-        const t = row[x];
-        if (!t || t.type !== TileType.LAND) continue;
-        if (t.tilled || t.plant || t.structure) continue;
-        if (this._tileClaimed(x, y)) continue;
-        let score = cropSuitability(cropDef, t);
-        if (this._touchesTilled(x, y)) score += 0.5;
-        if (score > bestScore) {
-          bestScore = score;
-          best = { x, y };
-        }
-      }
-    }
-    return best;
-  }
-
-  _touchesTilled(x, y) {
-    for (const [ax, ay] of [
-      [1, 0],
-      [-1, 0],
-      [0, 1],
-      [0, -1],
-    ]) {
-      const row = this.map.tiles[y + ay];
-      const nb = row && row[x + ax];
-      if (nb && nb.tilled) return true;
-    }
-    return false;
-  }
-
-  // Total fence tiles the colony has, built plus pending.
-  _totalFences() {
-    return this.fences.length + this._pendingBuilds('fence');
-  }
-
-  // Wood the colony has earmarked for queued or in-progress builds.
-  _reservedBuildWood() {
-    let n = 0;
-    for (const task of this.taskQueue) {
-      if (task.type === TaskType.BUILD) n += BUILD_COSTS[task.structure] || 0;
-    }
-    for (const c of this.colonists) {
-      const t = c.currentTask;
-      if (t && t.type === TaskType.BUILD) n += BUILD_COSTS[t.structure] || 0;
-    }
-    return n;
-  }
-
-  // True if the colony can afford a new build of `structure` without
-  // putting itself into debt against already-reserved wood.
-  _canAffordBuild(structure) {
-    const cost = BUILD_COSTS[structure] || 0;
-    return this.storage.wood - this._reservedBuildWood() >= cost;
-  }
-
-  // Whether to auto-build another warehouse. Always wants at least one;
-  // builds more if the existing ones are nearly full, up to a hard cap.
-  _wantsAutoWarehouse() {
-    const AUTO_WAREHOUSE_CAP = 4;
-    const total = this.stockpiles.length + this._pendingBuilds('stockpile');
-    if (total >= AUTO_WAREHOUSE_CAP) return false;
-    if (this.stockpiles.length === 0) return true;
-    let used = 0;
-    for (const sp of this.stockpiles) used += this.stockpileFood(sp);
-    const cap = this.stockpiles.length * STOCKPILE_CAP;
-    return used / cap > 0.85;
-  }
-
-  // The nearest fully-grown tree within `range` of a colonist that no one
-  // is already chopping. Used by the wood-low auto-chop branch.
-  _nearestTree(colonist, range) {
-    const cx = colonist.tileX;
-    const cy = colonist.tileY;
-    let best = null;
-    let bestD = range;
-    const r = Math.ceil(range);
-    for (let dy = -r; dy <= r; dy++) {
-      for (let dx = -r; dx <= r; dx++) {
-        const x = cx + dx;
-        const y = cy + dy;
-        const row = this.map.tiles[y];
-        const tl = row && row[x];
-        if (!tl || !tl.plant) continue;
-        if (tl.plant.kind !== PlantKind.TREE) continue;
-        if (tl.plant.growth < 0.5) continue; // saplings aren't worth chopping
-        if (this._tileClaimed(x, y)) continue;
-        const d = Math.hypot(dx, dy);
-        if (d < bestD) {
-          bestD = d;
-          best = { x, y };
-        }
-      }
-    }
-    return best;
-  }
-
-  // The nearest animal within `range` of any colonist, or null.
-  // Used by the fence planner — only HOSTILE animals (boar, wolf) count
-  // as a threat. A grazing deer shouldn't make the colony build walls.
-  _nearestAnimalToColony(range) {
-    let best = null;
-    let bestD = range;
-    for (const c of this.colonists) {
-      for (const a of this.animals) {
-        if (!a.hostile) continue;
-        const d = Math.hypot(a.x - c.x, a.y - c.y);
-        if (d < bestD) {
-          bestD = d;
-          best = a;
-        }
-      }
-    }
-    return best;
-  }
-
-  // The colony picks ONE wall row, then every colonist serves that plan
-  // until it is built (or its tiles become invalid). Without a shared plan
-  // each colonist would chase the moving animal independently, scattering
-  // single fence tiles across several rows.
-  _nextFenceTile(colonist) {
-    // Drop plan tiles that have already been built or are no longer free.
-    if (this.fencePlan) {
-      this.fencePlan = this.fencePlan.filter((p) => this._isFreeLand(p.x, p.y));
-      if (this.fencePlan.length === 0) this.fencePlan = null;
-    }
-    // An active plan exists — return its closest unclaimed tile so the
-    // nearest colonist takes the next piece of the wall.
-    if (this.fencePlan) {
-      let best = null;
-      let bestD = Infinity;
-      for (const p of this.fencePlan) {
-        if (this._tileClaimed(p.x, p.y)) continue;
-        const d = Math.hypot(p.x - colonist.tileX, p.y - colonist.tileY);
-        if (d < bestD) {
-          bestD = d;
-          best = p;
-        }
-      }
-      return best;
-    }
-    // No active plan — hold off on planning a new one until the cooldown
-    // has elapsed, so a boar wandering one tile per second does not goad
-    // the colony into ratcheting up a fresh wall every step.
-    if (this.clock - this.fencePlanAt < FENCE_REPLAN_COOLDOWN) return null;
-    if (this._totalFences() >= FENCE_AUTO_CAP) return null;
-    this._planFenceLine();
-    return this.fencePlan ? this._nextFenceTile(colonist) : null;
-  }
-
-  // Lay out one wall row of up to FENCE_PLAN_LENGTH tiles, sitting between
-  // the colony's centroid and the nearest animal and running perpendicular
-  // to the threat direction. Stores the plan on `this.fencePlan` and
-  // stamps `fencePlanAt` so the cooldown starts even if no plan was made.
-  _planFenceLine() {
-    const animal = this._nearestAnimalToColony(FENCE_TRIGGER_RANGE);
-    this.fencePlanAt = this.clock;
-    if (!animal) return;
-    // Use huts if any are up; otherwise the colonists themselves.
-    const anchors = this.huts.length > 0
-      ? this.huts
-      : this.colonists.map((c) => ({ x: c.tileX, y: c.tileY }));
-    if (anchors.length === 0) return;
-    let cx = 0;
-    let cy = 0;
-    for (const a of anchors) {
-      cx += a.x;
-      cy += a.y;
-    }
-    cx /= anchors.length;
-    cy /= anchors.length;
-    let dx = animal.x - cx;
-    let dy = animal.y - cy;
-    const len = Math.hypot(dx, dy) || 1;
-    dx /= len;
-    dy /= len;
-    // Wall sits a few tiles from the colony, not on top of it and not on
-    // the animal — somewhere in between, closer to the colony's side.
-    const distFromColony = Math.min(Math.max(len * 0.55, 2), len - 1);
-    const midX = cx + dx * distFromColony;
-    const midY = cy + dy * distFromColony;
-    // Perpendicular vector for the wall direction.
-    const px = -dy;
-    const py = dx;
-    const budget = Math.min(FENCE_PLAN_LENGTH, FENCE_AUTO_CAP - this._totalFences());
-    if (budget < 2) return;
-    const plan = [];
-    const half = (budget - 1) / 2;
-    const lo = -Math.floor(half);
-    const hi = Math.ceil(half);
-    for (let i = lo; i <= hi; i++) {
-      const x = Math.round(midX + px * i);
-      const y = Math.round(midY + py * i);
-      if (!this._isFreeLand(x, y)) continue;
-      if (plan.some((p) => p.x === x && p.y === y)) continue;
-      plan.push({ x, y });
-    }
-    if (plan.length >= 2) this.fencePlan = plan;
-  }
+  // --- Building delegates (buildingSystem) -------------------------------
+  _pendingBuilds(structure)  { return bsPendingBuilds(this, structure); }
+  _isFreeLand(x, y)          { return bsIsFreeLand(this, x, y); }
+  _findFreeLandNear(c)       { return bsFindFreeLandNear(this, c); }
+  _totalFences()             { return bsTotalFences(this); }
+  _reservedBuildWood()       { return bsReservedBuildWood(this); }
+  _canAffordBuild(structure) { return bsCanAffordBuild(this, structure); }
+  _wantsAutoWarehouse()      { return bsWantsAutoWarehouse(this); }
+  _nextFenceTile(c)          { return bsNextFenceTile(this, c); }
+  _planFenceLine()           { return bsPlanFenceLine(this); }
 
   // True if a colonist is already working a tile, or a task is queued for it.
   // A 'done' task still counts as claimed until its effect has been applied
@@ -1435,33 +969,7 @@ export class Game {
     }
   }
 
-  // Animals stroll, and the hostile ones (boar, wolf) harry a nearby
-  // colonist on a cooldown. Peaceful species (deer, rabbit) just wander.
-  _updateAnimals(dt) {
-    for (const a of this.animals) {
-      a.update(dt, this.map);
-      if (!a.hostile) continue;
-      if (a.attackCooldown > 0) continue;
-      let victim = null;
-      let best = ANIMAL_ATTACK_RANGE;
-      for (const c of this.colonists) {
-        const d = Math.hypot(c.x - a.x, c.y - a.y);
-        if (d < best) {
-          best = d;
-          victim = c;
-        }
-      }
-      if (victim) {
-        victim.hurt(ANIMAL_DAMAGE);
-        a.attackCooldown = ANIMAL_ATTACK_INTERVAL;
-        this._pushLog({
-          icon: '⚔',
-          text: t('log.attacked', { animal: t('animal.' + a.species), name: victim.name }),
-          cls: 'log-warn',
-        });
-      }
-    }
-  }
+  _updateAnimals(dt) { return asUpdateAnimals(this, dt); }
 
   // Advance every growing crop; doomed ones wither before they ripen. A
   // withered crop stays on its tile (as dead growth) until a colonist
@@ -1493,136 +1001,12 @@ export class Game {
     }
   }
 
-  // Pests gnaw at the food store on a timer; stockpile tiles soften the loss.
-  _updatePests(dt) {
-    this.pestTimer += dt;
-    if (this.pestTimer < PEST_INTERVAL) return;
-    this.pestTimer -= PEST_INTERVAL;
-    this._pestStrike();
-  }
-
-  _pestStrike() {
-    // Pests gnaw on-hand raw food only — cooked meals, and anything tucked
-    // away in a stockpile, are kept safe.
-    if (this.rawFood <= 0) return;
-    const loss = Math.ceil(this.rawFood * PEST_BITE);
-    let spoiled = 0;
-    // Spoil one unit at a time, always from the largest store.
-    while (spoiled < loss) {
-      const pick = this._largestFood(this.storage, FOOD_TYPES);
-      if (pick === null) break;
-      this.storage[pick] -= 1;
-      spoiled += 1;
-    }
-    if (spoiled === 0) return;
-    this.pestsLost += spoiled;
-    this._pestEvent = true;
-    this._pushLog({ icon: '🐛', text: t('log.pests', { n: spoiled }), cls: 'log-fail' });
-  }
-
-  // Lit hearths burn through the colony's firewood over time.
-  _updateFuel(dt) {
-    if (this.hearths.length === 0 || this.storage.wood <= 0) return;
-    this.storage.wood = Math.max(0, this.storage.wood - this.hearths.length * WOOD_BURN_RATE * dt);
-  }
-
-  // Seasonal events — kept here so the birth roll and the winter trader
-  // both fire at exactly the same beat as the season change banner.
-  _onSeasonChange(season) {
-    if (season === 'winter') this._runWinterTrader();
-    this._maybeBirth();
-  }
-
-  // A new colonist joins when the colony has more than enough food on
-  // hand, at least one hut per existing colonist (so there's somewhere
-  // to live), and the population cap has not been reached. The chance is
-  // rolled per season change — about one season in three when the
-  // conditions hold — so a thriving colony grows over years, not minutes.
-  _maybeBirth() {
-    if (this.colonists.length === 0) return;
-    if (this.colonists.length >= POPULATION_CAP) return;
-    if (this.huts.length < this.colonists.length) return;
-    if (this.totalFood < this.colonists.length * BIRTH_FOOD_PER_HEAD) return;
-    if (Math.random() >= BIRTH_CHANCE) return;
-    // Spawn at a random hut, or a fallback near the first colonist.
-    let pos;
-    if (this.huts.length > 0) {
-      pos = this.huts[Math.floor(Math.random() * this.huts.length)];
-    } else {
-      const c = this.colonists[0];
-      pos = { x: c.tileX, y: c.tileY };
-    }
-    const name = BIRTH_NAMES[this._birthCounter % BIRTH_NAMES.length];
-    this._birthCounter += 1;
-    const baby = new Colonist(pos.x, pos.y, name);
-    this.colonists.push(baby);
-    this._birthEvent = name;
-    this._pushLog({
-      icon: '👶',
-      text: t('log.birth', { name }),
-      cls: 'log-meal',
-    });
-  }
-
-  // A travelling trader visits the colony once per winter, leaving a
-  // small gift of wood and a couple of seed packets so cold-season play
-  // is a little easier. The visit is silent — no UI yet, just a toast
-  // and a log line — but the gift is real, sitting in storage.
-  _runWinterTrader() {
-    const year = this.environment.year;
-    if (year <= this._traderYear) return;
-    this._traderYear = year;
-    this.storage.wood += TRADER_WOOD_GIFT;
-    // Pick a couple of crops to gift seeds for — preferring varieties the
-    // colony already grows so the gift is useful, but any crop will do.
-    const pool = (this.startingCrops && this.startingCrops.length > 0)
-      ? [...this.startingCrops]
-      : CROP_IDS.slice();
-    const gifts = [];
-    while (gifts.length < TRADER_SEED_PACKETS && pool.length > 0) {
-      const idx = Math.floor(Math.random() * pool.length);
-      const id = pool.splice(idx, 1)[0];
-      const list = this.seeds[id] || (this.seeds[id] = []);
-      for (let i = 0; i < TRADER_SEED_COUNT; i++) {
-        list.push({ genome: freshGenome() });
-      }
-      // Codex needs a row for any crop the colony now holds seed of.
-      if (!this.codex[id]) {
-        this.codex[id] = { origin: list[0].genome, best: list[0].genome };
-      }
-      gifts.push(id);
-    }
-    this._traderEvent = { wood: TRADER_WOOD_GIFT, seeds: gifts };
-    this._pushLog({
-      icon: '🛒',
-      text: t('log.trader', {
-        wood: TRADER_WOOD_GIFT,
-        crops: gifts.map((id) => t('crop.' + id)).join(', '),
-      }),
-      cls: 'log-meal',
-    });
-  }
-
-  // Trees grow back from stumps after a cooldown, and young trees grow
-  // toward full size over the next stretch. Iterating over every tile is
-  // cheap at the prototype map size and keeps the bookkeeping simple.
-  _updateForest(dt) {
-    const rows = this.map.tiles;
-    for (let y = 0; y < rows.length; y++) {
-      const row = rows[y];
-      for (let x = 0; x < row.length; x++) {
-        const p = row[x].plant;
-        if (!p) continue;
-        if (p.kind === PlantKind.STUMP) {
-          if (this.clock >= p.regrowAt) {
-            row[x].plant = { kind: PlantKind.TREE, growth: 0 };
-          }
-        } else if (p.kind === PlantKind.TREE && p.growth < 1) {
-          p.growth = Math.min(1, p.growth + dt / TREE_GROW_TIME);
-        }
-      }
-    }
-  }
+  // --- Event delegates (eventSystem) -------------------------------------
+  _updatePests(dt)        { return esUpdatePests(this, dt); }
+  _pestStrike()           { return esPestStrike(this); }
+  _updateFuel(dt)         { return esUpdateFuel(this, dt); }
+  _updateForest(dt)       { return esUpdateForest(this, dt); }
+  _onSeasonChange(season) { return esOnSeasonChange(this, season); }
 
   _panVector() {
     let dx = this.panDir.x;
@@ -1655,11 +1039,8 @@ export class Game {
     this._updateAnimals(simDt);
     this._growCrops(simDt);
     this._updatePests(simDt);
-    // Surviving a full year is the colony's first goal — but play goes on.
-    if (!this.won && !this.over && this.environment.year >= VICTORY_YEAR && this.colonists.length > 0) {
-      this.won = true;
-      this._winEvent = true;
-    }
+    // Surviving the three-year goal lights the celebration overlay once.
+    esCheckVictory(this);
   }
 
   render() {
