@@ -36,6 +36,11 @@ import {
 
 const clamp01 = (v) => (v < 0 ? 0 : v > 1 ? 1 : v);
 
+// How long an unreachable-tile memo stays valid (sim-seconds). After this
+// the cache forgets and the colonist may retry — covers the case where a
+// fence got knocked down or new land was tilled.
+const UNREACHABLE_TTL = 30;
+
 // Seconds of "work" each task type spends once the colonist has arrived.
 const WORK_PHASE = {
   [TaskType.MOVE]: 0,
@@ -119,6 +124,30 @@ export class Colonist {
       strength: startSkill(),
       building: startSkill(),
     };
+
+    // α26 followup (E2): a short-term memo of tiles this colonist failed
+    // to path to. Autonomy and target-picking helpers skip cached tiles
+    // so a single unreachable target (e.g. the other colony's farm cut
+    // off by water) can't trap the colonist in an idle loop. Entries
+    // expire after UNREACHABLE_TTL sim-seconds, so a fence removal or
+    // a fresh tree won't stay blocked forever.
+    this._unreachable = new Map();
+  }
+
+  /** Mark (x, y) as unreachable for this colonist as of `clock`. */
+  markUnreachable(x, y, clock) {
+    this._unreachable.set(`${x},${y}`, clock);
+  }
+
+  /** True if (x, y) was marked unreachable within the last TTL window. */
+  isUnreachable(x, y, clock) {
+    const t = this._unreachable.get(`${x},${y}`);
+    if (t == null) return false;
+    if (clock - t > UNREACHABLE_TTL) {
+      this._unreachable.delete(`${x},${y}`);
+      return false;
+    }
+    return true;
   }
 
   /** Multiplier for a given skill: 1× at xp=0, MAX_SKILL_MULT× at xp=1. */

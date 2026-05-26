@@ -588,7 +588,7 @@ export class Game {
   }
 
   // --- Animal delegates (animalSystem) -----------------------------------
-  _animalNear(x, y, range)        { return asAnimalNear(this, x, y, range); }
+  _animalNear(x, y, range, c)     { return asAnimalNear(this, x, y, range, c); }
   _nearestAnimalToColony(range)   { return asNearestAnimalToColony(this, range); }
   _nearestTree(colonist, range)   { return asNearestTree(this, colonist, range); }
 
@@ -791,6 +791,9 @@ export class Game {
         const suitability = cropSuitability(cropDef, tile);
         const bonus = (tile.tilled ? TILL_SURVIVAL_BONUS : 0) + survivalGeneBonus(seed.genome);
         const doomed = Math.random() >= survivalChance(suitability, bonus);
+        // E3: tag the new crop with the sower's group so other-group
+        // colonists don't auto-harvest / water / weed it (which would
+        // drag them across the map and into idle loops).
         const crop = {
           kind: PlantKind.CROP,
           cropId: task.cropId,
@@ -803,6 +806,7 @@ export class Game {
           witherAt: doomed ? 0.3 + Math.random() * 0.5 : 1,
           withered: false,
           wateredUntil: 0,
+          ownerId: colonist?.groupId,
         };
         tile.plant = crop;
         this.crops.push(crop);
@@ -811,6 +815,9 @@ export class Game {
       }
     } else if (task.type === TaskType.TILL) {
       tile.tilled = true;
+      // E3: stamp the tile with the tiller's group so adjacency bonuses
+      // and auto-sow only see "their own" farmland.
+      tile.tilledBy = colonist?.groupId;
       task.outcome = 'tilled';
     } else if (task.type === TaskType.WATER) {
       const p = tile.plant;
@@ -1014,20 +1021,22 @@ export class Game {
   }
 
   /**
-   * D4: pick the closest hut for `colonist` to sleep in. Preference order:
-   *   1. a hut owned by the colonist's own group
-   *   2. any hut
-   * Returns null when the colony has no huts at all (sleep falls back to
-   * the colonist's current tile, matching the legacy behaviour).
+   * D4 / E2: pick the closest hut for `colonist` to sleep in. Preference
+   * order: own-group hut → any hut. Huts the colonist has recently
+   * failed to reach are skipped so a single unreachable bed can't trap
+   * them on the way home. Returns null when no hut is usable; the
+   * caller (E1) then falls through to BUILD-a-hut.
    */
   _nearestHut(colonist) {
     if (!this.huts || this.huts.length === 0) return null;
     const gid = colonist.groupId;
+    const clock = this.clock;
     let bestOwn = null;
     let bestOwnD = Infinity;
     let bestAny = null;
     let bestAnyD = Infinity;
     for (const h of this.huts) {
+      if (colonist.isUnreachable?.(h.x, h.y, clock)) continue;
       const d = Math.hypot(h.x - colonist.tileX, h.y - colonist.tileY);
       if (d < bestAnyD) { bestAnyD = d; bestAny = h; }
       if (h.ownerId === gid && d < bestOwnD) { bestOwnD = d; bestOwn = h; }
@@ -1058,14 +1067,26 @@ export class Game {
       if (hut) return createTask(TaskType.REST, hut.x, hut.y);
       return createTask(TaskType.REST, colonist.tileX, colonist.tileY);
     }
-    // D4: a sleep-deprived colonist walks back to a hut — even a long
-    // trek across the map — to actually rest in bed. The trigger is
-    // SLEEP_DEFICIT_THRESHOLD (not the old × 0.6 fraction) so the
-    // routing kicks in earlier, before the colonist collapses on the
-    // farm. Without any hut, fall back to sleeping where they stand.
+    // D4 / E1: a sleep-deprived colonist walks back to a hut — even a
+    // long trek across the map — to actually rest in bed. If every hut
+    // is unreachable, escalate: build a new one (own group's land);
+    // if the colony can't afford it, chop the nearest tree to gather
+    // wood. Only after all three fall through do we sleep on the spot.
     if (colonist.sleep !== undefined && colonist.sleep < SLEEP_DEFICIT_THRESHOLD) {
       const hut = this._nearestHut(colonist);
       if (hut) return createTask(TaskType.SLEEP, hut.x, hut.y);
+      // No usable hut — escalate. Try BUILD a hut variant the colony
+      // can afford, on land near the colonist's own-group anchor.
+      for (const variant of ['hut', 'hut_med', 'hut_large']) {
+        if (!this._canAffordBuild(variant)) continue;
+        const spot = this._findFreeLandNear(colonist) || this._findFreeLandColonyWide?.(colonist);
+        if (spot) {
+          return createTask(TaskType.BUILD, spot.x, spot.y, { structure: variant });
+        }
+      }
+      // Can't afford any hut variant — chop a tree to unblock the cost.
+      const tree = this._nearestTree(colonist, 12);
+      if (tree) return createTask(TaskType.HARVEST, tree.x, tree.y);
       return createTask(TaskType.SLEEP, colonist.tileX, colonist.tileY);
     }
     // A content colonist works; a miserable one may slack off instead.
@@ -1112,7 +1133,7 @@ export class Game {
   _pendingBuilds(structure)  { return bsPendingBuilds(this, structure); }
   _isFreeLand(x, y)          { return bsIsFreeLand(this, x, y); }
   _findFreeLandNear(c)       { return bsFindFreeLandNear(this, c); }
-  _findFreeLandColonyWide(r) { return bsFindFreeLandColonyWide(this, r); }
+  _findFreeLandColonyWide(c, r) { return bsFindFreeLandColonyWide(this, c, r); }
   _totalFences()             { return bsTotalFences(this); }
   _reservedBuildWood()       { return bsReservedBuildWood(this); }
   _canAffordBuild(structure) { return bsCanAffordBuild(this, structure); }
@@ -1168,6 +1189,13 @@ export class Game {
       if (!c.currentTask) {
         c.assignTask(this._assignColonist(c), this.map);
         if (c.currentTask && c.currentTask.status === 'failed') {
+          // E2: an unreachable target shouldn't be picked again on the
+          // very next tick — memoize it on the colonist so the autonomy
+          // scan looks past it. Other failure modes (occupied / noPlant
+          // / noWood) settle themselves next frame as the world updates.
+          if (c.currentTask.outcome === 'unreachable') {
+            c.markUnreachable(c.currentTask.x, c.currentTask.y, this.clock);
+          }
           this._logWorkTask(c.currentTask);
           c.currentTask = null;
         }

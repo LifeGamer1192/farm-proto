@@ -43,28 +43,31 @@ export function tileClaimed(game, x, y) {
 
 /**
  * Spiral out from a colonist looking for an unclaimed plain land tile —
- * a spot for auto-built huts and hearths.
+ * a spot for auto-built huts and hearths. E3: the spiral now starts at
+ * the colonist's group spawnAnchor (or its own-group buildings) so a
+ * colonist who wandered into another colony still builds near home.
  */
 export function findFreeLandNear(game, colonist) {
-  const cx = colonist.tileX;
-  const cy = colonist.tileY;
-  return _spiralFreeLand(game, cx, cy, AUTO_SEARCH_RANGE);
+  const center = groupAnchor(game, colonist) || { x: colonist.tileX, y: colonist.tileY };
+  return _spiralFreeLand(game, Math.round(center.x), Math.round(center.y), AUTO_SEARCH_RANGE, colonist);
 }
 
 /**
  * α26: wider spiral used by the warehouse expansion fallback. When the
  * colonist is buried in farmland and AUTO_SEARCH_RANGE can't find a
  * buildable tile, the autonomy script falls back to this — searches from
- * the colony centroid (huts → stockpiles → colonist average) outward to
- * `range` tiles. Returns null only if the entire ring is genuinely full.
+ * the colonist's own-group centroid outward to `range` tiles, so each
+ * colony grows its own warehouse cluster instead of crowding into a
+ * shared one. Returns null only if the entire ring is genuinely full.
  */
-export function findFreeLandColonyWide(game, range = AUTO_SEARCH_RANGE * 4) {
-  const center = colonyCenter(game);
+export function findFreeLandColonyWide(game, colonist, range = AUTO_SEARCH_RANGE * 4) {
+  const center = groupAnchor(game, colonist);
   if (!center) return null;
-  return _spiralFreeLand(game, Math.round(center.x), Math.round(center.y), range);
+  return _spiralFreeLand(game, Math.round(center.x), Math.round(center.y), range, colonist);
 }
 
-function _spiralFreeLand(game, cx, cy, maxR) {
+function _spiralFreeLand(game, cx, cy, maxR, colonist) {
+  const clock = game.clock || 0;
   for (let r = 1; r <= maxR; r++) {
     for (let dy = -r; dy <= r; dy++) {
       for (let dx = -r; dx <= r; dx++) {
@@ -73,6 +76,7 @@ function _spiralFreeLand(game, cx, cy, maxR) {
         const y = cy + dy;
         if (!isFreeLand(game, x, y)) continue;
         if (tileClaimed(game, x, y)) continue;
+        if (colonist?.isUnreachable?.(x, y, clock)) continue;
         return { x, y };
       }
     }
@@ -80,7 +84,41 @@ function _spiralFreeLand(game, cx, cy, maxR) {
   return null;
 }
 
-/** Centroid of the colony — huts first, else stockpiles, else colonists. */
+/**
+ * Centroid of one colony group — own-group huts > stockpiles > colonists
+ * > spawnAnchor. Used so each colony's auto-builds cluster around its
+ * own footprint instead of the colony-wide soup.
+ */
+export function groupAnchor(game, colonist) {
+  if (!colonist) return null;
+  const gid = colonist.groupId;
+  const grp = game.groups?.[gid];
+  const huts = game.huts.filter((h) => h.ownerId === gid);
+  const piles = game.stockpiles.filter((s) => s.ownerId === gid);
+  const anchors = huts.length > 0
+    ? huts
+    : (piles.length > 0
+        ? piles
+        : (grp?.colonists?.length
+            ? grp.colonists.map((c) => ({ x: c.tileX, y: c.tileY }))
+            : null));
+  if (anchors) {
+    let sx = 0;
+    let sy = 0;
+    for (const a of anchors) {
+      sx += a.x;
+      sy += a.y;
+    }
+    return { x: sx / anchors.length, y: sy / anchors.length };
+  }
+  return grp?.spawnAnchor || null;
+}
+
+/**
+ * Centroid of the colony — huts first, else stockpiles, else colonists.
+ * Kept for callers that genuinely want a colony-wide centroid (no current
+ * users after the E3 refactor, but exported for tests / future use).
+ */
 export function colonyCenter(game) {
   const anchors = game.huts.length > 0
     ? game.huts

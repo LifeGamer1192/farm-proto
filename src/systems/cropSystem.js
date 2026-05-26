@@ -257,8 +257,15 @@ export function gatherSeeds(game, plant, groupId) {
         cls: 'log-meal',
         groupId,
       });
-      // D1: surface mutations as a one-shot big-popup event.
-      game._mutationEvent = { crop: plant.cropId, groupId };
+      // D1/F3: surface mutations as a one-shot big-popup event. Carry
+      // the mutated genome + the parent's so the popup can render a
+      // codex-style gene panel comparing the two strains.
+      game._mutationEvent = {
+        crop: plant.cropId,
+        groupId,
+        genome: child.genome,
+        parent: plant.genome,
+      };
     }
   }
   return SEEDS_PER_HARVEST;
@@ -282,10 +289,30 @@ export function mostStockedCrop(game, groupId) {
   return best;
 }
 
-/** The closest empty tilled tile within range, ready to be sown. */
+/**
+ * Pick the colonist's "home" search anchor for auto-tasks: the group's
+ * spawn cluster centre when available, otherwise the colonist's own
+ * tile (legacy fallback). Used so an idle colonist who wandered into
+ * another colony's territory still tills / sows / builds near its
+ * own farm cluster instead of merging into the neighbouring colony.
+ */
+function homeAnchor(game, colonist) {
+  const grp = game.groups?.[colonist.groupId];
+  if (grp?.spawnAnchor) return grp.spawnAnchor;
+  return { x: colonist.tileX, y: colonist.tileY };
+}
+
+/**
+ * The closest empty tilled tile within range, ready to be sown.
+ * E3: searches from the colonist's group anchor and only accepts tiles
+ * tilled by that same group. With this filter, a Colony B sower never
+ * targets a Colony A bed and the two colonies' farms stay separate.
+ */
 export function pickAutoSowSpot(game, colonist) {
-  const cx = colonist.tileX;
-  const cy = colonist.tileY;
+  const anchor = homeAnchor(game, colonist);
+  const cx = anchor.x;
+  const cy = anchor.y;
+  const gid = colonist.groupId;
   let best = null;
   let bestD = Infinity;
   for (let dy = -AUTO_SEARCH_RANGE; dy <= AUTO_SEARCH_RANGE; dy++) {
@@ -296,7 +323,9 @@ export function pickAutoSowSpot(game, colonist) {
       const x = cx + dx;
       const t = row[x];
       if (!t || !t.tilled || t.plant || t.structure) continue;
+      if (t.tilledBy != null && t.tilledBy !== gid) continue;
       if (game._tileClaimed(x, y)) continue;
+      if (colonist.isUnreachable?.(x, y, game.clock)) continue;
       const d = Math.abs(dx) + Math.abs(dy);
       if (d < bestD) {
         bestD = d;
@@ -310,11 +339,16 @@ export function pickAutoSowSpot(game, colonist) {
 /**
  * A spot to till next. Scores tiles by crop suitability and favours ones
  * adjacent to existing tilled tiles, so the farm grows as a cluster.
+ * E3: searches from the group anchor and the adjacency bonus only
+ * counts tiles owned by the same group, so colonies grow their own
+ * farms instead of bridging together.
  */
 export function pickTillSpot(game, colonist, cropId) {
   const cropDef = getCrop(cropId);
-  const cx = colonist.tileX;
-  const cy = colonist.tileY;
+  const anchor = homeAnchor(game, colonist);
+  const cx = anchor.x;
+  const cy = anchor.y;
+  const gid = colonist.groupId;
   let best = null;
   let bestScore = -1;
   for (let dy = -AUTO_SEARCH_RANGE; dy <= AUTO_SEARCH_RANGE; dy++) {
@@ -327,8 +361,9 @@ export function pickTillSpot(game, colonist, cropId) {
       if (!t || t.type !== TileType.LAND) continue;
       if (t.tilled || t.plant || t.structure) continue;
       if (game._tileClaimed(x, y)) continue;
+      if (colonist.isUnreachable?.(x, y, game.clock)) continue;
       let score = cropSuitability(cropDef, t);
-      if (touchesTilled(game, x, y)) score += 0.5;
+      if (touchesTilled(game, x, y, gid)) score += 0.5;
       if (score > bestScore) {
         bestScore = score;
         best = { x, y };
@@ -338,11 +373,18 @@ export function pickTillSpot(game, colonist, cropId) {
   return best;
 }
 
-export function touchesTilled(game, x, y) {
+/**
+ * True if (x, y) has at least one 4-adjacent tile that is tilled. When
+ * `groupId` is given, only counts tiles tilled by that group (E3) so
+ * the adjacency bonus stays inside the group's own farmland.
+ */
+export function touchesTilled(game, x, y, groupId) {
   for (const [ax, ay] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
     const row = game.map.tiles[y + ay];
     const nb = row && row[x + ax];
-    if (nb && nb.tilled) return true;
+    if (!nb || !nb.tilled) continue;
+    if (groupId != null && nb.tilledBy != null && nb.tilledBy !== groupId) continue;
+    return true;
   }
   return false;
 }

@@ -108,7 +108,7 @@ export function wantsWarehouse(game, colonist, { utilThreshold = 0.85 } = {}) {
     return { build: null, reason: 'no_wood' };
   }
   let spot = game._findFreeLandNear(colonist);
-  if (!spot) spot = game._findFreeLandColonyWide?.();
+  if (!spot) spot = game._findFreeLandColonyWide?.(colonist);
   if (!spot) {
     _maybeWarn(game, colonist, 'no_land', 'log.warehouseNoLand', {
       variant: t('structure.' + variant),
@@ -212,11 +212,18 @@ export function pickAutonomousTask(game, colonist) {
     // Even the build pivot is blocked (no land / no tree) — fall through
     // to non-additive chores: watering, weeding, cooking.
   }
+  // E3 helper: only auto-tend a crop if it belongs to the same colony.
+  // Old crops (saved games before E3) have no ownerId — treat those as
+  // "anyone may help" so we don't ghost-orphan them on first load.
+  const gid = colonist.groupId;
+  const ownsCrop = (crop) => crop.ownerId == null || crop.ownerId === gid;
+  const reachable = (x, y) => !colonist.isUnreachable?.(x, y, game.clock);
   // 1. Gather ripe crops — skipped when on-hand is full so colonists do
   //    not pile food up faster than they can store it.
   if (!onHandFull) {
     for (const crop of game.crops) {
-      if (isRipe(crop) && !crop.withered && !game._tileClaimed(crop.x, crop.y)) {
+      if (!ownsCrop(crop)) continue;
+      if (isRipe(crop) && !crop.withered && !game._tileClaimed(crop.x, crop.y) && reachable(crop.x, crop.y)) {
         return createTask(TaskType.HARVEST, crop.x, crop.y);
       }
     }
@@ -224,24 +231,27 @@ export function pickAutonomousTask(game, colonist) {
   // 2. Fetch food back from a stockpile when the on-hand store runs low.
   if (game.onHandFood < ON_HAND_LOW) {
     const sp = game._nearestOwnStockpile(colonist, (s) => game.stockpileFood(s) > 0);
-    if (sp && !game._tileClaimed(sp.x, sp.y)) {
+    if (sp && !game._tileClaimed(sp.x, sp.y) && reachable(sp.x, sp.y)) {
       return createTask(TaskType.FETCH, sp.x, sp.y);
     }
   }
   // 3. Tend crops that have run dry.
   for (const crop of game.crops) {
+    if (!ownsCrop(crop)) continue;
     if (
       !crop.withered &&
       !isRipe(crop) &&
       game.clock >= crop.wateredUntil &&
-      !game._tileClaimed(crop.x, crop.y)
+      !game._tileClaimed(crop.x, crop.y) &&
+      reachable(crop.x, crop.y)
     ) {
       return createTask(TaskType.WATER, crop.x, crop.y);
     }
   }
   // 4. Clear away withered, dead crops.
   for (const crop of game.crops) {
-    if (crop.withered && !game._tileClaimed(crop.x, crop.y)) {
+    if (!ownsCrop(crop)) continue;
+    if (crop.withered && !game._tileClaimed(crop.x, crop.y) && reachable(crop.x, crop.y)) {
       return createTask(TaskType.WEED, crop.x, crop.y);
     }
   }
@@ -271,7 +281,7 @@ export function pickAutonomousTask(game, colonist) {
     !onHandFull &&
     game.totalFood < game.colonists.length * HUNT_FOOD_PER_HEAD
   ) {
-    const a = game._animalNear(colonist.tileX, colonist.tileY, AUTO_HUNT_RANGE);
+    const a = game._animalNear(colonist.tileX, colonist.tileY, AUTO_HUNT_RANGE, colonist);
     if (a && !game._tileClaimed(a.tileX, a.tileY)) {
       return createTask(TaskType.HUNT, a.tileX, a.tileY, { animalId: a.id });
     }
@@ -343,8 +353,12 @@ export function pickAutonomousTask(game, colonist) {
 /** "Farmer" — sow / till / cook before fencing or hunting. */
 export function farmerScript(game, colonist) {
   // Same chores in the front (harvest / water / weed) — those are
-  // colony-critical regardless of personality.
+  // colony-critical regardless of personality. E3 filters by ownership
+  // so a Farmer-type colonist doesn't snipe a Balanced colony's crops.
+  const gid = colonist.groupId;
   for (const crop of game.crops) {
+    if (crop.ownerId != null && crop.ownerId !== gid) continue;
+    if (colonist.isUnreachable?.(crop.x, crop.y, game.clock)) continue;
     if (isRipe(crop) && !crop.withered && !game._tileClaimed(crop.x, crop.y)) {
       return createTask(TaskType.HARVEST, crop.x, crop.y);
     }
@@ -374,14 +388,17 @@ export function farmerScript(game, colonist) {
 
 /** "Scout" — hunt + chop wood early, build last. */
 export function scoutScript(game, colonist) {
+  const gid = colonist.groupId;
   for (const crop of game.crops) {
+    if (crop.ownerId != null && crop.ownerId !== gid) continue;
+    if (colonist.isUnreachable?.(crop.x, crop.y, game.clock)) continue;
     if (isRipe(crop) && !crop.withered && !game._tileClaimed(crop.x, crop.y)) {
       return createTask(TaskType.HARVEST, crop.x, crop.y);
     }
   }
   // Hunt is the lead activity — even before food gets low.
   if (game.autoHunt) {
-    const a = game._animalNear(colonist.tileX, colonist.tileY, AUTO_HUNT_RANGE);
+    const a = game._animalNear(colonist.tileX, colonist.tileY, AUTO_HUNT_RANGE, colonist);
     if (a && !game._tileClaimed(a.tileX, a.tileY)) {
       return createTask(TaskType.HUNT, a.tileX, a.tileY, { animalId: a.id });
     }
@@ -435,13 +452,16 @@ function fieldPlanFor(game, colonist) {
 function pickRectSowSpot(game, colonist) {
   const plan = fieldPlanFor(game, colonist);
   if (!plan) return null;
+  const gid = colonist.groupId;
   for (let dy = 0; dy < plan.h; dy++) {
     for (let dx = 0; dx < plan.w; dx++) {
       const x = plan.x + dx;
       const y = plan.y + dy;
       const t = game.map.tiles[y]?.[x];
       if (!t || !t.tilled || t.plant || t.structure) continue;
+      if (t.tilledBy != null && t.tilledBy !== gid) continue;
       if (game._tileClaimed(x, y)) continue;
+      if (colonist.isUnreachable?.(x, y, game.clock)) continue;
       return { x, y };
     }
   }
@@ -459,6 +479,7 @@ function pickRectTillSpot(game, colonist) {
       if (!t || t.type === TileType.WATER) continue;
       if (t.tilled || t.plant || t.structure) continue;
       if (game._tileClaimed(x, y)) continue;
+      if (colonist.isUnreachable?.(x, y, game.clock)) continue;
       return { x, y };
     }
   }
@@ -471,8 +492,13 @@ function pickRectTillSpot(game, colonist) {
 /** "Farmer (Selective breeding)" — rectangular fields + quarterly cull. */
 export function farmerBreedScript(game, colonist) {
   // Always harvest the ripe ones first — breeding programme depends on
-  // collecting the high-quality seeds back from these.
+  // collecting the high-quality seeds back from these. E3 enforces that
+  // a breed colony only ever picks its own crops (the whole point of
+  // the breed script is the genome stays inside the group).
+  const gid = colonist.groupId;
   for (const crop of game.crops) {
+    if (crop.ownerId != null && crop.ownerId !== gid) continue;
+    if (colonist.isUnreachable?.(crop.x, crop.y, game.clock)) continue;
     if (isRipe(crop) && !crop.withered && !game._tileClaimed(crop.x, crop.y)) {
       return createTask(TaskType.HARVEST, crop.x, crop.y);
     }

@@ -60,6 +60,7 @@ const victoryEl = $('victory');
 const victorySummaryEl = $('victory-summary');
 const autoHuntBtn = $('autohunt-btn');
 const autoModeBtn = $('automode-btn');
+const popupsBtn = $('popups-btn');
 const viewModesEl = $('view-modes');
 const toolsEl = $('tools');
 const cropsEl = $('crops');
@@ -290,6 +291,23 @@ function setupGroupTabsHandler() {
   });
 }
 
+// One colonist row used by both the per-group sections and the legacy
+// flat render (kept around in case selectedColonist is still meaningful).
+function colonistRowHtml(c) {
+  const bars =
+    statBar('stat.fed', 1 - c.hunger) +
+    statBar('stat.health', c.health) +
+    statBar('stat.mood', c.mood);
+  const sel = c.name === game.selectedColonist ? ' selected' : '';
+  const icons = colonistConditionIcons(c);
+  return (
+    `<div class="colonist-row${sel}" data-colonist="${c.name}">` +
+    `<div class="crow-head"><span>${c.name}${icons}</span>` +
+    `<span class="cstate">${colonistStateLabel(c)}</span></div>` +
+    `<div class="crow-bars">${bars}</div></div>`
+  );
+}
+
 function updateColonistsPanel() {
   setupGroupTabsHandler();
   renderGroupTabs();
@@ -297,22 +315,30 @@ function updateColonistsPanel() {
   if (game.selectedColonist && !game.colonists.some((c) => c.name === game.selectedColonist)) {
     game.selectedColonist = null;
   }
-  colonistsEl.innerHTML = colonistsInView()
-    .map((c) => {
-      const bars =
-        statBar('stat.fed', 1 - c.hunger) +
-        statBar('stat.health', c.health) +
-        statBar('stat.mood', c.mood);
-      const sel = c.name === game.selectedColonist ? ' selected' : '';
-      const icons = colonistConditionIcons(c);
-      return (
-        `<div class="colonist-row${sel}" data-colonist="${c.name}">` +
-        `<div class="crow-head"><span>${c.name}${icons}</span>` +
-        `<span class="cstate">${colonistStateLabel(c)}</span></div>` +
-        `<div class="crow-bars">${bars}</div></div>`
-      );
-    })
-    .join('');
+  // F6: always render colonists as per-group sections. With a single
+  // group, this collapses to one labelled section. With "All" the user
+  // sees every group's roster stacked rather than a flat aggregated
+  // list (which made it hard to tell who belonged to whom).
+  const groups = game.groups || [];
+  const visibleGroups = selectedGroupId == null
+    ? groups
+    : groups.filter((g) => g.id === selectedGroupId);
+  const sections = visibleGroups.map((g) => {
+    const label = g.name || t('group.label', { letter: String.fromCharCode(65 + g.id) });
+    const rows = g.colonists.map(colonistRowHtml).join('')
+      || `<div class="muted small">${t('val.none')}</div>`;
+    return (
+      `<div class="group-section">` +
+      `<div class="group-section-head">` +
+      `<span class="group-chip" style="background:${g.color.fill}"></span>` +
+      `<strong>${label}</strong>` +
+      `<span class="group-section-count">${g.colonists.length}</span>` +
+      `</div>` +
+      `<div class="group-section-body">${rows}</div>` +
+      `</div>`
+    );
+  }).join('');
+  colonistsEl.innerHTML = sections;
   targetAllBtn.classList.toggle('active', !game.selectedColonist);
 }
 
@@ -520,40 +546,65 @@ function updateSeedPanel() {
   if (sum) sum.textContent = `${t('label.seeds')} · ${n}`;
 }
 
-// Variety codex: per crop, a picture of the best variety bred so far, its
-// ★ rank, and a bar per gameplay gene with a notch marking the origin.
-// Only crops the colony has actually held seed of make it into the codex.
-function updateCodexPanel() {
-  const legend = QUALITY_GENES.map((g) => t('gene.' + g)).join(' · ');
-  // When a specific group tab is active, show only that group's codex.
-  // The colony-wide codex is the union of every group's best variety.
-  const codex = selectedGroupId == null
-    ? game.codex
-    : (game.groups[selectedGroupId]?.codex || {});
-  const ids = CROP_IDS.filter((id) => codex[id]);
-  const rows = ids.map((id) => {
-    const c = codex[id];
-    const genes = QUALITY_GENES.map((gid) => {
-      const cur = Math.round(phenotype(c.best, gid) * 100);
-      const org = Math.round(phenotype(c.origin, gid) * 100);
-      return (
-        `<span class="gene-cell" title="${t('gene.' + gid)}: ${cur}% (origin ${org}%)">` +
-        `<i style="width:${cur}%"></i><u style="left:${org}%"></u></span>`
-      );
-    }).join('');
+// One codex entry row — extracted so the per-group section render can
+// reuse it. `crop` is the codex record { origin, best } for `id`.
+function codexRowHtml(id, c) {
+  const genes = QUALITY_GENES.map((gid) => {
+    const cur = Math.round(phenotype(c.best, gid) * 100);
+    const org = Math.round(phenotype(c.origin, gid) * 100);
     return (
-      `<div class="codex-row">` +
-      `<canvas class="codex-preview" data-crop="${id}" width="48" height="48"></canvas>` +
-      `<div class="codex-info"><div class="codex-head">` +
-      `<span class="codex-crop">${t('crop.' + id)}</span>` +
-      `<span class="codex-rank">${'★'.repeat(qualityRank(c.best))}</span></div>` +
-      `<div class="codex-genes">${genes}</div></div></div>`
+      `<span class="gene-cell" title="${t('gene.' + gid)}: ${cur}% (origin ${org}%)">` +
+      `<i style="width:${cur}%"></i><u style="left:${org}%"></u></span>`
     );
   }).join('');
-  codexEl.innerHTML = `<p class="codex-legend">${legend}</p>${rows}`;
-  for (const cv of codexEl.querySelectorAll('canvas.codex-preview')) {
-    const id = cv.dataset.crop;
-    game.renderer.drawCropPreview(cv.getContext('2d'), cv.width, cv.height, id, codex[id].best);
+  return (
+    `<div class="codex-row">` +
+    `<canvas class="codex-preview" data-crop="${id}" data-best="1" width="48" height="48"></canvas>` +
+    `<div class="codex-info"><div class="codex-head">` +
+    `<span class="codex-crop">${t('crop.' + id)}</span>` +
+    `<span class="codex-rank">${'★'.repeat(qualityRank(c.best))}</span></div>` +
+    `<div class="codex-genes">${genes}</div></div></div>`
+  );
+}
+
+// F5: variety codex is rendered as per-group sections. Each group tracks
+// its own breeding programme, so the codex view stacks one section per
+// colony (or a single section when a specific group tab is active).
+// Stat-bar legend stays at the top.
+function updateCodexPanel() {
+  const legend = QUALITY_GENES.map((g) => t('gene.' + g)).join(' · ');
+  const groups = game.groups || [];
+  const visibleGroups = selectedGroupId == null
+    ? groups
+    : groups.filter((g) => g.id === selectedGroupId);
+  const sections = visibleGroups.map((g) => {
+    const label = g.name || t('group.label', { letter: String.fromCharCode(65 + g.id) });
+    const codex = g.codex || {};
+    const ids = CROP_IDS.filter((id) => codex[id]);
+    const rows = ids.map((id) => codexRowHtml(id, codex[id])).join('')
+      || `<div class="muted small">${t('val.none')}</div>`;
+    return (
+      `<div class="group-section" data-group="${g.id}">` +
+      `<div class="group-section-head">` +
+      `<span class="group-chip" style="background:${g.color.fill}"></span>` +
+      `<strong>${label}</strong>` +
+      `<span class="group-section-count">${ids.length}</span>` +
+      `</div>` +
+      `<div class="group-section-body">${rows}</div>` +
+      `</div>`
+    );
+  }).join('');
+  codexEl.innerHTML = `<p class="codex-legend">${legend}</p>${sections}`;
+  // Paint each preview canvas with its group's best genome.
+  for (const section of codexEl.querySelectorAll('.group-section')) {
+    const gid = Number(section.dataset.group);
+    const codex = game.groups[gid]?.codex || {};
+    for (const cv of section.querySelectorAll('canvas.codex-preview')) {
+      const id = cv.dataset.crop;
+      if (codex[id]) {
+        game.renderer.drawCropPreview(cv.getContext('2d'), cv.width, cv.height, id, codex[id].best);
+      }
+    }
   }
 }
 
@@ -646,6 +697,7 @@ function applyI18n() {
   updatePauseBtn();
   updateAutoHuntBtn();
   updateAutoModeBtn();
+  updatePopupsBtn();
 }
 
 // --- map lifecycle --------------------------------------------------------
@@ -1381,6 +1433,29 @@ autoModeBtn.addEventListener('click', () => {
   updateAutoModeBtn();
 });
 
+// F1: big-popup on/off toggle. Default on. Persisted in localStorage so
+// a player who turns the disruption off stays off across reloads. When
+// disabled, events still log + show as a toast so info isn't lost.
+let popupsEnabled = (() => {
+  try {
+    const v = localStorage.getItem('farm-proto:popups');
+    return v == null ? true : v === '1';
+  } catch { return true; }
+})();
+function updatePopupsBtn() {
+  if (!popupsBtn) return;
+  popupsBtn.textContent = `${t('label.popups')}: ${t(popupsEnabled ? 'val.on' : 'val.off')}`;
+  popupsBtn.classList.toggle('on', popupsEnabled);
+}
+if (popupsBtn) {
+  popupsBtn.addEventListener('click', () => {
+    popupsEnabled = !popupsEnabled;
+    try { localStorage.setItem('farm-proto:popups', popupsEnabled ? '1' : '0'); } catch {}
+    updatePopupsBtn();
+    if (!popupsEnabled) closeBigPopup();
+  });
+}
+
 // --- victory: surviving the first year -----------------------------------
 
 let victoryAutoClose = null;
@@ -1432,12 +1507,26 @@ function groupLabel(gid) {
   if (!grp) return '';
   return grp.name || t('group.label', { letter: String.fromCharCode(65 + gid) });
 }
-function showBigPopup(titleKey, bodyKey, params = {}) {
+// F2: shortened auto-close window — 5 s feels less interruptive while
+// staying long enough to skim the title + detail.
+const BIG_POPUP_AUTO_CLOSE_MS = 5000;
+function showBigPopup(titleKey, bodyKey, params = {}, options = {}) {
+  // F1: when the player has turned popups off, fall through silently.
+  if (!popupsEnabled) return;
   bigPopupTitleEl.textContent = t(titleKey, params);
-  bigPopupDetailEl.textContent = t(bodyKey, params);
+  // `detailHtml` lets the caller inject richer markup (e.g. F3's gene
+  // table for mutations). Plain string `detailText` and the default i18n
+  // key path both still set textContent.
+  if (options.detailHtml) {
+    bigPopupDetailEl.innerHTML = options.detailHtml;
+  } else if (options.detailText) {
+    bigPopupDetailEl.textContent = options.detailText;
+  } else {
+    bigPopupDetailEl.textContent = t(bodyKey, params);
+  }
   bigPopupEl.hidden = false;
   if (bigPopupTimer) clearTimeout(bigPopupTimer);
-  bigPopupTimer = setTimeout(closeBigPopup, 10000);
+  bigPopupTimer = setTimeout(closeBigPopup, BIG_POPUP_AUTO_CLOSE_MS);
 }
 function closeBigPopup() {
   bigPopupEl.hidden = true;
@@ -1451,6 +1540,58 @@ bigPopupCloseBtn.addEventListener('click', closeBigPopup);
 bigPopupEl.addEventListener('click', (ev) => {
   if (ev.target === bigPopupEl) closeBigPopup();
 });
+
+// F4: pest popups fire only on the first strike per run; subsequent
+// strikes keep their log line but no longer interrupt the player.
+let pestPopupShown = false;
+
+/**
+ * F3: detailed mutation popup. Renders the same gene panel + ★ rank as
+ * the codex, plus a side-by-side preview of the new variant against
+ * its parent. Falls back to a plain text body when the event lacks a
+ * genome (e.g. an old test event without the genome attached).
+ */
+function showMutationPopup(mut) {
+  if (!popupsEnabled) return;
+  if (!mut.genome) {
+    showBigPopup('popup.mutation.title', 'popup.mutation.body', {
+      crop: t('crop.' + mut.crop),
+      group: groupLabel(mut.groupId),
+    });
+    return;
+  }
+  const newRank = qualityRank(mut.genome);
+  const parentRank = mut.parent ? qualityRank(mut.parent) : null;
+  const lead = t('popup.mutation.lead', {
+    crop: t('crop.' + mut.crop),
+    group: groupLabel(mut.groupId),
+  });
+  const ranks = parentRank != null
+    ? `${'★'.repeat(parentRank)} → ${'★'.repeat(newRank)}`
+    : `${'★'.repeat(newRank)}`;
+  const genes = QUALITY_GENES.map((gid) => {
+    const cur = Math.round(phenotype(mut.genome, gid) * 100);
+    const org = mut.parent ? Math.round(phenotype(mut.parent, gid) * 100) : cur;
+    const delta = cur - org;
+    const arrow = delta > 0 ? '▲' : (delta < 0 ? '▼' : '·');
+    return (
+      `<div class="mut-gene-row">` +
+      `<span class="mut-gene-name">${t('gene.' + gid)}</span>` +
+      `<span class="mut-gene-bar"><i style="width:${cur}%"></i><u style="left:${org}%"></u></span>` +
+      `<span class="mut-gene-delta">${arrow} ${cur}% <em>(${org}%)</em></span>` +
+      `</div>`
+    );
+  }).join('');
+  const html =
+    `<p class="mut-lead">${lead}</p>` +
+    `<p class="mut-rank">${t('label.rank')}: <b>${ranks}</b></p>` +
+    `<div class="mut-genes">${genes}</div>` +
+    `<canvas class="mut-preview" width="64" height="64"></canvas>`;
+  showBigPopup('popup.mutation.title', null, {}, { detailHtml: html });
+  // Paint the preview canvas after the popup renders the new HTML.
+  const cv = bigPopupDetailEl.querySelector('canvas.mut-preview');
+  if (cv) game.renderer.drawCropPreview(cv.getContext('2d'), cv.width, cv.height, mut.crop, mut.genome);
+}
 
 $('victory-new').addEventListener('click', () => {
   newMap(randomSeed());
@@ -1502,11 +1643,19 @@ setInterval(() => {
   if (gameoverEl.hidden === game.over) gameoverEl.hidden = !game.over;
   const season = game.consumeSeasonChange();
   if (season) showToast(t('note.' + season));
-  // D1: pest / cold / birth / trader / mutation now surface as big
-  // popups (auto-close after 10 s or on click). The transient toast
-  // remains for low-stakes notes like the seasonal banner.
+  // D1/F1/F4: events surface as 5-s big popups (when popups are enabled).
+  // The transient toast still fires for the seasonal banner.
+  // F4: pest popups fire only the first time per run; subsequent strikes
+  // stay in the log only so the player isn't repeatedly interrupted.
   const pest = game.consumePestEvent();
-  if (pest) showBigPopup('popup.pest.title', 'popup.pest.body', { n: pest.n || '?' });
+  if (pest) {
+    if (!pestPopupShown) {
+      pestPopupShown = true;
+      showBigPopup('popup.pest.title', 'popup.pest.body', { n: pest.n || '?' });
+    } else {
+      // Log already pushed in eventSystem.pestStrike — nothing extra here.
+    }
+  }
   if (game.consumeColdEvent()) showBigPopup('popup.cold.title', 'popup.cold.body');
   const baby = game.consumeBirthEvent();
   if (baby) {
@@ -1527,11 +1676,6 @@ setInterval(() => {
     rebuildCropPicker();
   }
   const mut = game.consumeMutationEvent();
-  if (mut) {
-    showBigPopup('popup.mutation.title', 'popup.mutation.body', {
-      crop: t('crop.' + mut.crop),
-      group: groupLabel(mut.groupId),
-    });
-  }
+  if (mut) showMutationPopup(mut);
   if (game.consumeWinEvent()) showVictory();
 }, 150);

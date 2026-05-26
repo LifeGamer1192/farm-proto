@@ -211,6 +211,8 @@ export function nearestStockpile(game, colonist, pred) {
   let bestD = Infinity;
   for (const sp of game.stockpiles) {
     if (!pred(sp)) continue;
+    // E2: skip stockpiles this colonist has recently failed to reach.
+    if (colonist.isUnreachable?.(sp.x, sp.y, game.clock)) continue;
     const d = Math.hypot(sp.x - colonist.tileX, sp.y - colonist.tileY);
     if (d < bestD) {
       bestD = d;

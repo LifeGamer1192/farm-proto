@@ -32,11 +32,17 @@ export function spawnAnimals(game, landTiles) {
   return landTiles.map((s, i) => new Animal(s.x, s.y, i + 1, specList[i]));
 }
 
-/** The animal nearest to a tile, within `range` tiles (or null). */
-export function animalNear(game, x, y, range) {
+/**
+ * The animal nearest to a tile, within `range` tiles (or null). When a
+ * `colonist` is passed, animals whose tile this colonist has recently
+ * failed to reach are skipped — keeps a colonist from re-targeting the
+ * same trapped boar every frame.
+ */
+export function animalNear(game, x, y, range, colonist) {
   let best = range;
   let found = null;
   for (const a of game.animals) {
+    if (colonist?.isUnreachable?.(a.tileX, a.tileY, game.clock)) continue;
     const d = Math.hypot(a.x - x, a.y - y);
     if (d <= best) {
       best = d;
@@ -86,6 +92,8 @@ export function nearestTree(game, colonist, range) {
       if (tl.plant.kind !== PlantKind.TREE) continue;
       if (tl.plant.growth < 0.5) continue; // saplings aren't worth chopping
       if (game._tileClaimed(x, y)) continue;
+      // E2: skip trees this colonist failed to reach lately.
+      if (colonist.isUnreachable?.(x, y, game.clock)) continue;
       const d = Math.hypot(dx, dy);
       if (d < bestD) {
         bestD = d;
