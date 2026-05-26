@@ -187,6 +187,45 @@ function pickAutoHutVariant(game, gid) {
 }
 
 /**
+ * H4: own-colony infra builder — returns a BUILD task for the most
+ * urgent missing structure (hut → hearth → warehouse), or null when
+ * everything's covered. Extracted so every script (balanced, farmer,
+ * scout, farmer_breed) can run the same check at the top of its
+ * decision tree. Previously only the balanced script's auto-build
+ * branch evaluated infra, which meant farmer_breed (whose till/sow
+ * pipeline never empties) effectively never built anything.
+ */
+export function urgentInfraBuild(game, colonist) {
+  if (!game.autoMode) return null;
+  const gid = colonist.groupId;
+  const ownPop = game.groups?.[gid]?.colonists?.length || game.colonists.length;
+  // 1. Hut — own beds short of own colonists.
+  const beds = game._hutCapacityFor(gid) + autoHutPendingBeds(game, gid);
+  if (beds < ownPop) {
+    const variant = pickAutoHutVariant(game, gid);
+    if (game._canAffordBuild(variant)) {
+      const spot = game._findFreeLandNear(colonist);
+      if (spot) return createTask(TaskType.BUILD, spot.x, spot.y, { structure: variant });
+    }
+  }
+  // 2. Hearth — own hearths short of own huts (so each hut has warmth).
+  const ownHearths = game._hearthCountFor(gid) + autoHearthPending(game, gid);
+  const ownHuts = game._hutCountFor(gid);
+  if (ownHearths < ownHuts && game._canAffordBuild('hearth')) {
+    const spot = game._findFreeLandNear(colonist);
+    if (spot) return createTask(TaskType.BUILD, spot.x, spot.y, { structure: 'hearth' });
+  }
+  // 3. Warehouse — wantsWarehouse handles "first one" + the
+  // utilisation threshold for follow-up expansions. The same helper
+  // is shared with the critical-warehouse pivot at script level.
+  const wh = wantsWarehouse(game, colonist);
+  if (wh && wh.build) {
+    return createTask(TaskType.BUILD, wh.spot.x, wh.spot.y, { structure: wh.build });
+  }
+  return null;
+}
+
+/**
  * Pick the next bit of self-directed work for `colonist`, or `null` if
  * there is nothing useful to do (the caller falls back to idling).
  *
@@ -310,11 +349,21 @@ export function pickAutonomousTask(game, colonist) {
     const spot = game._nextFenceTile(colonist);
     if (spot) return createTask(TaskType.BUILD, spot.x, spot.y, { structure: 'fence' });
   }
-  // 6. Cook raw food into meals while a hearth is lit.
-  if (game.hearthsLit && game.rawFood > 0 && game.storage.meal < MEAL_TARGET) {
-    for (const h of game.hearths) {
-      if (!game._tileClaimed(h.x, h.y)) {
-        return createTask(TaskType.COOK, h.x, h.y);
+  // 6. Cook raw food into meals while a hearth is lit. H2: every input
+  // to the decision is per-group — own raw food, own meal stock, own
+  // hearths — so Colony B never marches to Colony A's hearth on
+  // Colony A's food. When B has no hearth, this branch returns null
+  // and the auto-build path further down will queue one.
+  {
+    const ownRaw = game._rawFoodFor(gid);
+    const ownMeal = game.groups?.[gid]?.storage?.meal || 0;
+    if (game._hearthsLitFor(gid) && ownRaw > 0 && ownMeal < MEAL_TARGET) {
+      for (const h of game.hearths) {
+        if (h.ownerId !== gid) continue;
+        if (colonist.isUnreachable?.(h.x, h.y, game.clock)) continue;
+        if (!game._tileClaimed(h.x, h.y)) {
+          return createTask(TaskType.COOK, h.x, h.y);
+        }
       }
     }
   }
@@ -337,33 +386,13 @@ export function pickAutonomousTask(game, colonist) {
     const tree = game._nearestTree(colonist, AUTO_SEARCH_RANGE);
     if (tree) return createTask(TaskType.HARVEST, tree.x, tree.y);
   }
-  // 9. Stand up infrastructure before opening more farmland. Each branch
-  // also checks wood — a hut that cannot be afforded should not jump the
-  // queue ahead of useful work like sowing. G1: every count is per-group,
-  // so Colony B builds for Colony B even if Colony A is well-housed.
+  // 9. Stand up infrastructure before opening more farmland. The single
+  // helper urgentInfraBuild() collects the per-group hut → hearth →
+  // warehouse logic so every script (balanced/farmer/scout/farmer_breed)
+  // shares one source of truth (H4).
   if (game.autoMode) {
-    const ownPop = game.groups?.[gid]?.colonists?.length || game.colonists.length;
-    // α26: count beds (not huts). Once the colony goes past 4 colonists
-    // the auto-builder upgrades to medium huts (4-bed), and past 12 to
-    // large huts (8-bed) — same wood-per-bed, fewer ground tiles spent.
-    const beds = game._hutCapacityFor(gid) + autoHutPendingBeds(game, gid);
-    if (beds < ownPop) {
-      const variant = pickAutoHutVariant(game, gid);
-      if (game._canAffordBuild(variant)) {
-        const spot = game._findFreeLandNear(colonist);
-        if (spot) return createTask(TaskType.BUILD, spot.x, spot.y, { structure: variant });
-      }
-    }
-    const ownHearths = game._hearthCountFor(gid) + autoHearthPending(game, gid);
-    const ownHuts = game._hutCountFor(gid);
-    if (ownHearths < ownHuts && game._canAffordBuild('hearth')) {
-      const spot = game._findFreeLandNear(colonist);
-      if (spot) return createTask(TaskType.BUILD, spot.x, spot.y, { structure: 'hearth' });
-    }
-    const wh = wantsWarehouse(game, colonist);
-    if (wh && wh.build) {
-      return createTask(TaskType.BUILD, wh.spot.x, wh.spot.y, { structure: wh.build });
-    }
+    const infra = urgentInfraBuild(game, colonist);
+    if (infra) return infra;
     // 10. Till new ground and sow the most-stocked crop.
     const sowCrop = game._mostStockedCrop(colonist.groupId);
     if (sowCrop) {
@@ -409,10 +438,20 @@ export function farmerScript(game, colonist) {
       return createTask(TaskType.HARVEST, crop.x, crop.y);
     }
   }
+  // H4: build essential infra before settling into the sow / till loop.
+  const infra = urgentInfraBuild(game, colonist);
+  if (infra) return infra;
   // Skip fence-building entirely — let the balanced colonists handle it.
-  if (game.hearthsLit && game.rawFood > 0 && game.storage.meal < MEAL_TARGET) {
-    for (const h of game.hearths) {
-      if (!game._tileClaimed(h.x, h.y)) return createTask(TaskType.COOK, h.x, h.y);
+  // H2: own-group cook check (raw + meal + hearth).
+  {
+    const ownRaw = game._rawFoodFor(gid);
+    const ownMeal = game.groups?.[gid]?.storage?.meal || 0;
+    if (game._hearthsLitFor(gid) && ownRaw > 0 && ownMeal < MEAL_TARGET) {
+      for (const h of game.hearths) {
+        if (h.ownerId !== gid) continue;
+        if (colonist.isUnreachable?.(h.x, h.y, game.clock)) continue;
+        if (!game._tileClaimed(h.x, h.y)) return createTask(TaskType.COOK, h.x, h.y);
+      }
     }
   }
   // Farmer-priority: sow + till BEFORE worrying about hunting / huts.
@@ -442,6 +481,11 @@ export function scoutScript(game, colonist) {
       return createTask(TaskType.HARVEST, crop.x, crop.y);
     }
   }
+  // H4: scout never auto-builds in its specialty (hunt/chop always finds
+  // work), so the own-colony infra check has to fire here too. Without
+  // this, a scout colony lives outdoors permanently.
+  const infra = urgentInfraBuild(game, colonist);
+  if (infra) return infra;
   // Hunt is the lead activity — even before food gets low.
   if (game.autoHunt) {
     const a = game._animalNear(colonist.tileX, colonist.tileY, AUTO_HUNT_RANGE, colonist);
@@ -560,9 +604,21 @@ export function farmerBreedScript(game, colonist) {
       return createTask(TaskType.BUILD, dec.spot.x, dec.spot.y, { structure: dec.build });
     }
   }
-  if (game.hearthsLit && game.rawFood > 0 && game.storage.meal < MEAL_TARGET) {
-    for (const h of game.hearths) {
-      if (!game._tileClaimed(h.x, h.y)) return createTask(TaskType.COOK, h.x, h.y);
+  // H4: breed colony lives in its rectangular farmland — without this
+  // urgent-infra check it would happily sow forever and never raise a
+  // hut. Fires the same hut → hearth → warehouse ladder as balanced.
+  const infra = urgentInfraBuild(game, colonist);
+  if (infra) return infra;
+  // H2: own-group cook check.
+  {
+    const ownRaw = game._rawFoodFor(gid);
+    const ownMeal = game.groups?.[gid]?.storage?.meal || 0;
+    if (game._hearthsLitFor(gid) && ownRaw > 0 && ownMeal < MEAL_TARGET) {
+      for (const h of game.hearths) {
+        if (h.ownerId !== gid) continue;
+        if (colonist.isUnreachable?.(h.x, h.y, game.clock)) continue;
+        if (!game._tileClaimed(h.x, h.y)) return createTask(TaskType.COOK, h.x, h.y);
+      }
     }
   }
   // Sow / till the rectangular field BEFORE looking at any other work.

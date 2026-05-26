@@ -223,16 +223,15 @@ export function nearestStockpile(game, colonist, pred) {
 }
 
 /**
- * α25 follow-up (B2): prefer a stockpile owned by the colonist's group;
- * if none satisfy `pred`, fall back to any matching stockpile. Used by
- * the autonomy decision tree so colonists hauling food head to their
- * own warehouses first.
+ * Strict own-group stockpile pick (H3). Returns null when the colonist's
+ * group owns no matching stockpile — the autonomy then falls through to
+ * a wantsWarehouse build, which is the behaviour we want for a colony
+ * that doesn't yet have its own warehouse. Cross-colony stockpiles are
+ * usually on the far side of the map and a trek there is wasted time.
  */
 export function nearestOwnStockpile(game, colonist, pred) {
   const gid = colonist.groupId;
-  const own = nearestStockpile(game, colonist, (sp) => sp.ownerId === gid && pred(sp));
-  if (own) return own;
-  return nearestStockpile(game, colonist, pred);
+  return nearestStockpile(game, colonist, (sp) => sp.ownerId === gid && pred(sp));
 }
 
 /**
@@ -344,7 +343,12 @@ export function feed(game, colonist) {
  * that group's per-group store (B2).
  */
 export function cookOne(game, groupId) {
-  const recipe = pickBestAffordable(game.storage);
+  // H2: when a cooker's group is known, only consider ingredients the
+  // cook's own colony actually owns — otherwise B's cook would happily
+  // eat through A's pantry just because the colony aggregate has it.
+  const ownStore = groupId != null ? game.groups?.[groupId]?.storage : game.storage;
+  if (!ownStore) return null;
+  const recipe = pickBestAffordable(ownStore);
   if (!recipe) return null;
   const q = averageInputQuality(recipe, game.storage.quality);
   for (const [ing, n] of Object.entries(recipe.ingredients)) {

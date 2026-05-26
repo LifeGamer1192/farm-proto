@@ -627,9 +627,13 @@ function updateCodexPanel() {
 let lastLogRev = -1;
 let lastLogGroup = null;
 const logEntryHtml = (e) => `<li class="${e.cls}">${e.icon} ${e.text}</li>`;
+// H1: a group tab is now a STRICT filter — colony-wide entries (no
+// groupId attached) stay in the "All" view only. This stops the
+// per-colony log from being polluted by the season banner / cold snap
+// / pest events of the colony as a whole.
 function logEntryMatches(e) {
   if (selectedGroupId == null) return true;
-  return e.groupId === undefined || e.groupId === selectedGroupId;
+  return e.groupId === selectedGroupId;
 }
 function updateLog() {
   // Group-tab change forces a rebuild even if no new entries arrived.

@@ -1094,6 +1094,33 @@ export class Game {
   }
 
   /**
+   * H2: per-group raw on-hand food. Used by the auto-cook trigger so
+   * Colony B only fires a COOK task when B itself has raw ingredients
+   * (otherwise B would walk to Colony A's hearth on Colony A's food).
+   */
+  _rawFoodFor(gid) {
+    if (gid == null) return this.rawFood;
+    const g = this.groups?.[gid];
+    if (!g) return 0;
+    let n = 0;
+    for (const ft of FOOD_TYPES) n += g.storage[ft] || 0;
+    return n;
+  }
+
+  /**
+   * H2: per-group "hearths lit". A hearth burns own-group wood; with no
+   * own-group hearth or no own-group wood there's nothing to cook on,
+   * regardless of what the rest of the colony has.
+   */
+  _hearthsLitFor(gid) {
+    if (gid == null) return this.hearthsLit;
+    const g = this.groups?.[gid];
+    if (!g) return false;
+    const own = this.hearths.some((h) => h.ownerId === gid);
+    return own && (g.storage.wood || 0) > 0;
+  }
+
+  /**
    * D4 / E2 / G1: pick the closest OWN-GROUP hut for `colonist` to
    * sleep in. We deliberately do NOT fall back to other groups' huts —
    * those are usually far away on the other side of the map and the
