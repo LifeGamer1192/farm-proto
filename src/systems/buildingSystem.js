@@ -60,7 +60,12 @@ export function findFreeLandNear(game, colonist) {
  * colony grows its own warehouse cluster instead of crowding into a
  * shared one. Returns null only if the entire ring is genuinely full.
  */
-export function findFreeLandColonyWide(game, colonist, range = AUTO_SEARCH_RANGE * 4) {
+export function findFreeLandColonyWide(game, colonist, range = AUTO_SEARCH_RANGE * 2) {
+  // N3: range is half what it used to be (24 tiles vs 48). With groups
+  // spawning on opposite sides of the map (D2), a 48-tile spiral could
+  // reach another colony's territory and slap a hut on a neighbour's
+  // doorstep. 24 tiles still covers a sensible "around home" radius
+  // without ever crossing into someone else's footprint.
   const center = groupAnchor(game, colonist);
   if (!center) return null;
   return _spiralFreeLand(game, Math.round(center.x), Math.round(center.y), range, colonist);

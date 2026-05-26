@@ -214,5 +214,17 @@ export function createGroup(id, setup = {}) {
     // cull so we don't run it twice on the same season boundary.
     fieldPlan: null,
     lastCullSeason: null,
+    // N1: per-group share-flag matrix. canUseFrom[otherGid] = true means
+    // this group is allowed to consume buildings / crops / food / seeds
+    // owned by `otherGid`. Same-group access is always allowed (no flag
+    // needed). Default: every flag off — colonies are strictly siloed
+    // until the player (or a future diplomacy event) toggles a flag on.
+    canUseFrom: {},
+    // N1: per-group task queue. Tasks created with this group's
+    // ownership go here; _assignColonist scans the colonist's own queue
+    // first (plus colony-wide tasks without a groupId). The combined
+    // task count is mirrored into game.taskQueue for UI / pendingSows
+    // accounting.
+    taskQueue: [],
   };
 }

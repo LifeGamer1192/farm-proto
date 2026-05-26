@@ -260,15 +260,17 @@ export function nearestStockpile(game, colonist, pred) {
 }
 
 /**
- * Strict own-group stockpile pick (H3). Returns null when the colonist's
- * group owns no matching stockpile — the autonomy then falls through to
- * a wantsWarehouse build, which is the behaviour we want for a colony
- * that doesn't yet have its own warehouse. Cross-colony stockpiles are
- * usually on the far side of the map and a trek there is wasted time.
+ * Strict own-group stockpile pick (H3 / N4). Returns null when no
+ * stockpile this colonist is allowed to use matches — same-group piles
+ * always qualify, foreign piles only qualify when this group's
+ * canUseFrom flag for the foreign owner is set. With every flag off
+ * (default), only own-group piles are considered. The autonomy then
+ * falls through to wantsWarehouse to build a fresh own-colony pile.
  */
 export function nearestOwnStockpile(game, colonist, pred) {
   const gid = colonist.groupId;
-  return nearestStockpile(game, colonist, (sp) => sp.ownerId === gid && pred(sp));
+  const allowed = (sp) => game._canUseFrom?.(gid, sp.ownerId) ?? (sp.ownerId === gid);
+  return nearestStockpile(game, colonist, (sp) => allowed(sp) && pred(sp));
 }
 
 /**
@@ -313,9 +315,15 @@ export function feed(game, colonist) {
     game.meals.missed += 1;
     if (grp) grp.meals.missed += 1;
   };
-  // Cooked meal / dish on hand — prefer items the eater's own group has,
-  // then fall back to whichever group has stock.
-  const cookedIds = ['meal', ...DISH_IDS].filter((id) => (game.storage[id] || 0) > 0);
+  // N4: a colonist may only eat from groups they're allowed to take
+  // food from — same group always, foreign groups only when the
+  // canUseFrom flag for that owner is on. With every flag off (the
+  // default), this collapses to "own group only".
+  const allowedGroups = (game.groups || []).filter((g) => game._canUseFrom?.(groupId, g.id) ?? (g.id === groupId));
+  const allowedHas = (id) => allowedGroups.some((g) => (g.storage?.[id] || 0) > 0);
+  // Cooked meal / dish — prefer items the eater's own group has, then
+  // fall back to whichever allowed group has stock.
+  const cookedIds = ['meal', ...DISH_IDS].filter((id) => allowedHas(id));
   if (cookedIds.length > 0) {
     const ownStore = grp?.storage;
     cookedIds.sort((a, b) => {
@@ -332,7 +340,16 @@ export function feed(game, colonist) {
     game._pushLog({ icon: '🍲', text: t('log.ate', { name }), cls: 'log-meal', groupId });
     return;
   }
-  const onHand = largestEdibleRaw(game.storage, FOOD_TYPES);
+  // Raw on-hand — same allowed-group filter. largestEdibleRaw normally
+  // walks game.storage, but we want only items the eater is permitted
+  // to claim, so build a synthetic store of "allowed" item counts.
+  const allowedRawStore = {};
+  for (const id of FOOD_TYPES) {
+    let n = 0;
+    for (const g of allowedGroups) n += g.storage?.[id] || 0;
+    allowedRawStore[id] = n;
+  }
+  const onHand = largestEdibleRaw(allowedRawStore, FOOD_TYPES);
   if (onHand) {
     const quality = game.storage.quality?.[onHand] || 0.5;
     storageSub(game, groupId, onHand, 1);
@@ -342,10 +359,12 @@ export function feed(game, colonist) {
     game._pushLog({ icon: '🍴', text: t('log.ate', { name }), cls: 'log-meal', groupId });
     return;
   }
-  // Fall back to stockpiles — prefer own-group piles, then any others.
-  const ownPiles = game.stockpiles.filter((sp) => sp.ownerId === groupId);
-  const otherPiles = game.stockpiles.filter((sp) => sp.ownerId !== groupId);
-  for (const sp of [...ownPiles, ...otherPiles]) {
+  // Fall back to stockpiles — prefer own-group piles, then any others
+  // the share matrix permits.
+  const allowedPiles = game.stockpiles.filter((sp) => game._canUseFrom?.(groupId, sp.ownerId) ?? (sp.ownerId === groupId));
+  // Stable ordering: own first, others after.
+  allowedPiles.sort((a, b) => (a.ownerId === groupId ? -1 : 0) - (b.ownerId === groupId ? -1 : 0));
+  for (const sp of allowedPiles) {
     let pick = null;
     for (const id of ['meal', ...DISH_IDS]) {
       if ((sp.items[id] || 0) > 0) { pick = id; break; }

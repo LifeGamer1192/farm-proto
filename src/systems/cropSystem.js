@@ -135,7 +135,10 @@ export function bestSeedRank(game, cropId, groupId) {
  */
 export function pendingSows(game, cropId, groupId) {
   let n = 0;
+  // N2: prefer task.groupId (set at enqueue time). Fall back to the
+  // assignee lookup for older / hand-built tasks that lack groupId.
   const taskGroupId = (task) => {
+    if (task.groupId != null) return task.groupId;
     if (!task.assignee) return null;
     const c = game.colonists.find((cc) => cc.name === task.assignee);
     return c ? c.groupId : null;
@@ -143,12 +146,7 @@ export function pendingSows(game, cropId, groupId) {
   for (const task of game.taskQueue) {
     if (task.type !== TaskType.SOW || task.cropId !== cropId) continue;
     if (groupId == null) { n++; continue; }
-    const tg = taskGroupId(task);
-    // An unassigned queued sow may end up being picked by any group, so
-    // it is left out of per-group pending counts — fenced off as "shared"
-    // demand. Once a colonist takes it, their group counts it via the
-    // currentTask path below.
-    if (tg === groupId) n++;
+    if (taskGroupId(task) === groupId) n++;
   }
   for (const c of game.colonists) {
     const ct = c.currentTask;
@@ -323,7 +321,7 @@ export function pickAutoSowSpot(game, colonist) {
       const x = cx + dx;
       const t = row[x];
       if (!t || !t.tilled || t.plant || t.structure) continue;
-      if (t.tilledBy != null && t.tilledBy !== gid) continue;
+      if (!game._canUseFrom(gid, t.tilledBy)) continue;
       if (game._tileClaimed(x, y)) continue;
       if (colonist.isUnreachable?.(x, y, game.clock)) continue;
       const d = Math.abs(dx) + Math.abs(dy);

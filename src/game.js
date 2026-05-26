@@ -332,6 +332,17 @@ export class Game {
     // Build per-group records (identity / color / script). For α23 the
     // resources stay colony-wide (see legacy storage/seeds/codex below).
     this.groups = this.groupSetup.map((setup, id) => createGroup(id, setup));
+    // N1: initialise the share-flag matrix between every pair of groups.
+    // Every entry defaults to false — a colony's resources are private
+    // unless a flag is later set (no UI exposes this yet; it's wired up
+    // for future diplomacy / alliance mechanics).
+    for (const g of this.groups) {
+      g.canUseFrom = {};
+      for (const other of this.groups) {
+        if (other.id === g.id) continue;
+        g.canUseFrom[other.id] = false;
+      }
+    }
 
     // Spread groups around the map centre — each group gets its own
     // cluster of spawn tiles. With one group the cluster sits on the
@@ -603,15 +614,26 @@ export class Game {
     const tile = this.map.tiles[y] && this.map.tiles[y][x];
     if (!tile) return 'err.offMap';
     const assignee = opts.assignee || null;
+    // N2: every queued task carries the assignee's groupId (null for
+    // "all colonists" orders, which any colonist may pick up). The
+    // pick-up logic in _assignColonist filters by groupId so the queue
+    // effectively partitions per group without us juggling N arrays.
+    const push = (task) => {
+      const c = assignee ? this.colonists.find((cc) => cc.name === assignee) : null;
+      task.groupId = c ? c.groupId : null;
+      this.taskQueue.push(task);
+    };
     if (type === TaskType.MOVE) {
       if (tile.type === TileType.WATER) return 'err.onWater';
       if (assignee) {
-        this.taskQueue.push(createTask(TaskType.MOVE, x, y, { assignee }));
+        push(createTask(TaskType.MOVE, x, y, { assignee }));
       } else {
         // "All colonists" + Move: send every colonist to the tile.
         if (this.colonists.length === 0) return 'err.noColonist';
         for (const c of this.colonists) {
-          this.taskQueue.push(createTask(TaskType.MOVE, x, y, { assignee: c.name }));
+          const t = createTask(TaskType.MOVE, x, y, { assignee: c.name });
+          t.groupId = c.groupId;
+          this.taskQueue.push(t);
         }
       }
       return null;
@@ -641,20 +663,16 @@ export class Game {
       // Wood already reserved by queued / in-flight builds is unavailable;
       // an order that would put the colony into wood debt is refused now.
       if (!this._canAffordBuild(structure)) return 'err.noWood';
-      this.taskQueue.push(
-        createTask(TaskType.BUILD, x, y, { structure, assignee }),
-      );
+      push(createTask(TaskType.BUILD, x, y, { structure, assignee }));
       return null;
     }
     if (type === TaskType.HUNT) {
       const animal = this._animalNear(x, y, 1.6);
       if (!animal) return 'err.noAnimal';
-      this.taskQueue.push(
-        createTask(TaskType.HUNT, animal.tileX, animal.tileY, { animalId: animal.id, assignee }),
-      );
+      push(createTask(TaskType.HUNT, animal.tileX, animal.tileY, { animalId: animal.id, assignee }));
       return null;
     }
-    this.taskQueue.push(createTask(type, x, y, { cropId: opts.cropId || null, assignee }));
+    push(createTask(type, x, y, { cropId: opts.cropId || null, assignee }));
     return null;
   }
 
@@ -848,15 +866,26 @@ export class Game {
           task.outcome = 'noWood';
           task.outcomeData = { structure: task.structure, need: cost };
         } else {
-          // B3: debit the builder's group ledger first; if their group is
-          // short on wood, fall back to whichever group has the most.
+          // B3 / N4: debit the builder's group ledger first; if their
+          // group is short, fall back to the largest *allowed* lender
+          // (own group is always allowed; foreign groups only when the
+          // share-flag is on). With every flag off, this collapses to
+          // own-group only — but the build was gated by
+          // _canAffordBuild() on colony aggregate, so a shortage here
+          // is a race we tolerate by simply burning the colony pool.
           const builderGid = colonist?.groupId;
           const builderGroup = this.groups?.[builderGid];
           if (builderGroup && (builderGroup.storage?.wood || 0) >= cost) {
             storageSub(this, builderGid, 'wood', cost);
           } else {
-            const lender = largestGroupHolder(this, 'wood');
-            storageSub(this, lender ? lender.id : null, 'wood', cost);
+            let lender = null;
+            let bestWood = 0;
+            for (const grp of (this.groups || [])) {
+              if (!this._canUseFrom(builderGid, grp.id)) continue;
+              const w = grp.storage?.wood || 0;
+              if (w > bestWood) { bestWood = w; lender = grp; }
+            }
+            storageSub(this, lender ? lender.id : builderGid, 'wood', cost);
           }
           tile.structure = task.structure;
           if (task.structure === 'hearth') this.hearths.push({ x: task.x, y: task.y, ownerId: colonist?.groupId });
@@ -909,16 +938,30 @@ export class Game {
         }
         // Legacy fallback: convert one raw item into a generic meal so
         // the colony never starves just because no full recipe matched.
+        // N4: ingredients are pulled from groups the cooker is allowed
+        // to use — own group always, foreign groups only when the
+        // share flag is on. With every flag off this means own-group
+        // only, and a cooker with no raw food just stops cooking.
+        const allowedSrc = {};
+        for (const ft of FOOD_TYPES) {
+          let n = 0;
+          for (const grp of (this.groups || [])) {
+            if (!this._canUseFrom(cookerGid, grp.id)) continue;
+            n += grp.storage?.[ft] || 0;
+          }
+          allowedSrc[ft] = n;
+        }
         while (cooked < COOK_BATCH) {
           let pick = null;
           for (const ft of FOOD_TYPES) {
-            if (this.storage[ft] > 0 && (pick === null || this.storage[ft] > this.storage[pick])) {
+            if (allowedSrc[ft] > 0 && (pick === null || allowedSrc[ft] > allowedSrc[pick])) {
               pick = ft;
             }
           }
           if (pick === null) break;
           storageSub(this, cookerGid, pick, 1);
           storageAdd(this, cookerGid, 'meal', 1);
+          allowedSrc[pick] -= 1;
           cooked += 1;
         }
         if (cooked === 0) {
@@ -961,11 +1004,31 @@ export class Game {
         // policies but not enforced on hauling yet.
         const haulerGid = colonist?.groupId;
         let space = (sp.cap || STOCKPILE_CAP) - this.stockpileFood(sp);
+        // N4: the hauler can only carry what they're allowed to hold —
+        // their own on-hand food, or a flagged-on group's. Build a
+        // synthetic "allowed source" store the picker can compare
+        // against. With flags off (default), this collapses to the
+        // hauler's own on-hand store.
+        const allowedSrc = {};
+        for (const ft of FOOD_TYPES) {
+          let n = 0;
+          for (const grp of (this.groups || [])) {
+            if (!this._canUseFrom(haulerGid, grp.id)) continue;
+            n += grp.storage?.[ft] || 0;
+          }
+          allowedSrc[ft] = n;
+        }
+        allowedSrc.meal = 0;
+        for (const grp of (this.groups || [])) {
+          if (!this._canUseFrom(haulerGid, grp.id)) continue;
+          allowedSrc.meal += grp.storage?.meal || 0;
+        }
         while (moved < HAUL_BATCH && space > 0) {
-          const it = this._largestFood(this.storage, FOOD_TYPES);
-          const food = it || (this.storage.meal > 0 ? 'meal' : null);
+          const it = this._largestFood(allowedSrc, FOOD_TYPES);
+          const food = it || (allowedSrc.meal > 0 ? 'meal' : null);
           if (!food) break;
           storageSub(this, haulerGid, food, 1);
+          allowedSrc[food] = (allowedSrc[food] || 0) - 1;
           sp.items[food] += 1;
           moved++;
           space--;
@@ -1094,6 +1157,19 @@ export class Game {
   }
 
   /**
+   * N1: can `actorGid` consume / use a resource owned by `ownerGid`?
+   * Same-group is always yes. Cross-group is gated by the per-group
+   * share-flag matrix (all flags default to false). null ownerId is
+   * treated as colony-wide (everyone may use it).
+   */
+  _canUseFrom(actorGid, ownerGid) {
+    if (ownerGid == null) return true;
+    if (actorGid === ownerGid) return true;
+    const g = this.groups?.[actorGid];
+    return !!(g && g.canUseFrom && g.canUseFrom[ownerGid]);
+  }
+
+  /**
    * H2: per-group raw on-hand food. Used by the auto-cook trigger so
    * Colony B only fires a COOK task when B itself has raw ingredients
    * (otherwise B would walk to Colony A's hearth on Colony A's food).
@@ -1121,14 +1197,14 @@ export class Game {
   }
 
   /**
-   * D4 / E2 / G1: pick the closest OWN-GROUP hut for `colonist` to
-   * sleep in. We deliberately do NOT fall back to other groups' huts —
-   * those are usually far away on the other side of the map and the
-   * walk would drag every colonist into one corner of the world. When
-   * the colonist's group has no usable hut, returns null so the E1
-   * escalation in _assignColonist can BUILD a fresh own-group hut.
-   * Huts marked unreachable inside the colonist's per-frame cache are
-   * skipped.
+   * D4 / E2 / G1 / N4: pick the closest hut for `colonist` that they're
+   * allowed to use. Own-group huts always qualify; another group's hut
+   * only qualifies when this group's canUseFrom flag for that owner is
+   * set (all flags default off — future hook for diplomacy / alliance
+   * mechanics). Returns null when no usable hut exists; the E1
+   * escalation in _assignColonist then BUILDs a fresh own-group hut.
+   * Huts the colonist recently failed to reach are skipped via the
+   * per-colonist unreachable cache.
    */
   _nearestHut(colonist) {
     if (!this.huts || this.huts.length === 0) return null;
@@ -1137,7 +1213,7 @@ export class Game {
     let best = null;
     let bestD = Infinity;
     for (const h of this.huts) {
-      if (h.ownerId !== gid) continue;
+      if (!this._canUseFrom(gid, h.ownerId)) continue;
       if (colonist.isUnreachable?.(h.x, h.y, clock)) continue;
       const d = Math.hypot(h.x - colonist.tileX, h.y - colonist.tileY);
       if (d < bestD) { bestD = d; best = h; }
@@ -1193,10 +1269,17 @@ export class Game {
     // A content colonist works; a miserable one may slack off instead.
     const willWork = colonist.mood >= 0.3 || Math.random() < 0.5;
     if (willWork) {
-      // Take the first queued task addressed to this colonist or to all.
-      const idx = this.taskQueue.findIndex(
-        (task) => !task.assignee || task.assignee === colonist.name,
-      );
+      // N2: take a queued task that's either addressed to this colonist
+      // by name OR addressed to "all colonists" — and from a queue
+      // partition this colonist's group may serve. task.groupId is set
+      // at enqueue time; null means a colony-wide order (anyone may
+      // pick it up).
+      const gid = colonist.groupId;
+      const idx = this.taskQueue.findIndex((task) => {
+        if (task.assignee && task.assignee !== colonist.name) return false;
+        if (task.groupId != null && task.groupId !== gid) return false;
+        return true;
+      });
       if (idx >= 0) {
         const task = this.taskQueue.splice(idx, 1)[0];
         this.lastAssignReason = t('reason.queued', {

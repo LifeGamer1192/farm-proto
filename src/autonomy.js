@@ -130,19 +130,23 @@ export function wantsWarehouse(game, colonist, { utilThreshold = 0.85 } = {}) {
  * Colony B's auto-builder doesn't think Colony A's queued hut covers
  * its own bed shortage.
  */
+// N2: task.groupId is set at enqueue time. Older / hand-built tasks
+// without groupId fall back to looking up the assignee's group.
+function taskBelongsTo(game, task, gid) {
+  if (gid == null) return true; // colony-wide caller
+  if (task.groupId != null) return task.groupId === gid;
+  if (task.assignee) {
+    const c = game.colonists.find((cc) => cc.name === task.assignee);
+    return !!c && c.groupId === gid;
+  }
+  return false;
+}
+
 function autoHutPendingBeds(game, gid) {
   let n = 0;
   for (const t of game.taskQueue) {
     if (t.type !== TaskType.BUILD || !HUT_CAPACITY_BY_TYPE[t.structure]) continue;
-    // Queued tasks pick up the assignee's group at run time. Tasks
-    // without an assignee yet are colony-wide; we count them only when
-    // gid is null (= colony-wide caller, legacy).
-    if (gid != null && t.assignee) {
-      const c = game.colonists.find((cc) => cc.name === t.assignee);
-      if (!c || c.groupId !== gid) continue;
-    } else if (gid != null) {
-      continue;
-    }
+    if (!taskBelongsTo(game, t, gid)) continue;
     n += HUT_CAPACITY_BY_TYPE[t.structure];
   }
   for (const c of game.colonists) {
@@ -159,12 +163,7 @@ function autoHearthPending(game, gid) {
   let n = 0;
   for (const t of game.taskQueue) {
     if (t.type !== TaskType.BUILD || t.structure !== 'hearth') continue;
-    if (gid != null && t.assignee) {
-      const c = game.colonists.find((cc) => cc.name === t.assignee);
-      if (!c || c.groupId !== gid) continue;
-    } else if (gid != null) {
-      continue;
-    }
+    if (!taskBelongsTo(game, t, gid)) continue;
     n++;
   }
   for (const c of game.colonists) {
@@ -296,11 +295,12 @@ export function pickAutonomousTask(game, colonist) {
     // Even the build pivot is blocked (no land / no tree) — fall through
     // to non-additive chores: watering, weeding, cooking.
   }
-  // E3 helper: only auto-tend a crop if it belongs to the same colony.
-  // Old crops (saved games before E3) have no ownerId — treat those as
-  // "anyone may help" so we don't ghost-orphan them on first load.
+  // E3 / N4 helper: only auto-tend a crop the colonist is allowed to
+  // touch. Own-group crops always qualify; foreign crops only when the
+  // share-flag for that owner is on. Old crops without ownerId are
+  // treated as colony-wide (= anyone may help).
   const gid = colonist.groupId;
-  const ownsCrop = (crop) => crop.ownerId == null || crop.ownerId === gid;
+  const ownsCrop = (crop) => game._canUseFrom(gid, crop.ownerId);
   const reachable = (x, y) => !colonist.isUnreachable?.(x, y, game.clock);
   // 1. Gather ripe crops — skipped when on-hand is full so colonists do
   //    not pile food up faster than they can store it.
@@ -359,7 +359,7 @@ export function pickAutonomousTask(game, colonist) {
     const ownMeal = game.groups?.[gid]?.storage?.meal || 0;
     if (game._hearthsLitFor(gid) && ownRaw > 0 && ownMeal < MEAL_TARGET) {
       for (const h of game.hearths) {
-        if (h.ownerId !== gid) continue;
+        if (!game._canUseFrom(gid, h.ownerId)) continue;
         if (colonist.isUnreachable?.(h.x, h.y, game.clock)) continue;
         if (!game._tileClaimed(h.x, h.y)) {
           return createTask(TaskType.COOK, h.x, h.y);
@@ -435,7 +435,7 @@ export function farmerScript(game, colonist) {
   // so a Farmer-type colonist doesn't snipe a Balanced colony's crops.
   const gid = colonist.groupId;
   for (const crop of game.crops) {
-    if (crop.ownerId != null && crop.ownerId !== gid) continue;
+    if (!game._canUseFrom(gid, crop.ownerId)) continue;
     if (colonist.isUnreachable?.(crop.x, crop.y, game.clock)) continue;
     if (isRipe(crop) && !crop.withered && !game._tileClaimed(crop.x, crop.y)) {
       return createTask(TaskType.HARVEST, crop.x, crop.y);
@@ -444,7 +444,7 @@ export function farmerScript(game, colonist) {
   // K1: clear withered own crops so the field doesn't fill up with dead
   // plots the farmer's sow loop can't reuse.
   for (const crop of game.crops) {
-    if (crop.ownerId != null && crop.ownerId !== gid) continue;
+    if (!game._canUseFrom(gid, crop.ownerId)) continue;
     if (colonist.isUnreachable?.(crop.x, crop.y, game.clock)) continue;
     if (crop.withered && !game._tileClaimed(crop.x, crop.y)) {
       return createTask(TaskType.WEED, crop.x, crop.y);
@@ -460,7 +460,7 @@ export function farmerScript(game, colonist) {
     const ownMeal = game.groups?.[gid]?.storage?.meal || 0;
     if (game._hearthsLitFor(gid) && ownRaw > 0 && ownMeal < MEAL_TARGET) {
       for (const h of game.hearths) {
-        if (h.ownerId !== gid) continue;
+        if (!game._canUseFrom(gid, h.ownerId)) continue;
         if (colonist.isUnreachable?.(h.x, h.y, game.clock)) continue;
         if (!game._tileClaimed(h.x, h.y)) return createTask(TaskType.COOK, h.x, h.y);
       }
@@ -487,7 +487,7 @@ export function farmerScript(game, colonist) {
 export function scoutScript(game, colonist) {
   const gid = colonist.groupId;
   for (const crop of game.crops) {
-    if (crop.ownerId != null && crop.ownerId !== gid) continue;
+    if (!game._canUseFrom(gid, crop.ownerId)) continue;
     if (colonist.isUnreachable?.(crop.x, crop.y, game.clock)) continue;
     if (isRipe(crop) && !crop.withered && !game._tileClaimed(crop.x, crop.y)) {
       return createTask(TaskType.HARVEST, crop.x, crop.y);
@@ -495,7 +495,7 @@ export function scoutScript(game, colonist) {
   }
   // K1: clear withered own crops even on a hunt-focused colony.
   for (const crop of game.crops) {
-    if (crop.ownerId != null && crop.ownerId !== gid) continue;
+    if (!game._canUseFrom(gid, crop.ownerId)) continue;
     if (colonist.isUnreachable?.(crop.x, crop.y, game.clock)) continue;
     if (crop.withered && !game._tileClaimed(crop.x, crop.y)) {
       return createTask(TaskType.WEED, crop.x, crop.y);
@@ -569,7 +569,7 @@ function pickRectSowSpot(game, colonist) {
       const y = plan.y + dy;
       const t = game.map.tiles[y]?.[x];
       if (!t || !t.tilled || t.plant || t.structure) continue;
-      if (t.tilledBy != null && t.tilledBy !== gid) continue;
+      if (!game._canUseFrom(gid, t.tilledBy)) continue;
       if (game._tileClaimed(x, y)) continue;
       if (colonist.isUnreachable?.(x, y, game.clock)) continue;
       return { x, y };
@@ -607,7 +607,7 @@ export function farmerBreedScript(game, colonist) {
   // the breed script is the genome stays inside the group).
   const gid = colonist.groupId;
   for (const crop of game.crops) {
-    if (crop.ownerId != null && crop.ownerId !== gid) continue;
+    if (!game._canUseFrom(gid, crop.ownerId)) continue;
     if (colonist.isUnreachable?.(crop.x, crop.y, game.clock)) continue;
     if (isRipe(crop) && !crop.withered && !game._tileClaimed(crop.x, crop.y)) {
       return createTask(TaskType.HARVEST, crop.x, crop.y);
@@ -617,7 +617,7 @@ export function farmerBreedScript(game, colonist) {
   // the breeding programme is what feeds the rect plan, so dead plots
   // blocking sow spots have to go first.
   for (const crop of game.crops) {
-    if (crop.ownerId != null && crop.ownerId !== gid) continue;
+    if (!game._canUseFrom(gid, crop.ownerId)) continue;
     if (colonist.isUnreachable?.(crop.x, crop.y, game.clock)) continue;
     if (crop.withered && !game._tileClaimed(crop.x, crop.y)) {
       return createTask(TaskType.WEED, crop.x, crop.y);
@@ -645,7 +645,7 @@ export function farmerBreedScript(game, colonist) {
     const ownMeal = game.groups?.[gid]?.storage?.meal || 0;
     if (game._hearthsLitFor(gid) && ownRaw > 0 && ownMeal < MEAL_TARGET) {
       for (const h of game.hearths) {
-        if (h.ownerId !== gid) continue;
+        if (!game._canUseFrom(gid, h.ownerId)) continue;
         if (colonist.isUnreachable?.(h.x, h.y, game.clock)) continue;
         if (!game._tileClaimed(h.x, h.y)) return createTask(TaskType.COOK, h.x, h.y);
       }
@@ -717,7 +717,11 @@ export function runSelectiveBreedingCulls(game) {
       for (let i = 0; i < cullCount; i++) {
         const c = list[i];
         if (game._tileClaimed(c.x, c.y)) continue;
-        game.taskQueue.push(createTask(TaskType.WEED, c.x, c.y));
+        // N2: stamp the task with the breeding group's id so only its
+        // own colonists pick it up.
+        const task = createTask(TaskType.WEED, c.x, c.y);
+        task.groupId = grp.id;
+        game.taskQueue.push(task);
         queued += 1;
       }
       if (queued > 0) {
