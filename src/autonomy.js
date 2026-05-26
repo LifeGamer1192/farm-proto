@@ -88,15 +88,21 @@ function cheapestWarehouseCost() {
  * Returns an action descriptor or null. Diagnostic warnings are logged
  * when the answer is "yes but blocked" so the player can tell the
  * difference between "no space for it" and "no wood for it".
+ *
+ * G1: every count and utilisation is per-group, so Colony B will build
+ * its own first warehouse even if Colony A already has three. The
+ * colony-wide hard cap still applies to keep the map from filling up.
  */
 export function wantsWarehouse(game, colonist, { utilThreshold = 0.85 } = {}) {
+  const gid = colonist.groupId;
   const totalSp = game.stockpiles.length + game._pendingBuilds('stockpile')
     + game._pendingBuilds('stockpile_med') + game._pendingBuilds('stockpile_large');
   if (totalSp >= WAREHOUSE_HARD_CAP) return null;
-  // First warehouse is always wanted. After that, only when fill is past
-  // the configured threshold for the script.
-  let wants = game.stockpiles.length === 0;
-  if (!wants && game._warehouseUtilization() >= utilThreshold) wants = true;
+  // First own-group warehouse is always wanted. After that, only when
+  // own-group fill is past the configured threshold for the script.
+  const ownPiles = game._stockpileCountFor(gid);
+  let wants = ownPiles === 0;
+  if (!wants && game._warehouseUtilizationFor(gid) >= utilThreshold) wants = true;
   if (!wants) return null;
   const variant = pickWarehouseVariant(game);
   if (!variant) {
@@ -118,26 +124,63 @@ export function wantsWarehouse(game, colonist, { utilThreshold = 0.85 } = {}) {
   return { build: variant, spot, reason: 'ok' };
 }
 
-/** Beds in flight for already-queued / in-progress hut builds. */
-function autoHutPendingBeds(game) {
+/**
+ * Beds in flight for already-queued / in-progress hut builds. G1: only
+ * counts builds owned by `gid` (= the requesting colonist's group), so
+ * Colony B's auto-builder doesn't think Colony A's queued hut covers
+ * its own bed shortage.
+ */
+function autoHutPendingBeds(game, gid) {
   let n = 0;
   for (const t of game.taskQueue) {
-    if (t.type === TaskType.BUILD && HUT_CAPACITY_BY_TYPE[t.structure]) {
-      n += HUT_CAPACITY_BY_TYPE[t.structure];
+    if (t.type !== TaskType.BUILD || !HUT_CAPACITY_BY_TYPE[t.structure]) continue;
+    // Queued tasks pick up the assignee's group at run time. Tasks
+    // without an assignee yet are colony-wide; we count them only when
+    // gid is null (= colony-wide caller, legacy).
+    if (gid != null && t.assignee) {
+      const c = game.colonists.find((cc) => cc.name === t.assignee);
+      if (!c || c.groupId !== gid) continue;
+    } else if (gid != null) {
+      continue;
     }
+    n += HUT_CAPACITY_BY_TYPE[t.structure];
   }
   for (const c of game.colonists) {
     const ct = c.currentTask;
-    if (ct && ct.type === TaskType.BUILD && HUT_CAPACITY_BY_TYPE[ct.structure]) {
-      n += HUT_CAPACITY_BY_TYPE[ct.structure];
-    }
+    if (!ct || ct.type !== TaskType.BUILD || !HUT_CAPACITY_BY_TYPE[ct.structure]) continue;
+    if (gid != null && c.groupId !== gid) continue;
+    n += HUT_CAPACITY_BY_TYPE[ct.structure];
   }
   return n;
 }
 
-/** Pick the most economical hut variant for the colony's current size. */
-function pickAutoHutVariant(game) {
-  const need = game.colonists.length;
+/** Hearth builds in flight that belong to `gid`. */
+function autoHearthPending(game, gid) {
+  let n = 0;
+  for (const t of game.taskQueue) {
+    if (t.type !== TaskType.BUILD || t.structure !== 'hearth') continue;
+    if (gid != null && t.assignee) {
+      const c = game.colonists.find((cc) => cc.name === t.assignee);
+      if (!c || c.groupId !== gid) continue;
+    } else if (gid != null) {
+      continue;
+    }
+    n++;
+  }
+  for (const c of game.colonists) {
+    const ct = c.currentTask;
+    if (!ct || ct.type !== TaskType.BUILD || ct.structure !== 'hearth') continue;
+    if (gid != null && c.groupId !== gid) continue;
+    n++;
+  }
+  return n;
+}
+
+/** Pick the most economical hut variant for the group's current size. */
+function pickAutoHutVariant(game, gid) {
+  const need = gid == null
+    ? game.colonists.length
+    : (game.groups?.[gid]?.colonists?.length || 0);
   if (need >= 12) return 'hut_large';
   if (need >= 4) return 'hut_med';
   return 'hut';
@@ -169,7 +212,9 @@ export function pickAutonomousTask(game, colonist) {
   // every colonist drops harvest / hunt / forage work and rushes to
   // build another warehouse (or chop wood for it). Otherwise the
   // "on-hand full" rule from α19 stays the same.
-  const critical = game._warehousesCritical?.() || false;
+  // G1: the critical-warehouse check is now per-group — Colony B
+  // doesn't drop everything because Colony A's warehouses are full.
+  const critical = game._warehousesCriticalFor?.(colonist.groupId) || false;
   if (critical && game.autoMode) {
     const dec = wantsWarehouse(game, colonist, { utilThreshold: 0.95 });
     if (dec && dec.build) {
@@ -294,23 +339,24 @@ export function pickAutonomousTask(game, colonist) {
   }
   // 9. Stand up infrastructure before opening more farmland. Each branch
   // also checks wood — a hut that cannot be afforded should not jump the
-  // queue ahead of useful work like sowing.
+  // queue ahead of useful work like sowing. G1: every count is per-group,
+  // so Colony B builds for Colony B even if Colony A is well-housed.
   if (game.autoMode) {
+    const ownPop = game.groups?.[gid]?.colonists?.length || game.colonists.length;
     // α26: count beds (not huts). Once the colony goes past 4 colonists
     // the auto-builder upgrades to medium huts (4-bed), and past 12 to
     // large huts (8-bed) — same wood-per-bed, fewer ground tiles spent.
-    const beds = game._hutCapacity() + autoHutPendingBeds(game);
-    if (beds < game.colonists.length) {
-      const variant = pickAutoHutVariant(game);
+    const beds = game._hutCapacityFor(gid) + autoHutPendingBeds(game, gid);
+    if (beds < ownPop) {
+      const variant = pickAutoHutVariant(game, gid);
       if (game._canAffordBuild(variant)) {
         const spot = game._findFreeLandNear(colonist);
         if (spot) return createTask(TaskType.BUILD, spot.x, spot.y, { structure: variant });
       }
     }
-    if (
-      game.hearths.length + game._pendingBuilds('hearth') < game.huts.length &&
-      game._canAffordBuild('hearth')
-    ) {
+    const ownHearths = game._hearthCountFor(gid) + autoHearthPending(game, gid);
+    const ownHuts = game._hutCountFor(gid);
+    if (ownHearths < ownHuts && game._canAffordBuild('hearth')) {
       const spot = game._findFreeLandNear(colonist);
       if (spot) return createTask(TaskType.BUILD, spot.x, spot.y, { structure: 'hearth' });
     }
@@ -506,7 +552,8 @@ export function farmerBreedScript(game, colonist) {
   // Critical warehouse pivot — even a breeding-focused colony can't keep
   // sowing if the harvest has nowhere to land. Uses the same script-level
   // helper as the balanced/farmer scripts so the threshold stays in sync.
-  const critical = game._warehousesCritical?.() || false;
+  // G1: per-group critical check.
+  const critical = game._warehousesCriticalFor?.(colonist.groupId) || false;
   if (critical && game.autoMode) {
     const dec = wantsWarehouse(game, colonist, { utilThreshold: 0.95 });
     if (dec && dec.build) {

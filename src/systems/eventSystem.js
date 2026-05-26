@@ -47,50 +47,77 @@ export function onSeasonChange(game, season) {
 }
 
 /**
- * A new colonist joins when the colony has more than enough food, at
- * least one hut per existing colonist, and the population cap has not
- * been reached. The chance rolls per season change — about one season
- * in three when conditions hold — so growth feels like years, not minutes.
+ * Population growth is rolled per colony group (G2). For each group:
+ *   - must have at least one colonist alive
+ *   - own roster < POPULATION_CAP / group_count (so a single colony can't
+ *     hog the cap)
+ *   - own huts >= own colonists
+ *   - own food/head >= BIRTH_FOOD_PER_HEAD
+ *   - BIRTH_CHANCE roll succeeds
+ * Multiple groups can give birth on the same season change. The baby
+ * joins its parent's group, spawning at one of that group's huts.
  */
 export function maybeBirth(game) {
+  if (!game.groups || game.groups.length === 0) {
+    return maybeBirthLegacy(game);
+  }
+  // Per-group cap: divide the colony cap evenly across groups so the
+  // total stays bounded but a single colony can't dominate.
+  const perGroupCap = Math.max(1, Math.floor(POPULATION_CAP / game.groups.length));
+  for (const grp of game.groups) {
+    if (grp.colonists.length === 0) continue;
+    if (grp.colonists.length >= perGroupCap) continue;
+    if (game.colonists.length >= POPULATION_CAP) break;
+    // Own-group hut count vs own roster
+    const ownHuts = game._hutCountFor ? game._hutCountFor(grp.id) : 0;
+    if (ownHuts < grp.colonists.length) continue;
+    // Own-group food / head
+    const ownFood = game._totalFoodFor ? game._totalFoodFor(grp.id) : 0;
+    if (ownFood < grp.colonists.length * BIRTH_FOOD_PER_HEAD) continue;
+    if (Math.random() >= BIRTH_CHANCE) continue;
+    spawnBabyInto(game, grp);
+  }
+}
+
+/** Single-group / legacy path used when groups aren't initialised yet. */
+function maybeBirthLegacy(game) {
   if (game.colonists.length === 0) return;
   if (game.colonists.length >= POPULATION_CAP) return;
   if (game.huts.length < game.colonists.length) return;
   if (totalFood(game) < game.colonists.length * BIRTH_FOOD_PER_HEAD) return;
   if (Math.random() >= BIRTH_CHANCE) return;
-  // Pick the group that has the fewest colonists (so growth is fair) —
-  // ties broken by lowest id. The baby joins that group, spawning at
-  // one of its huts if any, else next to one of its existing members.
-  let parentGroup = null;
-  if (game.groups && game.groups.length > 0) {
-    for (const grp of game.groups) {
-      if (!parentGroup || grp.colonists.length < parentGroup.colonists.length) {
-        parentGroup = grp;
-      }
+  spawnBabyInto(game, null);
+}
+
+/** Add a new colonist to `grp` (or the colony root) and announce it. */
+function spawnBabyInto(game, parentGroup) {
+  const gid = parentGroup ? parentGroup.id : 0;
+  // Prefer own-group huts; fall back to a member's tile, else a random
+  // tile near group 0's spawn anchor.
+  let pos = null;
+  if (parentGroup) {
+    const ownHuts = game.huts.filter((h) => h.ownerId === gid);
+    if (ownHuts.length > 0) pos = ownHuts[Math.floor(Math.random() * ownHuts.length)];
+    else if (parentGroup.colonists.length > 0) {
+      const c = parentGroup.colonists[0];
+      pos = { x: c.tileX, y: c.tileY };
     }
   }
-  let pos;
-  if (game.huts.length > 0) {
-    pos = game.huts[Math.floor(Math.random() * game.huts.length)];
-  } else if (parentGroup && parentGroup.colonists.length > 0) {
-    const c = parentGroup.colonists[0];
-    pos = { x: c.tileX, y: c.tileY };
-  } else {
-    const c = game.colonists[0];
-    pos = { x: c.tileX, y: c.tileY };
+  if (!pos) {
+    if (game.huts.length > 0) {
+      pos = game.huts[Math.floor(Math.random() * game.huts.length)];
+    } else if (game.colonists.length > 0) {
+      const c = game.colonists[0];
+      pos = { x: c.tileX, y: c.tileY };
+    } else return;
   }
-  // Per-group letter prefix keeps names unique across groups (alpha 23 fix).
   const letter = parentGroup ? String.fromCharCode(65 + parentGroup.id) : 'X';
   const baseName = BIRTH_NAMES[game._birthCounter % BIRTH_NAMES.length];
   const name = parentGroup ? `${baseName}·${letter}` : baseName;
   game._birthCounter += 1;
-  const gid = parentGroup ? parentGroup.id : 0;
   const baby = new Colonist(pos.x, pos.y, name, gid);
   game.colonists.push(baby);
   if (parentGroup) parentGroup.colonists.push(baby);
-  // D1: pop-up consumers want the group too, so the title can say
-  // "Born into Colony B" instead of just the name. Older code that
-  // checked truthiness still works because the object is non-null.
   game._birthEvent = { name, groupId: gid };
   game._pushLog({
     icon: '👶',

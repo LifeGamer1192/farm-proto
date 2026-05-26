@@ -859,7 +859,7 @@ export class Game {
             storageSub(this, lender ? lender.id : null, 'wood', cost);
           }
           tile.structure = task.structure;
-          if (task.structure === 'hearth') this.hearths.push({ x: task.x, y: task.y });
+          if (task.structure === 'hearth') this.hearths.push({ x: task.x, y: task.y, ownerId: colonist?.groupId });
           if (task.structure === 'stockpile' || task.structure === 'stockpile_med' || task.structure === 'stockpile_large') {
             const cap = STOCKPILE_CAP_BY_TYPE[task.structure] || STOCKPILE_CAP;
             // B2: tag the new stockpile with the builder's group so the
@@ -1020,28 +1020,102 @@ export class Game {
     return n;
   }
 
+  // G1: every colony-wide "do we have enough X" judgement now has a
+  // per-group variant. The autonomy uses these so a Colony B colonist
+  // builds for Colony B even if the colony as a whole already has the
+  // structure (e.g. Colony A's hut). Each helper falls back to its
+  // colony-wide counterpart when `gid` is null.
+
+  /** Total bed-slots across this group's huts only. */
+  _hutCapacityFor(gid) {
+    if (gid == null) return this._hutCapacity();
+    let n = 0;
+    for (const h of this.huts) if (h.ownerId === gid) n += h.cap || 1;
+    return n;
+  }
+
+  /** Number of huts this group owns. */
+  _hutCountFor(gid) {
+    if (gid == null) return this.huts.length;
+    let n = 0;
+    for (const h of this.huts) if (h.ownerId === gid) n++;
+    return n;
+  }
+
+  /** Number of hearths this group owns. */
+  _hearthCountFor(gid) {
+    if (gid == null) return this.hearths.length;
+    let n = 0;
+    for (const h of this.hearths) if (h.ownerId === gid) n++;
+    return n;
+  }
+
+  /** Stockpile count owned by this group. */
+  _stockpileCountFor(gid) {
+    if (gid == null) return this.stockpiles.length;
+    let n = 0;
+    for (const s of this.stockpiles) if (s.ownerId === gid) n++;
+    return n;
+  }
+
+  /** Average fill ratio (0..1) of this group's stockpiles. */
+  _warehouseUtilizationFor(gid) {
+    let used = 0;
+    let cap = 0;
+    for (const sp of this.stockpiles) {
+      if (gid != null && sp.ownerId !== gid) continue;
+      used += this.stockpileFood(sp);
+      cap += sp.cap || STOCKPILE_CAP;
+    }
+    return cap > 0 ? used / cap : 0;
+  }
+
+  /** This group's warehouses are essentially full — autonomy pivots hard. */
+  _warehousesCriticalFor(gid) {
+    if (this._stockpileCountFor(gid) === 0) return false;
+    return this._warehouseUtilizationFor(gid) >= 0.95;
+  }
+
+  /** On-hand + own-stockpile food this group holds, for per-group food/head. */
+  _totalFoodFor(gid) {
+    if (gid == null) return this.totalFood;
+    const g = this.groups?.[gid];
+    if (!g) return 0;
+    let n = 0;
+    for (const id of STOCKPILE_ITEMS) {
+      if (id === 'wood') continue;
+      n += g.storage[id] || 0;
+    }
+    for (const sp of this.stockpiles) {
+      if (sp.ownerId !== gid) continue;
+      n += this.stockpileFood(sp);
+    }
+    return n;
+  }
+
   /**
-   * D4 / E2: pick the closest hut for `colonist` to sleep in. Preference
-   * order: own-group hut → any hut. Huts the colonist has recently
-   * failed to reach are skipped so a single unreachable bed can't trap
-   * them on the way home. Returns null when no hut is usable; the
-   * caller (E1) then falls through to BUILD-a-hut.
+   * D4 / E2 / G1: pick the closest OWN-GROUP hut for `colonist` to
+   * sleep in. We deliberately do NOT fall back to other groups' huts —
+   * those are usually far away on the other side of the map and the
+   * walk would drag every colonist into one corner of the world. When
+   * the colonist's group has no usable hut, returns null so the E1
+   * escalation in _assignColonist can BUILD a fresh own-group hut.
+   * Huts marked unreachable inside the colonist's per-frame cache are
+   * skipped.
    */
   _nearestHut(colonist) {
     if (!this.huts || this.huts.length === 0) return null;
     const gid = colonist.groupId;
     const clock = this.clock;
-    let bestOwn = null;
-    let bestOwnD = Infinity;
-    let bestAny = null;
-    let bestAnyD = Infinity;
+    let best = null;
+    let bestD = Infinity;
     for (const h of this.huts) {
+      if (h.ownerId !== gid) continue;
       if (colonist.isUnreachable?.(h.x, h.y, clock)) continue;
       const d = Math.hypot(h.x - colonist.tileX, h.y - colonist.tileY);
-      if (d < bestAnyD) { bestAnyD = d; bestAny = h; }
-      if (h.ownerId === gid && d < bestOwnD) { bestOwnD = d; bestOwn = h; }
+      if (d < bestD) { bestD = d; best = h; }
     }
-    return bestOwn || bestAny;
+    return best;
   }
 
   // True if a lit hearth stands within HEARTH_RANGE tiles of (x, y).

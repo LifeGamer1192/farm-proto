@@ -249,27 +249,36 @@ function groupTabsEl() {
   return document.getElementById('group-tabs');
 }
 
+// G3: the tab strip used to rewrite its innerHTML every poll (150 ms),
+// so a click whose mousedown landed on one button instance and mouseup
+// on a freshly-rendered replacement would simply not fire. Cache the
+// composed HTML and only assign when it actually changed. Keeping the
+// nodes alive across polls makes single-click switching reliable.
+let lastTabsHtml = null;
 function renderGroupTabs() {
   const el = groupTabsEl();
   if (!el) return;
+  let html;
   if (!game.groups || game.groups.length <= 1) {
-    // No need for the tab strip with a single group.
-    el.innerHTML = '';
-    return;
+    html = '';
+  } else {
+    const tabs = [
+      `<button type="button" class="group-tab${selectedGroupId == null ? ' active' : ''}" data-group="all">${t('group.tabAll')}</button>`,
+    ];
+    for (const g of game.groups) {
+      const sel = selectedGroupId === g.id ? ' active' : '';
+      tabs.push(
+        `<button type="button" class="group-tab${sel}" data-group="${g.id}">` +
+        `<span class="group-chip" style="background:${g.color.fill}"></span>` +
+        `${t('group.label', { letter: String.fromCharCode(65 + g.id) })}` +
+        `</button>`,
+      );
+    }
+    html = tabs.join('');
   }
-  const tabs = [
-    `<button type="button" class="group-tab${selectedGroupId == null ? ' active' : ''}" data-group="all">${t('group.tabAll')}</button>`,
-  ];
-  for (const g of game.groups) {
-    const sel = selectedGroupId === g.id ? ' active' : '';
-    tabs.push(
-      `<button type="button" class="group-tab${sel}" data-group="${g.id}">` +
-      `<span class="group-chip" style="background:${g.color.fill}"></span>` +
-      `${t('group.label', { letter: String.fromCharCode(65 + g.id) })}` +
-      `</button>`,
-    );
-  }
-  el.innerHTML = tabs.join('');
+  if (html === lastTabsHtml) return;
+  lastTabsHtml = html;
+  el.innerHTML = html;
 }
 
 function setupGroupTabsHandler() {
