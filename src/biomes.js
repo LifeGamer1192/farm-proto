@@ -31,7 +31,9 @@ export const BIOMES = {
   },
   arid: {
     id: 'arid',
-    waterLevel: 0.5, // less surface water
+    // waterLevel is the elevation threshold below which a tile is
+    // water — LOWER = drier (fewer tiles dip below the cutoff).
+    waterLevel: 0.32,
     minWaterFraction: 0.03,
     moistureRange: 3,
     fertilityBonus: -0.1,
@@ -67,8 +69,9 @@ export const BIOMES = {
   },
   wetlands: {
     id: 'wetlands',
-    waterLevel: 0.36,
-    minWaterFraction: 0.18,
+    // Higher cutoff → more land falls below it → more water tiles.
+    waterLevel: 0.50,
+    minWaterFraction: 0.20,
     moistureRange: 9,
     fertilityBonus: +0.05,
     treeChance: 0.10,
