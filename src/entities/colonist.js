@@ -40,6 +40,11 @@ const clamp01 = (v) => (v < 0 ? 0 : v > 1 ? 1 : v);
 // the cache forgets and the colonist may retry — covers the case where a
 // fence got knocked down or new land was tilled.
 const UNREACHABLE_TTL = 30;
+// L1: when a tile fails as unreachable, also cache the Chebyshev-distance
+// ≤ this many tiles around it. A boar on the far side of a river makes
+// every nearby till spot equally unreachable; one failure should disable
+// the whole pocket instead of having the autonomy reprobe each tile.
+const UNREACHABLE_RADIUS = 3;
 
 // Seconds of "work" each task type spends once the colonist has arrived.
 const WORK_PHASE = {
@@ -134,9 +139,21 @@ export class Colonist {
     this._unreachable = new Map();
   }
 
-  /** Mark (x, y) as unreachable for this colonist as of `clock`. */
+  /**
+   * Mark (x, y) — and a small surrounding cluster — as unreachable for
+   * this colonist as of `clock`. L1: a single till-spot failure usually
+   * means the whole patch beyond a water / mountain barrier is out of
+   * reach, so caching just the one tile leaves the autonomy retrying
+   * each neighbour next frame ("unreachable" log spam). Filling the
+   * Chebyshev-distance ≤ UNREACHABLE_RADIUS box around the failure cuts
+   * the spam to a single entry per genuine pocket.
+   */
   markUnreachable(x, y, clock) {
-    this._unreachable.set(`${x},${y}`, clock);
+    for (let dy = -UNREACHABLE_RADIUS; dy <= UNREACHABLE_RADIUS; dy++) {
+      for (let dx = -UNREACHABLE_RADIUS; dx <= UNREACHABLE_RADIUS; dx++) {
+        this._unreachable.set(`${x + dx},${y + dy}`, clock);
+      }
+    }
   }
 
   /** True if (x, y) was marked unreachable within the last TTL window. */

@@ -249,11 +249,41 @@ function moodFromEating(itemId, quality) {
 }
 
 /**
+ * Find which group actually holds `n` of `key` on hand. Prefer the
+ * eater's own group, then any other group. Returns the group object or
+ * null. L2: the previous feed() always deducted from `eater.storage`
+ * which clamps at 0, so eating Colony A's meal from Colony B's mouth
+ * left A's per-group view unchanged. With this helper we pick the
+ * actual owner and decrement their books, so per-group food counters
+ * stay honest.
+ */
+function pickStorageOwner(game, eaterGid, key) {
+  const groups = game.groups || [];
+  const eater = groups[eaterGid];
+  if (eater?.storage && (eater.storage[key] || 0) > 0) return eater;
+  for (const g of groups) {
+    if (g.id === eaterGid) continue;
+    if ((g.storage?.[key] || 0) > 0) return g;
+  }
+  return null;
+}
+
+/** Per-group + colony aggregate decrement, with the *lender* group billed. */
+function deductFood(game, ownerGroup, key, n) {
+  if (ownerGroup?.storage) ownerGroup.storage[key] = Math.max(0, (ownerGroup.storage[key] || 0) - n);
+  game.storage[key] = Math.max(0, (game.storage[key] || 0) - n);
+}
+
+/**
  * Feed a colonist (called when an EAT task ends). Priority:
  *  1. cooked meal / dish on hand (big mood lift, quality scales it)
  *  2. raw edible food on hand
- *  3. anything edible from a nearby stockpile
+ *  3. anything edible from a nearby stockpile (own group's first)
  *  4. nothing — colonist goes hungry, missed-meal counter ticks
+ *
+ * The food is deducted from whichever group actually owned it, so the
+ * per-group display reflects reality even when one colony eats out of
+ * another colony's pantry (L2).
  *
  * Inedible-raw items (raw meat, raw legumes, raw almond, raw grains)
  * are skipped at every step; the colonist will starve sooner rather
@@ -263,8 +293,6 @@ export function feed(game, colonist) {
   colonist.eatCooldown = EAT_RETRY;
   const name = colonist.name;
   const groupId = colonist.groupId;
-  // Per-group meal counters (α25) live alongside the colony-wide totals
-  // so the panel can show either depending on the selected tab.
   const grp = game.groups?.[groupId];
   const bumpEaten = () => {
     game.meals.eaten += 1;
@@ -274,23 +302,20 @@ export function feed(game, colonist) {
     game.meals.missed += 1;
     if (grp) grp.meals.missed += 1;
   };
-  // B2: when picking on-hand food, prefer items the colonist's own group
-  // produced. If their group has none of `id`, fall back to the colony
-  // aggregate; the deduction still uses the eater's group so the per-
-  // group panel reflects who actually ate.
-  const ownStore = grp?.storage;
-  // Cooked meal / dish on hand — prefer the highest-quality option.
-  const cookedIds = ['meal', ...DISH_IDS].filter((id) => game.storage[id] > 0);
+  // Cooked meal / dish on hand — prefer items the eater's own group has,
+  // then fall back to whichever group has stock.
+  const cookedIds = ['meal', ...DISH_IDS].filter((id) => (game.storage[id] || 0) > 0);
   if (cookedIds.length > 0) {
-    // Order by own-group availability first, then by quality.
+    const ownStore = grp?.storage;
     cookedIds.sort((a, b) => {
       const own = (ownStore?.[b] || 0) - (ownStore?.[a] || 0);
       if (own !== 0) return own;
       return (game.storage.quality?.[b] || 0.5) - (game.storage.quality?.[a] || 0.5);
     });
     const pick = cookedIds[0];
+    const owner = pickStorageOwner(game, groupId, pick);
     const quality = game.storage.quality?.[pick] || 0.5;
-    storageSub(game, groupId, pick, 1);
+    deductFood(game, owner, pick, 1);
     colonist.hunger = 0;
     colonist.mood = Math.min(1, colonist.mood + moodFromEating(pick, quality));
     bumpEaten();
@@ -299,19 +324,22 @@ export function feed(game, colonist) {
   }
   const onHand = largestEdibleRaw(game.storage, FOOD_TYPES);
   if (onHand) {
+    const owner = pickStorageOwner(game, groupId, onHand);
     const quality = game.storage.quality?.[onHand] || 0.5;
-    storageSub(game, groupId, onHand, 1);
+    deductFood(game, owner, onHand, 1);
     colonist.hunger = 0;
     colonist.mood = Math.min(1, colonist.mood + moodFromEating(onHand, quality));
     bumpEaten();
     game._pushLog({ icon: '🍴', text: t('log.ate', { name }), cls: 'log-meal', groupId });
     return;
   }
-  // Fall back to stockpiles — prefer cooked, then any raw edible.
-  for (const sp of game.stockpiles) {
+  // Fall back to stockpiles — prefer own-group piles, then any others.
+  const ownPiles = game.stockpiles.filter((sp) => sp.ownerId === groupId);
+  const otherPiles = game.stockpiles.filter((sp) => sp.ownerId !== groupId);
+  for (const sp of [...ownPiles, ...otherPiles]) {
     let pick = null;
     for (const id of ['meal', ...DISH_IDS]) {
-      if (sp.items[id] > 0) { pick = id; break; }
+      if ((sp.items[id] || 0) > 0) { pick = id; break; }
     }
     if (!pick) {
       pick = largestEdibleRaw(sp.items, STOCKPILE_ITEMS);
