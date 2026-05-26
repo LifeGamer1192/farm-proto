@@ -17,7 +17,7 @@ export const TIPS = [
   { cat: 'spec', en: 'Build a warehouse and colonists haul food into it, safe from pests.', ja: '倉庫を建てると、コロニストが食料を運び込み、虫害から守ります。' },
   { cat: 'spec', en: 'Pests gnaw at on-hand food; food in a warehouse is left untouched.', ja: '虫害は手持ちの食料をかじります。倉庫の中の食料は無事です。' },
   { cat: 'spec', en: 'Keep a hearth lit through winter, or colonists suffer in the cold.', ja: '冬はかまどの火を絶やさないこと。さもないとコロニストが寒さに苦しみます。' },
-  { cat: 'spec', en: 'Firewood comes from harvesting wild plants.', ja: '薪は野生植物を収穫すると手に入ります。' },
+  { cat: 'spec', en: 'Wood comes from chopping trees, with a little from foraging wild plants.', ja: '材木は木の伐採で得られます。野生植物の採取でも少しだけ手に入ります。' },
   { cat: 'spec', en: 'Cook raw food at a hearth into meals — meals lift mood and never spoil.', ja: 'かまどで食材を料理にすると、気分が上がり、虫害でも傷みません。' },
   { cat: 'spec', en: 'Idle colonists hunt boar on their own when colony food runs low.', ja: '食料が尽きかけると、手すきのコロニストが自分でイノシシを狩ります。' },
   { cat: 'spec', en: 'The Cancel tool calls off planned tasks you no longer want.', ja: 'キャンセルツールで、いらなくなった予定タスクを取り消せます。' },

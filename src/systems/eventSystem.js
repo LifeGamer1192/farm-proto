@@ -144,7 +144,7 @@ export function pestStrike(game) {
   game._pushLog({ icon: '🐛', text: t('log.pests', { n: spoiled }), cls: 'log-fail' });
 }
 
-/** Lit hearths burn through the colony's firewood over time. */
+/** Lit hearths burn through the colony's wood over time. */
 export function updateFuel(game, dt) {
   if (game.hearths.length === 0 || game.storage.wood <= 0) return;
   game.storage.wood = Math.max(0, game.storage.wood - game.hearths.length * WOOD_BURN_RATE * dt);

@@ -256,19 +256,19 @@ const STRINGS = {
     'task.cook': 'Cook',
     'state.cooking': 'Cooking',
     'structure.hearth': 'Hearth',
-    'stat.wood': 'Firewood',
+    'stat.wood': 'Wood',
     'stat.cooked': 'Cooked meals',
     'hint.task.cook':
       'Cook tool — click a lit hearth; a colonist turns raw food into cooked meals.',
     'hint.structure.hearth':
-      'Hearth — burns firewood to keep nearby colonists warm, and you can cook on it.',
+      'Hearth — burns wood to keep nearby colonists warm, and you can cook on it.',
     'out.cooked': 'cooked {n} meals',
-    'out.noFuel': 'the hearth is cold — no firewood',
+    'out.noFuel': 'the hearth is cold — no wood',
     'out.noFood': 'nothing to cook',
     'out.noHearth': 'no hearth here',
     'log.cold': 'Colonists are suffering in the cold',
     'note.cold':
-      'Colonists are cold! Keep a hearth lit — gather firewood by harvesting wild plants.',
+      'Colonists are cold! Keep a hearth lit — chop trees or harvest wild plants for wood.',
 
     'win.title': 'Three years survived!',
     'win.hint': 'Your colony made it through three full years. Keep playing, or start anew.',
@@ -305,7 +305,7 @@ const STRINGS = {
     'out.noSeed': 'out of {crop} seed',
     'tip.stored': '{n}/{cap} stored',
     'tip.hearthLit': 'lit',
-    'tip.hearthUnlit': 'unlit — no firewood',
+    'tip.hearthUnlit': 'unlit — no wood',
 
     'gene.hardiness': 'Hardiness',
     'gene.yield': 'Yield',
@@ -645,19 +645,19 @@ const STRINGS = {
     'task.cook': '調理',
     'state.cooking': '調理中',
     'structure.hearth': 'かまど',
-    'stat.wood': '薪',
+    'stat.wood': '材木',
     'stat.cooked': '調理済み',
     'hint.task.cook':
       '調理ツール — 火のついたかまどをクリックすると、コロニストが食材を料理にします。',
     'hint.structure.hearth':
-      'かまど — 薪を燃やして近くのコロニストを暖めます。調理もここで行います。',
+      'かまど — 材木を燃やして近くのコロニストを暖めます。調理もここで行います。',
     'out.cooked': '{n}食分を調理した',
-    'out.noFuel': 'かまどの火が消えている — 薪がない',
+    'out.noFuel': 'かまどの火が消えている — 材木がない',
     'out.noFood': '調理する食材がない',
     'out.noHearth': 'ここにかまどがない',
     'log.cold': 'コロニストが寒さに苦しんでいる',
     'note.cold':
-      'コロニストが寒い！かまどの火を絶やさず、野生植物を収穫して薪を集めましょう。',
+      'コロニストが寒い！かまどの火を絶やさず、伐採や野生植物の収穫で材木を集めましょう。',
 
     'win.title': '3年生存達成！',
     'win.hint': 'コロニーは3年を生き延びました。このまま続けるか、新たに始められます。',
@@ -694,7 +694,7 @@ const STRINGS = {
     'out.noSeed': '{crop}の種切れ',
     'tip.stored': '収納 {n}/{cap}',
     'tip.hearthLit': '点火中',
-    'tip.hearthUnlit': '消火 — 薪がない',
+    'tip.hearthUnlit': '消火 — 材木がない',
 
     'gene.hardiness': '耐性',
     'gene.yield': '収量',

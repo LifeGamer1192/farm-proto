@@ -149,8 +149,8 @@ export const PEST_BITE = 0.15; // fraction of on-hand food a pest strike spoils
 
 // --- cooking, fuel & cold (alpha 9) --------------------------------------
 
-export const WILD_WOOD_YIELD = 2; // firewood gained from harvesting a wild plant
-export const WOOD_BURN_RATE = 1 / 24; // firewood a lit hearth burns per sim-second
+export const WILD_WOOD_YIELD = 2; // wood gained from harvesting a wild plant
+export const WOOD_BURN_RATE = 1 / 24; // wood a lit hearth burns per sim-second
 export const HEARTH_RANGE = 5; // tiles a lit hearth keeps warm
 export const COLD_THRESHOLD = 4; // °C at or below which the unsheltered suffer
 export const COLD_DAMAGE = 1 / 130; // health lost per sim-second while cold

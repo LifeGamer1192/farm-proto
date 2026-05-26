@@ -275,7 +275,7 @@ export class Game {
   _pickAutoSowSpot(colonist)     { return csPickAutoSowSpot(this, colonist); }
   _pickTillSpot(colonist, crop)  { return csPickTillSpot(this, colonist, crop); }
   _touchesTilled(x, y)           { return csTouchesTilled(this, x, y); }
-  // A hearth warms and cooks only while the colony has firewood to burn.
+  // A hearth warms and cooks only while the colony has wood to burn.
   get hearthsLit() {
     return this.hearths.length > 0 && this.storage.wood > 0;
   }
