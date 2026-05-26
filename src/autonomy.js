@@ -49,12 +49,26 @@ import { registerScript } from './groups.js';
  * @returns {?object} a task created via createTask, or null
  */
 export function pickAutonomousTask(game, colonist) {
+  // Alpha 24: at 95% warehouse utilization the colony hits CRITICAL —
+  // every colonist drops harvest / hunt / forage work and rushes to
+  // build another warehouse (or chop wood for it). Otherwise the
+  // "on-hand full" rule from α19 stays the same.
+  const critical = game._warehousesCritical?.() || false;
+  if (critical && game.autoMode) {
+    if (game._canAffordBuild('stockpile')) {
+      const spot = game._findFreeLandNear(colonist);
+      if (spot) return createTask(TaskType.BUILD, spot.x, spot.y, { structure: 'stockpile' });
+    }
+    // Not enough wood for a warehouse — go chop a tree right now.
+    const tree = game._nearestTree(colonist, AUTO_SEARCH_RANGE);
+    if (tree) return createTask(TaskType.HARVEST, tree.x, tree.y);
+  }
   // On-hand is full. Anything that would *add* to it (harvest a ripe crop,
   // fetch food, hunt, forage by chopping a wild plant) is skipped this
   // turn — colonists prefer to STORE first instead. This stops auto mode
   // from running on-hand way past its cap while the storage queue is
   // perpetually crowded out by farm work.
-  const onHandFull = game.onHandFood >= ON_HAND_CAP;
+  const onHandFull = critical || game.onHandFood >= ON_HAND_CAP;
   if (onHandFull) {
     const sp = game._nearestStockpile(colonist, (s) => game.stockpileFood(s) < STOCKPILE_CAP);
     if (sp && !game._tileClaimed(sp.x, sp.y)) {

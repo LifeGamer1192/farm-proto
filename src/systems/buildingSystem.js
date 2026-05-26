@@ -109,10 +109,26 @@ export function wantsAutoWarehouse(game) {
   const total = game.stockpiles.length + pendingBuilds(game, 'stockpile');
   if (total >= AUTO_WAREHOUSE_CAP) return false;
   if (game.stockpiles.length === 0) return true;
+  return warehouseUtilization(game) > 0.85;
+}
+
+/** Average stockpile fill ratio (0..1) across every warehouse. */
+export function warehouseUtilization(game) {
+  if (game.stockpiles.length === 0) return 0;
   let used = 0;
   for (const sp of game.stockpiles) used += stockpileFood(sp);
   const cap = game.stockpiles.length * STOCKPILE_CAP;
-  return used / cap > 0.85;
+  return cap > 0 ? used / cap : 0;
+}
+
+/**
+ * Critical: storage is essentially full. When this is true the autonomy
+ * pivots hard — colonists skip anything that adds to on-hand and rush
+ * to build new warehouses or chop wood for them.
+ */
+export function warehousesCritical(game) {
+  if (game.stockpiles.length === 0) return false;
+  return warehouseUtilization(game) >= 0.95;
 }
 
 /**

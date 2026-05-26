@@ -17,6 +17,8 @@ export const TIPS = [
   { cat: 'spec', en: 'Build a warehouse and colonists haul food into it, safe from pests.', ja: '倉庫を建てると、コロニストが食料を運び込み、虫害から守ります。' },
   { cat: 'spec', en: 'Pests gnaw at on-hand food; food in a warehouse is left untouched.', ja: '虫害は手持ちの食料をかじります。倉庫の中の食料は無事です。' },
   { cat: 'spec', en: 'Keep a hearth lit through winter, or colonists suffer in the cold.', ja: '冬はかまどの火を絶やさないこと。さもないとコロニストが寒さに苦しみます。' },
+  { cat: 'spec', en: 'A lit hearth keeps colonists warm within 5 tiles — multiple hearths cover more of the farm.', ja: '点火したかまどは半径5タイル以内のコロニストを暖めます。複数のかまどで広い範囲をカバーできます。' },
+  { cat: 'spec', en: 'Each lit hearth burns wood steadily — the more hearths burning, the faster your wood depletes.', ja: '点火中のかまど1つごとに材木を消費します。かまどが多いほど材木の消費が速くなります。' },
   { cat: 'spec', en: 'Wood comes from chopping trees, with a little from foraging wild plants.', ja: '材木は木の伐採で得られます。野生植物の採取でも少しだけ手に入ります。' },
   { cat: 'spec', en: 'Cook raw food at a hearth into meals — meals lift mood and never spoil.', ja: 'かまどで食材を料理にすると、気分が上がり、虫害でも傷みません。' },
   { cat: 'spec', en: 'Idle colonists hunt boar on their own when colony food runs low.', ja: '食料が尽きかけると、手すきのコロニストが自分でイノシシを狩ります。' },

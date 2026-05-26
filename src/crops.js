@@ -96,6 +96,19 @@ export const CROP_TYPES = {
   wildgreens:  { id:'wildgreens',  label:'Wild greens',  category:'leaf',     growthTime:50, yield:1, color:'#6b8d4a', ripeColor:'#8aa756', soil:{fertility:0.20,moisture:0.30,sunlight:0.30}, nutrition:0.10 },
 };
 
+// Crops you cannot eat raw — must be cooked first (alpha 24). The list
+// covers categories that need cooking in real life: grains, legumes
+// and the lone nut. Wild greens stays edible raw (foraged early-game
+// fallback). Everything else defaults to edible.
+const _INEDIBLE_RAW = new Set([
+  'wheat', 'rice', 'maize', 'oats', 'barley',
+  'bean', 'soybean', 'pea', 'lentil', 'chickpea',
+  'almond',
+]);
+for (const id of Object.keys(CROP_TYPES)) {
+  CROP_TYPES[id].edibleRaw = !_INEDIBLE_RAW.has(id);
+}
+
 // Display / iteration order.
 export const CROP_IDS = Object.keys(CROP_TYPES);
 

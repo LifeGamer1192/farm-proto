@@ -106,6 +106,7 @@ import {
   stockpileAt as fsStockpileAt,
   nearestStockpile as fsNearestStockpile,
   feed as fsFeed,
+  cookOne as csCookOne,
 } from './systems/foodSystem.js';
 import {
   freshSeeds as csFreshSeeds,
@@ -141,6 +142,8 @@ import {
   reservedBuildWood as bsReservedBuildWood,
   canAffordBuild as bsCanAffordBuild,
   wantsAutoWarehouse as bsWantsAutoWarehouse,
+  warehousesCritical as bsWarehousesCritical,
+  warehouseUtilization as bsWarehouseUtilization,
   nextFenceTile as bsNextFenceTile,
   planFenceLine as bsPlanFenceLine,
 } from './systems/buildingSystem.js';
@@ -689,7 +692,17 @@ export class Game {
         } else {
           const crop = getCrop(plant.cropId);
           const n = Math.max(1, Math.round(crop.yield * yieldMult(plant.genome)));
-          this.storage[plant.cropId] += n;
+          const prevCount = this.storage[plant.cropId] || 0;
+          this.storage[plant.cropId] = prevCount + n;
+          // Alpha 24: blend the harvested batch's quality (from the seed's
+          // ★ rank, mapped 0..1) into whatever stock was already on hand.
+          // Higher-quality seeds bring better cook outputs downstream.
+          const q = Math.max(0, Math.min(1, qualityRank(plant.genome) / 4));
+          if (!this.storage.quality) this.storage.quality = {};
+          const prevQ = this.storage.quality[plant.cropId] ?? 0.5;
+          const newCount = prevCount + n;
+          this.storage.quality[plant.cropId] =
+            (prevQ * prevCount + q * n) / Math.max(1, newCount);
           this._recordCodex(plant.cropId, plant.genome);
           const seeds = this._gatherSeeds(plant);
           task.outcome = 'harvested';
@@ -821,8 +834,22 @@ export class Game {
       } else if (!this.hearthsLit) {
         task.outcome = 'noFuel';
       } else {
+        // Alpha 24: recipe-based cooking. Each pass picks the best
+        // recipe whose ingredients are on hand (Tier 2 > Tier 1) and
+        // produces that dish, blending input quality into the dish's
+        // own quality stack. Falls back to the legacy "shuffle raw →
+        // meal" path when no recipe matches so cooking is never a
+        // total dead-end during the early game.
         let cooked = 0;
-        // Turn raw food into cooked meals, drawing from the largest store.
+        const dishesMade = {};
+        while (cooked < COOK_BATCH) {
+          const recipe = csCookOne(this);
+          if (!recipe) break;
+          dishesMade[recipe.id] = (dishesMade[recipe.id] || 0) + recipe.out;
+          cooked += recipe.out;
+        }
+        // Legacy fallback: convert one raw item into a generic meal so
+        // the colony never starves just because no full recipe matched.
         while (cooked < COOK_BATCH) {
           let pick = null;
           for (const ft of FOOD_TYPES) {
@@ -839,7 +866,7 @@ export class Game {
           task.outcome = 'noFood';
         } else {
           task.outcome = 'cooked';
-          task.outcomeData = { n: cooked };
+          task.outcomeData = { n: cooked, dishes: Object.keys(dishesMade) };
         }
       }
     } else if (task.type === TaskType.WEED) {
@@ -984,6 +1011,8 @@ export class Game {
   _reservedBuildWood()       { return bsReservedBuildWood(this); }
   _canAffordBuild(structure) { return bsCanAffordBuild(this, structure); }
   _wantsAutoWarehouse()      { return bsWantsAutoWarehouse(this); }
+  _warehousesCritical()      { return bsWarehousesCritical(this); }
+  _warehouseUtilization()    { return bsWarehouseUtilization(this); }
   _nextFenceTile(c)          { return bsNextFenceTile(this, c); }
   _planFenceLine()           { return bsPlanFenceLine(this); }
 

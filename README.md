@@ -234,6 +234,29 @@ and surviving the winter.
   warehouse will not auto-queue unless the wood for it is already
   in stock.
 
+### Alpha 24 — cooking gets real
+
+- **30 recipes** in `src/recipes.js`: 25 Tier-1 dishes (porridge, bean
+  soup, mashed potato, garden salad, roast meat, almond cake, …)
+  each made from 2-3 raw crops; **5 Tier-2 banquet** dishes
+  (banquet, harvest feast, soup combo, meat banquet, dessert plate)
+  made from 2-3 Tier-1 dishes.
+- **Quality system**: every food slot in storage carries a quality
+  number (0..1). Harvested crops blend in the harvest's ★ rank as
+  quality; cook averages input qualities into the dish's quality;
+  mood-on-eat scales with the eaten item's quality.
+- **Multi-nutrient profile**: every food item carries a
+  carb/protein/fat/vitamin breakdown. Dishes carry their own
+  profiles (e.g. tofu = 60% protein; garden salad = 85% vitamin).
+- **Inedible-raw items**: grains, legumes and the lone nut **must be
+  cooked** before colonists will eat them. Raw meat is inedible too.
+  `feed()` skips inedible-raw items and goes hungry rather than
+  serving raw beans.
+- **Critical-warehouse rule (≥95% full)**: autonomy pivots — every
+  colonist builds a new warehouse (or chops wood for one) before
+  taking on-hand-increasing work, replacing the gentler 85%
+  trigger of α19.
+
 ### Alpha 23 — multiple colony groups
 
 - A game can now host **1 to 8 colony groups**. Pick the count from
