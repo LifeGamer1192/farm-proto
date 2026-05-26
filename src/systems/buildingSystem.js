@@ -85,33 +85,41 @@ function _spiralFreeLand(game, cx, cy, maxR, colonist) {
 }
 
 /**
- * Centroid of one colony group — own-group huts > stockpiles > colonists
- * > spawnAnchor. Used so each colony's auto-builds cluster around its
- * own footprint instead of the colony-wide soup.
+ * Centroid of one colony group. Fallback chain (J1 fix):
+ *   1. own huts (best — that's where the colony actually lives)
+ *   2. own stockpiles (next best — early infra)
+ *   3. group spawnAnchor (stable map-time anchor, never moves)
+ *   4. own colonists' average tile (last resort, mostly for tests)
+ * spawnAnchor sits ahead of the colonist average on purpose: a colonist
+ * who has wandered to another colony's farm to harvest / haul drags the
+ * naïve centroid with them, and the auto-builder would then put new
+ * huts on the neighbour's doorstep. Falling back to the unmoving spawn
+ * anchor keeps each colony's footprint anchored where it actually
+ * started.
  */
 export function groupAnchor(game, colonist) {
   if (!colonist) return null;
   const gid = colonist.groupId;
   const grp = game.groups?.[gid];
   const huts = game.huts.filter((h) => h.ownerId === gid);
+  if (huts.length > 0) return averagePos(huts);
   const piles = game.stockpiles.filter((s) => s.ownerId === gid);
-  const anchors = huts.length > 0
-    ? huts
-    : (piles.length > 0
-        ? piles
-        : (grp?.colonists?.length
-            ? grp.colonists.map((c) => ({ x: c.tileX, y: c.tileY }))
-            : null));
-  if (anchors) {
-    let sx = 0;
-    let sy = 0;
-    for (const a of anchors) {
-      sx += a.x;
-      sy += a.y;
-    }
-    return { x: sx / anchors.length, y: sy / anchors.length };
+  if (piles.length > 0) return averagePos(piles);
+  if (grp?.spawnAnchor) return grp.spawnAnchor;
+  if (grp?.colonists?.length) {
+    return averagePos(grp.colonists.map((c) => ({ x: c.tileX, y: c.tileY })));
   }
-  return grp?.spawnAnchor || null;
+  return null;
+}
+
+function averagePos(anchors) {
+  let sx = 0;
+  let sy = 0;
+  for (const a of anchors) {
+    sx += a.x;
+    sy += a.y;
+  }
+  return { x: sx / anchors.length, y: sy / anchors.length };
 }
 
 /**
