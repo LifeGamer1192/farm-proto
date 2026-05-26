@@ -107,8 +107,12 @@ import {
   stockpileFood as fsStockpileFood,
   stockpileAt as fsStockpileAt,
   nearestStockpile as fsNearestStockpile,
+  nearestOwnStockpile as fsNearestOwnStockpile,
   feed as fsFeed,
   cookOne as csCookOne,
+  storageAdd,
+  storageSub,
+  largestGroupHolder,
 } from './systems/foodSystem.js';
 import {
   freshSeeds as csFreshSeeds,
@@ -228,6 +232,7 @@ export class Game {
     this._pestEvent = false;
     this._coldEvent = false;
     this._coldActive = false;
+    this._mutationEvent = null;
     this.log = [];
     this.logRev = 0;
     this.lastAssignReason = '';
@@ -260,24 +265,25 @@ export class Game {
   _freshStockpileItems() { return freshStockpileItems(); }
   _largestFood(store, items) { return largestFood(store, items); }
   totalItem(it)            { return fsTotalItem(this, it); }
-  stockpileAt(x, y)        { return fsStockpileAt(this, x, y); }
-  stockpileFood(sp)        { return fsStockpileFood(sp); }
-  _nearestStockpile(c, p)  { return fsNearestStockpile(this, c, p); }
-  _feed(colonist)          { return fsFeed(this, colonist); }
+  stockpileAt(x, y)         { return fsStockpileAt(this, x, y); }
+  stockpileFood(sp)         { return fsStockpileFood(sp); }
+  _nearestStockpile(c, p)   { return fsNearestStockpile(this, c, p); }
+  _nearestOwnStockpile(c, p){ return fsNearestOwnStockpile(this, c, p); }
+  _feed(colonist)           { return fsFeed(this, colonist); }
 
   // --- Seed / codex / sow delegates (cropSystem) -------------------------
-  _freshSeeds()                  { return csFreshSeeds(this); }
-  _freshCodex()                  { return csFreshCodex(this); }
-  _recordCodex(cropId, genome)   { return csRecordCodex(this, cropId, genome); }
-  seedCount(cropId)              { return csSeedCount(this, cropId); }
-  bestSeed(cropId)               { return csBestSeed(this, cropId); }
-  bestSeedRank(cropId)           { return csBestSeedRank(this, cropId); }
-  _pendingSows(cropId)           { return csPendingSows(this, cropId); }
-  canSow(cropId)                 { return csCanSow(this, cropId); }
-  _takeSeed(cropId)              { return csTakeSeed(this, cropId); }
-  _addSeed(cropId, genome)       { return csAddSeed(this, cropId, genome); }
-  _gatherSeeds(plant)            { return csGatherSeeds(this, plant); }
-  _mostStockedCrop()             { return csMostStockedCrop(this); }
+  _freshSeeds()                                 { return csFreshSeeds(this); }
+  _freshCodex()                                 { return csFreshCodex(this); }
+  _recordCodex(cropId, genome, groupId)         { return csRecordCodex(this, cropId, genome, groupId); }
+  seedCount(cropId, groupId)                    { return csSeedCount(this, cropId, groupId); }
+  bestSeed(cropId, groupId)                     { return csBestSeed(this, cropId, groupId); }
+  bestSeedRank(cropId, groupId)                 { return csBestSeedRank(this, cropId, groupId); }
+  _pendingSows(cropId, groupId)                 { return csPendingSows(this, cropId, groupId); }
+  canSow(cropId, groupId)                       { return csCanSow(this, cropId, groupId); }
+  _takeSeed(cropId, groupId)                    { return csTakeSeed(this, cropId, groupId); }
+  _addSeed(cropId, genome, groupId)             { return csAddSeed(this, cropId, genome, groupId); }
+  _gatherSeeds(plant, groupId)                  { return csGatherSeeds(this, plant, groupId); }
+  _mostStockedCrop(groupId)                     { return csMostStockedCrop(this, groupId); }
   _pickAutoSowSpot(colonist)     { return csPickAutoSowSpot(this, colonist); }
   _pickTillSpot(colonist, crop)  { return csPickTillSpot(this, colonist, crop); }
   _touchesTilled(x, y)           { return csTouchesTilled(this, x, y); }
@@ -335,6 +341,10 @@ export class Game {
     for (let gid = 0; gid < this.groups.length; gid++) {
       const group = this.groups[gid];
       const center = clusters[gid];
+      // α25 follow-up (C1): remember each group's spawn anchor so the
+      // breed script lays its rectangular field at a predictable spot
+      // instead of wherever the first idle colonist happens to be.
+      group.spawnAnchor = { x: center.x, y: center.y };
       const want = group.colonistCount;
       const spawns = this._findSpawnsNear(center.x, center.y, want);
       // Names: first group uses the hand-picked roster (Ada/Bo/Cy/Dot)
@@ -383,6 +393,7 @@ export class Game {
     this._pestEvent = false;
     this._coldEvent = false;
     this._coldActive = false;
+    this._mutationEvent = null;
     this._birthEvent = null;
     this._traderEvent = null;
     this._traderYear = 0;
@@ -402,25 +413,27 @@ export class Game {
 
   /**
    * Pick N spawn cluster centres so groups land on different patches
-   * of the map. The first cluster sits on the map centre (back-compat
-   * for the single-group case); subsequent clusters are placed on a
-   * ring around it. Each centre is snapped to the nearest land tile.
+   * of the map. D2: with two or more groups, every cluster (including
+   * group 0) goes onto an outer ring so colonies start as far apart as
+   * the map comfortably allows. Single-group games keep the historical
+   * map-centre anchor for back-compat. The radius leaves a margin so a
+   * dense same-group spawn search has room to spiral.
    */
   _pickGroupClusters(n) {
     const cx = (this.map.cols / 2) | 0;
     const cy = (this.map.rows / 2) | 0;
     if (n <= 1) return [{ x: cx, y: cy }];
+    const margin = 6; // tiles to keep clear of the map edge
+    const half = Math.min(this.map.cols, this.map.rows) / 2;
+    const radius = Math.max(8, half - margin);
     const out = [];
-    const radius = Math.min(this.map.cols, this.map.rows) * 0.28;
+    // For two groups, anchor the first slot at the same y as the centre
+    // so the camera doesn't start tilted. For >2, a regular polygon
+    // around the centre — equidistant neighbours, maximum spread.
     for (let i = 0; i < n; i++) {
-      // First slot still at the centre; the rest fan around it.
-      if (i === 0) {
-        out.push(this._snapToLand(cx, cy));
-        continue;
-      }
-      const t = ((i - 1) / Math.max(1, n - 1)) * Math.PI * 2;
-      const x = Math.round(cx + Math.cos(t) * radius);
-      const y = Math.round(cy + Math.sin(t) * radius);
+      const angle = (i / n) * Math.PI * 2;
+      const x = Math.round(cx + Math.cos(angle) * radius);
+      const y = Math.round(cy + Math.sin(angle) * radius);
       out.push(this._snapToLand(x, y));
     }
     return out;
@@ -550,6 +563,13 @@ export class Game {
   consumeTraderEvent() {
     const e = this._traderEvent;
     this._traderEvent = null;
+    return e;
+  }
+
+  // The most recent legendary mutation, or null. One-shot popup.
+  consumeMutationEvent() {
+    const e = this._mutationEvent;
+    this._mutationEvent = null;
     return e;
   }
 
@@ -704,7 +724,7 @@ export class Game {
           const crop = getCrop(plant.cropId);
           const n = Math.max(1, Math.round(crop.yield * yieldMult(plant.genome)));
           const prevCount = this.storage[plant.cropId] || 0;
-          this.storage[plant.cropId] = prevCount + n;
+          storageAdd(this, colonist?.groupId, plant.cropId, n);
           // Alpha 24: blend the harvested batch's quality (from the seed's
           // ★ rank, mapped 0..1) into whatever stock was already on hand.
           // Higher-quality seeds bring better cook outputs downstream.
@@ -714,8 +734,8 @@ export class Game {
           const newCount = prevCount + n;
           this.storage.quality[plant.cropId] =
             (prevQ * prevCount + q * n) / Math.max(1, newCount);
-          this._recordCodex(plant.cropId, plant.genome);
-          const seeds = this._gatherSeeds(plant);
+          this._recordCodex(plant.cropId, plant.genome, colonist?.groupId);
+          const seeds = this._gatherSeeds(plant, colonist?.groupId);
           task.outcome = 'harvested';
           task.outcomeData = { crop: plant.cropId, n, seeds };
         }
@@ -724,7 +744,7 @@ export class Game {
       } else if (plant && plant.kind === PlantKind.TREE) {
         // Chopping a tree yields wood and leaves a fresh stump behind.
         const wood = Math.max(1, Math.round(TREE_WOOD_YIELD * (plant.growth || 1)));
-        this.storage.wood += wood;
+        storageAdd(this, colonist?.groupId, 'wood', wood);
         tile.plant = { kind: PlantKind.STUMP, regrowAt: this.clock + STUMP_REGROW_TIME };
         task.outcome = 'chopped';
         task.outcomeData = { n: wood };
@@ -734,20 +754,16 @@ export class Game {
         task.outcome = 'stump';
         return;
       } else if (plant) {
-        this.storage.forage += 1;
-        this.storage.wood += WILD_WOOD_YIELD;
+        storageAdd(this, colonist?.groupId, 'forage', 1);
+        storageAdd(this, colonist?.groupId, 'wood', WILD_WOOD_YIELD);
         // Low chance to gather a wild-greens seed from the foraged plant.
         // Wild seed is weak — barely any yield or nutrition — but it can
         // be sown like a regular crop, planting the seed of a future
         // "real" variety once the colony starts breeding it.
         let seeds = 0;
         if (Math.random() < WILDGREENS_SEED_CHANCE) {
-          const list = this.seeds.wildgreens || (this.seeds.wildgreens = []);
-          const seed = { genome: freshGenome() };
-          list.push(seed);
-          if (!this.codex.wildgreens) {
-            this.codex.wildgreens = { origin: seed.genome, best: seed.genome };
-          }
+          const genome = freshGenome();
+          this._addSeed('wildgreens', genome, colonist?.groupId);
           seeds = 1;
         }
         if (seeds > 0) {
@@ -766,7 +782,7 @@ export class Game {
         task.outcomeData = { crop: task.cropId };
         return;
       }
-      const seed = this._takeSeed(task.cropId);
+      const seed = this._takeSeed(task.cropId, colonist?.groupId);
       if (!seed) {
         task.outcome = 'noSeed';
         task.outcomeData = { crop: task.cropId };
@@ -809,7 +825,7 @@ export class Game {
         const meat = a.traits ? a.traits.meat : MEAT_YIELD;
         const species = a.species || 'boar';
         this.animals.splice(idx, 1);
-        this.storage.meat += meat;
+        storageAdd(this, colonist?.groupId, 'meat', meat);
         task.outcome = 'hunted';
         task.outcomeData = { animal: species, n: meat };
       } else {
@@ -825,23 +841,36 @@ export class Game {
           task.outcome = 'noWood';
           task.outcomeData = { structure: task.structure, need: cost };
         } else {
-          this.storage.wood -= cost;
+          // B3: debit the builder's group ledger first; if their group is
+          // short on wood, fall back to whichever group has the most.
+          const builderGid = colonist?.groupId;
+          const builderGroup = this.groups?.[builderGid];
+          if (builderGroup && (builderGroup.storage?.wood || 0) >= cost) {
+            storageSub(this, builderGid, 'wood', cost);
+          } else {
+            const lender = largestGroupHolder(this, 'wood');
+            storageSub(this, lender ? lender.id : null, 'wood', cost);
+          }
           tile.structure = task.structure;
           if (task.structure === 'hearth') this.hearths.push({ x: task.x, y: task.y });
           if (task.structure === 'stockpile' || task.structure === 'stockpile_med' || task.structure === 'stockpile_large') {
             const cap = STOCKPILE_CAP_BY_TYPE[task.structure] || STOCKPILE_CAP;
+            // B2: tag the new stockpile with the builder's group so the
+            // per-group panels can later show "your warehouses" and so
+            // autonomy can prefer own-group stockpiles for FETCH/STORE.
             this.stockpiles.push({
               x: task.x, y: task.y,
               type: task.structure,
               cap,
+              ownerId: colonist?.groupId,
               items: this._freshStockpileItems(),
             });
           }
           if (task.structure === 'hut' || task.structure === 'hut_med' || task.structure === 'hut_large') {
             const cap = HUT_CAPACITY_BY_TYPE[task.structure] || 1;
-            this.huts.push({ x: task.x, y: task.y, type: task.structure, cap });
+            this.huts.push({ x: task.x, y: task.y, type: task.structure, cap, ownerId: colonist?.groupId });
           }
-          if (task.structure === 'fence') this.fences.push({ x: task.x, y: task.y });
+          if (task.structure === 'fence') this.fences.push({ x: task.x, y: task.y, ownerId: colonist?.groupId });
           task.outcome = 'built';
           task.outcomeData = { structure: task.structure, wood: cost };
         }
@@ -860,10 +889,13 @@ export class Game {
         // own quality stack. Falls back to the legacy "shuffle raw →
         // meal" path when no recipe matches so cooking is never a
         // total dead-end during the early game.
+        // B2: ingredients are consumed from / output filed under the
+        // cook's group, so per-group ledgers stay accurate.
+        const cookerGid = colonist?.groupId;
         let cooked = 0;
         const dishesMade = {};
         while (cooked < COOK_BATCH) {
-          const recipe = csCookOne(this);
+          const recipe = csCookOne(this, cookerGid);
           if (!recipe) break;
           dishesMade[recipe.id] = (dishesMade[recipe.id] || 0) + recipe.out;
           cooked += recipe.out;
@@ -878,8 +910,8 @@ export class Game {
             }
           }
           if (pick === null) break;
-          this.storage[pick] -= 1;
-          this.storage.meal += 1;
+          storageSub(this, cookerGid, pick, 1);
+          storageAdd(this, cookerGid, 'meal', 1);
           cooked += 1;
         }
         if (cooked === 0) {
@@ -916,12 +948,17 @@ export class Game {
       const sp = this.stockpileAt(task.x, task.y);
       let moved = 0;
       if (sp) {
+        // B2: the hauler's group is the one whose on-hand store is
+        // decremented. The stockpile's items map is colony-wide; the
+        // owning group is tracked on sp.ownerId for future per-group
+        // policies but not enforced on hauling yet.
+        const haulerGid = colonist?.groupId;
         let space = (sp.cap || STOCKPILE_CAP) - this.stockpileFood(sp);
         while (moved < HAUL_BATCH && space > 0) {
           const it = this._largestFood(this.storage, FOOD_TYPES);
           const food = it || (this.storage.meal > 0 ? 'meal' : null);
           if (!food) break;
-          this.storage[food] -= 1;
+          storageSub(this, haulerGid, food, 1);
           sp.items[food] += 1;
           moved++;
           space--;
@@ -933,11 +970,14 @@ export class Game {
       const sp = this.stockpileAt(task.x, task.y);
       let moved = 0;
       if (sp) {
+        // B2: items leaving a stockpile become on-hand for the fetcher's
+        // group (so the per-group panel sees what they brought home).
+        const fetcherGid = colonist?.groupId;
         while (moved < HAUL_BATCH) {
           const it = this._largestFood(sp.items, STOCKPILE_ITEMS);
           if (!it) break;
           sp.items[it] -= 1;
-          this.storage[it] += 1;
+          storageAdd(this, fetcherGid, it, 1);
           moved++;
         }
       }
@@ -973,6 +1013,28 @@ export class Game {
     return n;
   }
 
+  /**
+   * D4: pick the closest hut for `colonist` to sleep in. Preference order:
+   *   1. a hut owned by the colonist's own group
+   *   2. any hut
+   * Returns null when the colony has no huts at all (sleep falls back to
+   * the colonist's current tile, matching the legacy behaviour).
+   */
+  _nearestHut(colonist) {
+    if (!this.huts || this.huts.length === 0) return null;
+    const gid = colonist.groupId;
+    let bestOwn = null;
+    let bestOwnD = Infinity;
+    let bestAny = null;
+    let bestAnyD = Infinity;
+    for (const h of this.huts) {
+      const d = Math.hypot(h.x - colonist.tileX, h.y - colonist.tileY);
+      if (d < bestAnyD) { bestAnyD = d; bestAny = h; }
+      if (h.ownerId === gid && d < bestOwnD) { bestOwnD = d; bestOwn = h; }
+    }
+    return bestOwn || bestAny;
+  }
+
   // True if a lit hearth stands within HEARTH_RANGE tiles of (x, y).
   _hearthWarm(x, y) {
     if (!this.hearthsLit) return false;
@@ -990,11 +1052,20 @@ export class Game {
       return createTask(TaskType.EAT, colonist.tileX, colonist.tileY);
     }
     // Injured colonists head home to rest instead of taking new work
-    // (alpha 21). Heavily sleep-deprived colonists prefer SLEEP.
+    // (alpha 21). Injured colonists prefer a hut when one exists.
     if (colonist.health < INJURY_THRESHOLD) {
+      const hut = this._nearestHut(colonist);
+      if (hut) return createTask(TaskType.REST, hut.x, hut.y);
       return createTask(TaskType.REST, colonist.tileX, colonist.tileY);
     }
-    if (colonist.sleep !== undefined && colonist.sleep < SLEEP_DEFICIT_THRESHOLD * 0.6) {
+    // D4: a sleep-deprived colonist walks back to a hut — even a long
+    // trek across the map — to actually rest in bed. The trigger is
+    // SLEEP_DEFICIT_THRESHOLD (not the old × 0.6 fraction) so the
+    // routing kicks in earlier, before the colonist collapses on the
+    // farm. Without any hut, fall back to sleeping where they stand.
+    if (colonist.sleep !== undefined && colonist.sleep < SLEEP_DEFICIT_THRESHOLD) {
+      const hut = this._nearestHut(colonist);
+      if (hut) return createTask(TaskType.SLEEP, hut.x, hut.y);
       return createTask(TaskType.SLEEP, colonist.tileX, colonist.tileY);
     }
     // A content colonist works; a miserable one may slack off instead.

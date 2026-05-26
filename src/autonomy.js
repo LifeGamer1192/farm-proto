@@ -26,6 +26,7 @@ import {
   WOOD_LOW,
   HUT_CAPACITY_BY_TYPE,
   BIRTH_FOOD_PER_HEAD,
+  BUILD_COSTS,
 } from './config.js';
 import { registerScript } from './groups.js';
 import { t } from './i18n.js';
@@ -76,6 +77,12 @@ function pickWarehouseVariant(game) {
   return null;
 }
 
+/** Wood cost of the cheapest warehouse variant — used in the diagnostic
+ * log so the player knows what they're short of. */
+function cheapestWarehouseCost() {
+  return BUILD_COSTS.stockpile;
+}
+
 /**
  * Script-level decision: should an idle colonist start a warehouse?
  * Returns an action descriptor or null. Diagnostic warnings are logged
@@ -93,13 +100,19 @@ export function wantsWarehouse(game, colonist, { utilThreshold = 0.85 } = {}) {
   if (!wants) return null;
   const variant = pickWarehouseVariant(game);
   if (!variant) {
-    _maybeWarn(game, colonist, 'no_wood', 'log.warehouseNoWood');
+    const have = Math.max(0, Math.floor((game.storage.wood || 0) - game._reservedBuildWood()));
+    _maybeWarn(game, colonist, 'no_wood', 'log.warehouseNoWood', {
+      have,
+      need: cheapestWarehouseCost(),
+    });
     return { build: null, reason: 'no_wood' };
   }
   let spot = game._findFreeLandNear(colonist);
   if (!spot) spot = game._findFreeLandColonyWide?.();
   if (!spot) {
-    _maybeWarn(game, colonist, 'no_land', 'log.warehouseNoLand');
+    _maybeWarn(game, colonist, 'no_land', 'log.warehouseNoLand', {
+      variant: t('structure.' + variant),
+    });
     return { build: null, reason: 'no_land' };
   }
   return { build: variant, spot, reason: 'ok' };
@@ -177,12 +190,27 @@ export function pickAutonomousTask(game, colonist) {
   // perpetually crowded out by farm work.
   const onHandFull = critical || game.onHandFood >= ON_HAND_CAP;
   if (onHandFull) {
-    const sp = game._nearestStockpile(colonist, (s) => game.stockpileFood(s) < (s.cap || STOCKPILE_CAP));
+    const sp = game._nearestOwnStockpile(colonist, (s) => game.stockpileFood(s) < (s.cap || STOCKPILE_CAP));
     if (sp && !game._tileClaimed(sp.x, sp.y)) {
       return createTask(TaskType.STORE, sp.x, sp.y);
     }
-    // No stockpile has room either — fall through to non-additive work
-    // (watering, weeding, cooking, building, sowing, tilling).
+    // D3: no warehouse can accept this haul → treat the situation like
+    // a warehouse shortage and pivot to building one (or chopping wood
+    // for it). Falls through to non-additive chores only if even that
+    // is blocked, so colonists never sit idle while their pockets are
+    // full and food is rotting.
+    if (game.autoMode) {
+      const dec = wantsWarehouse(game, colonist, { utilThreshold: 0 });
+      if (dec && dec.build) {
+        return createTask(TaskType.BUILD, dec.spot.x, dec.spot.y, { structure: dec.build });
+      }
+      if (dec && dec.reason === 'no_wood') {
+        const tree = game._nearestTree(colonist, AUTO_SEARCH_RANGE);
+        if (tree) return createTask(TaskType.HARVEST, tree.x, tree.y);
+      }
+    }
+    // Even the build pivot is blocked (no land / no tree) — fall through
+    // to non-additive chores: watering, weeding, cooking.
   }
   // 1. Gather ripe crops — skipped when on-hand is full so colonists do
   //    not pile food up faster than they can store it.
@@ -195,7 +223,7 @@ export function pickAutonomousTask(game, colonist) {
   }
   // 2. Fetch food back from a stockpile when the on-hand store runs low.
   if (game.onHandFood < ON_HAND_LOW) {
-    const sp = game._nearestStockpile(colonist, (s) => game.stockpileFood(s) > 0);
+    const sp = game._nearestOwnStockpile(colonist, (s) => game.stockpileFood(s) > 0);
     if (sp && !game._tileClaimed(sp.x, sp.y)) {
       return createTask(TaskType.FETCH, sp.x, sp.y);
     }
@@ -281,7 +309,7 @@ export function pickAutonomousTask(game, colonist) {
       return createTask(TaskType.BUILD, wh.spot.x, wh.spot.y, { structure: wh.build });
     }
     // 10. Till new ground and sow the most-stocked crop.
-    const sowCrop = game._mostStockedCrop();
+    const sowCrop = game._mostStockedCrop(colonist.groupId);
     if (sowCrop) {
       const sowSpot = game._pickAutoSowSpot(colonist);
       if (sowSpot) {
@@ -293,7 +321,7 @@ export function pickAutonomousTask(game, colonist) {
   }
   // 11. Haul surplus on-hand food into a stockpile, safe from the pests.
   if (game.onHandFood > ON_HAND_CAP) {
-    const sp = game._nearestStockpile(colonist, (s) => game.stockpileFood(s) < (s.cap || STOCKPILE_CAP));
+    const sp = game._nearestOwnStockpile(colonist, (s) => game.stockpileFood(s) < (s.cap || STOCKPILE_CAP));
     if (sp && !game._tileClaimed(sp.x, sp.y)) {
       return createTask(TaskType.STORE, sp.x, sp.y);
     }
@@ -329,7 +357,7 @@ export function farmerScript(game, colonist) {
   }
   // Farmer-priority: sow + till BEFORE worrying about hunting / huts.
   if (game.autoMode) {
-    const sowCrop = game._mostStockedCrop();
+    const sowCrop = game._mostStockedCrop(colonist.groupId);
     if (sowCrop) {
       const sowSpot = game._pickAutoSowSpot(colonist);
       if (sowSpot) {
@@ -392,10 +420,13 @@ function fieldPlanFor(game, colonist) {
   const grp = game.groups?.[colonist.groupId];
   if (!grp) return null;
   if (!grp.fieldPlan) {
-    // Anchor 3-4 tiles from the colonist (treated as colony spawn) so
-    // the field reliably sits on land that was generated walkable.
-    const fx = Math.max(0, Math.min(game.map.cols - FIELD_INIT_W, colonist.tileX - 1));
-    const fy = Math.max(0, Math.min(game.map.rows - FIELD_INIT_H, colonist.tileY + 1));
+    // α25 follow-up (C1): anchor the field to the group's spawn cluster
+    // (set in Game.newMap) so every colonist in the group works the
+    // same patch of land. Falls back to the calling colonist's tile
+    // when the anchor isn't available (legacy save / mid-test mutate).
+    const anchor = grp.spawnAnchor || { x: colonist.tileX, y: colonist.tileY };
+    const fx = Math.max(0, Math.min(game.map.cols - FIELD_INIT_W, anchor.x - Math.floor(FIELD_INIT_W / 2)));
+    const fy = Math.max(0, Math.min(game.map.rows - FIELD_INIT_H, anchor.y + 1));
     grp.fieldPlan = { x: fx, y: fy, w: FIELD_INIT_W, h: FIELD_INIT_H };
   }
   return grp.fieldPlan;
@@ -463,7 +494,7 @@ export function farmerBreedScript(game, colonist) {
   }
   // Sow / till the rectangular field BEFORE looking at any other work.
   if (game.autoMode) {
-    const sowCrop = game._mostStockedCrop();
+    const sowCrop = game._mostStockedCrop(colonist.groupId);
     if (sowCrop) {
       const sowSpot = pickRectSowSpot(game, colonist);
       if (sowSpot) return createTask(TaskType.SOW, sowSpot.x, sowSpot.y, { cropId: sowCrop });
@@ -493,10 +524,15 @@ export function runSelectiveBreedingCulls(game) {
     if (grp.lastCullSeason === seasonKey) continue;
     grp.lastCullSeason = seasonKey;
     if (!foodSafe) {
-      // Tell the player we deliberately skipped the cull this quarter.
+      // Tell the player we deliberately skipped the cull this quarter,
+      // and quote the threshold so they know how close we were.
+      const need = (BIRTH_FOOD_PER_HEAD * CULL_FOOD_SAFETY_MULT).toFixed(1);
       game._pushLog({
         icon: '⏭',
-        text: t('log.cullSkipped'),
+        text: t('log.cullSkipped', {
+          have: foodPerHead.toFixed(1),
+          need,
+        }),
         cls: 'log-warn',
         groupId: grp.id,
       });

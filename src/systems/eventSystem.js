@@ -23,7 +23,15 @@ import { freshGenome } from '../genetics.js';
 import { PlantKind } from '../world.js';
 import { Colonist } from '../entities/colonist.js';
 import { t } from '../i18n.js';
-import { FOOD_TYPES, rawFood, totalFood, largestFood } from './foodSystem.js';
+import {
+  FOOD_TYPES,
+  rawFood,
+  totalFood,
+  largestFood,
+  storageAdd,
+  storageSub,
+  largestGroupHolder,
+} from './foodSystem.js';
 
 /**
  * Seasonal events — kept here so the birth roll and the winter trader
@@ -80,23 +88,50 @@ export function maybeBirth(game) {
   const baby = new Colonist(pos.x, pos.y, name, gid);
   game.colonists.push(baby);
   if (parentGroup) parentGroup.colonists.push(baby);
-  game._birthEvent = name;
+  // D1: pop-up consumers want the group too, so the title can say
+  // "Born into Colony B" instead of just the name. Older code that
+  // checked truthiness still works because the object is non-null.
+  game._birthEvent = { name, groupId: gid };
   game._pushLog({
     icon: '👶',
     text: t('log.birth', { name }),
     cls: 'log-meal',
+    groupId: gid,
   });
 }
 
 /**
+ * Pick the group most in need of trader help: fewest total seeds across
+ * every crop. Falls back to group 0 when no groups exist (single-group
+ * legacy path).
+ */
+function pickTraderRecipient(game) {
+  if (!game.groups || game.groups.length === 0) return null;
+  let best = game.groups[0];
+  let bestN = Infinity;
+  for (const g of game.groups) {
+    let n = 0;
+    for (const id of CROP_IDS) n += g.seeds?.[id]?.length || 0;
+    if (n < bestN) { bestN = n; best = g; }
+  }
+  return best;
+}
+
+/**
  * A travelling trader visits once per winter, leaving wood + seed
- * packets for a couple of random crops.
+ * packets for a couple of random crops. α25 follow-up (B1): the seed
+ * gift is routed to the most-deprived group so per-group pools stay in
+ * sync. Wood remains colony-wide until B3.
  */
 export function runWinterTrader(game) {
   const year = game.environment.year;
   if (year <= game._traderYear) return;
   game._traderYear = year;
-  game.storage.wood += TRADER_WOOD_GIFT;
+  const recipient = pickTraderRecipient(game);
+  const recipientId = recipient ? recipient.id : null;
+  // B3: route the wood gift through the per-group ledger so the
+  // recipient's wood column updates alongside the colony aggregate.
+  storageAdd(game, recipientId, 'wood', TRADER_WOOD_GIFT);
   const pool = (game.startingCrops && game.startingCrops.length > 0)
     ? [...game.startingCrops]
     : CROP_IDS.slice();
@@ -104,16 +139,13 @@ export function runWinterTrader(game) {
   while (gifts.length < TRADER_SEED_PACKETS && pool.length > 0) {
     const idx = Math.floor(Math.random() * pool.length);
     const id = pool.splice(idx, 1)[0];
-    const list = game.seeds[id] || (game.seeds[id] = []);
     for (let i = 0; i < TRADER_SEED_COUNT; i++) {
-      list.push({ genome: freshGenome() });
-    }
-    if (!game.codex[id]) {
-      game.codex[id] = { origin: list[0].genome, best: list[0].genome };
+      // addSeed handles colony aggregate + per-group pool + codex.
+      if (game._addSeed) game._addSeed(id, freshGenome(), recipientId);
     }
     gifts.push(id);
   }
-  game._traderEvent = { wood: TRADER_WOOD_GIFT, seeds: gifts };
+  game._traderEvent = { wood: TRADER_WOOD_GIFT, seeds: gifts, groupId: recipientId };
   game._pushLog({
     icon: '🛒',
     text: t('log.trader', {
@@ -121,6 +153,7 @@ export function runWinterTrader(game) {
       crops: gifts.map((id) => t('crop.' + id)).join(', '),
     }),
     cls: 'log-meal',
+    groupId: recipientId,
   });
 }
 
@@ -139,19 +172,35 @@ export function pestStrike(game) {
   while (spoiled < loss) {
     const pick = largestFood(game.storage, FOOD_TYPES);
     if (pick === null) break;
-    game.storage[pick] -= 1;
+    // B2: the spoilage is debited from the group with the biggest stash
+    // of the picked item, so the per-group "spoiled" counter follows the
+    // food that actually rotted.
+    const holder = largestGroupHolder(game, pick);
+    const gid = holder ? holder.id : null;
+    storageSub(game, gid, pick, 1);
+    if (holder) holder.pestsLost = (holder.pestsLost || 0) + 1;
     spoiled += 1;
   }
   if (spoiled === 0) return;
   game.pestsLost += spoiled;
-  game._pestEvent = true;
+  // D1: the consumer (main.js) reads { n } so the popup can quote how
+  // many units were spoiled. Older code only checked truthiness, so an
+  // object value remains back-compat.
+  game._pestEvent = { n: spoiled };
   game._pushLog({ icon: '🐛', text: t('log.pests', { n: spoiled }), cls: 'log-fail' });
 }
 
-/** Lit hearths burn through the colony's wood over time. */
+/**
+ * Lit hearths burn through the colony's wood over time. B3: the burn
+ * is debited from whichever group currently holds the most wood, so the
+ * per-group wood ledger stays consistent with the colony aggregate.
+ */
 export function updateFuel(game, dt) {
   if (game.hearths.length === 0 || game.storage.wood <= 0) return;
-  game.storage.wood = Math.max(0, game.storage.wood - game.hearths.length * WOOD_BURN_RATE * dt);
+  const burn = Math.min(game.storage.wood, game.hearths.length * WOOD_BURN_RATE * dt);
+  if (burn <= 0) return;
+  const holder = largestGroupHolder(game, 'wood');
+  storageSub(game, holder ? holder.id : null, 'wood', burn);
 }
 
 /**

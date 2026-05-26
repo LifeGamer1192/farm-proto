@@ -341,16 +341,21 @@ const labelIcon = (icon, text) => `<span class="stat-ico">${icon}</span>${text}`
 
 function updateColonyStats() {
   // When a specific group tab is active, show that group's identity-tracked
-  // figures (own colonists, own seed stock, own meals/missed/lost counters).
-  // The on-hand pool (food, wood, stockpiles) is shared across colonies in
-  // α25, so those rows continue to show colony-wide totals. A future α will
-  // route writes into per-group ledgers so even pools split cleanly.
+  // figures (own colonists, own seed stock, own meals/missed/lost counters
+  // AND own on-hand store + wood). With B2/B3 the per-group ledgers are
+  // maintained in lock-step with the colony aggregate, so the tab now
+  // shows what that colony actually owns rather than the colony-wide pool.
   const g = selectedGroupId == null ? null : game.groups[selectedGroupId];
-  const s = game.storage;
-  const ti = (it) => game.totalItem(it);
+  const s = g ? g.storage : game.storage;
+  // Item-total reader: per-group when a tab is active (on-hand from
+  // g.storage only — stockpile items remain colony-wide), else colony.
+  const ti = (it) => g ? (g.storage[it] || 0) : game.totalItem(it);
+  // Stockpile rows: when a tab is active, only count piles this group
+  // owns (B2 ownerId). With "All" selected, show every pile.
   let spUsed = 0;
   let spCap = 0;
   for (const sp of game.stockpiles) {
+    if (g && sp.ownerId !== g.id) continue;
     spUsed += game.stockpileFood(sp);
     spCap += sp.cap || STOCKPILE_CAP;
   }
@@ -363,10 +368,28 @@ function updateColonyStats() {
   const mealsMissed = g ? g.meals.missed : game.meals.missed;
   const cropsLost = g ? g.cropsLost : game.cropsLost;
   const pestsLost = g ? g.pestsLost : game.pestsLost;
+  // Food-stored = on-hand (per-group when applicable) + the stockpile
+  // food this group owns. For All this matches game.totalFood.
+  let foodStored;
+  if (g) {
+    let onHand = 0;
+    for (const id of STOCKPILE_ITEMS) {
+      if (id === 'wood') continue;
+      onHand += g.storage[id] || 0;
+    }
+    let owned = 0;
+    for (const sp of game.stockpiles) {
+      if (sp.ownerId !== g.id) continue;
+      owned += game.stockpileFood(sp);
+    }
+    foodStored = onHand + owned;
+  } else {
+    foodStored = game.totalFood;
+  }
   renderRows(colonyStatsEl, [
     [labelIcon(STAT_ICON.population, t('stat.population')), popCount],
-    [labelIcon(STAT_ICON.food, t('stat.foodStored')), game.totalFood],
-    [labelIcon(STAT_ICON.wood, t('stat.wood')), Math.ceil(s.wood)],
+    [labelIcon(STAT_ICON.food, t('stat.foodStored')), foodStored],
+    [labelIcon(STAT_ICON.wood, t('stat.wood')), Math.ceil(s.wood || 0)],
     [labelIcon(STAT_ICON.seeds, t('stat.seedTotal')), seedTotal],
     [labelIcon(STAT_ICON.warehouse, t('stat.stockpiles')), `${spUsed} / ${spCap}`],
     [labelIcon(STAT_ICON.meals, t('stat.meals')), mealsEaten],
@@ -459,16 +482,24 @@ function nextTip() {
 // Seed stock: each crop's seeds bucketed by quality rank (★).
 // Only the crops the colony has ever held seeds of show up — the catalogue
 // holds many more, but listing every empty row would dwarf the panel.
+//
+// α25 follow-up: when a group tab is active, the panel filters down to
+// that group's per-group seed pool (see B1 in cropSystem.js). With "All"
+// selected, falls back to the colony-wide aggregate (`game.seeds`).
 function seedPanelCrops() {
-  const set = new Set(game.startingCrops || []);
-  for (const id of CROP_IDS) if (game.seeds[id] && game.seeds[id].length > 0) set.add(id);
+  const g = selectedGroupId == null ? null : game.groups[selectedGroupId];
+  const src = g ? g.seeds : game.seeds;
+  const set = new Set(g ? (g.startingCrops || []) : (game.startingCrops || []));
+  for (const id of CROP_IDS) if (src[id] && src[id].length > 0) set.add(id);
   return CROP_IDS.filter((id) => set.has(id));
 }
 
 function updateSeedPanel() {
+  const g = selectedGroupId == null ? null : game.groups[selectedGroupId];
+  const src = g ? g.seeds : game.seeds;
   seedStockEl.innerHTML = seedPanelCrops().map((id) => {
     const buckets = new Array(RANK_MAX + 1).fill(0);
-    for (const seed of game.seeds[id]) buckets[qualityRank(seed.genome)]++;
+    for (const seed of src[id] || []) buckets[qualityRank(seed.genome)]++;
     let chips = '';
     for (let r = 1; r <= RANK_MAX; r++) {
       if (buckets[r] > 0) {
@@ -482,9 +513,9 @@ function updateSeedPanel() {
     );
   }).join('');
   // Reflect the running total in the disclosure label so the panel says
-  // "Seed stock · 96" while collapsed.
+  // "Seed stock · 96" while collapsed. Per-group when a tab is active.
   let n = 0;
-  for (const id of CROP_IDS) n += game.seeds[id]?.length || 0;
+  for (const id of CROP_IDS) n += src[id]?.length || 0;
   const sum = seedStockEl.parentElement?.querySelector('summary');
   if (sum) sum.textContent = `${t('label.seeds')} · ${n}`;
 }
@@ -865,7 +896,18 @@ if (applyGroupsBtn) {
   applyGroupsBtn.addEventListener('click', () => {
     const setup = readGroupSetup();
     if (!setup || setup.length === 0) return;
-    newMap(randomSeed(), null, setup);
+    // α25 follow-up: the in-sim Apply form only edits script / colonist
+    // count / starting wood. Carry over the previous run's `initialSeeds`
+    // (and the original group name) so the start-screen seed choices
+    // aren't silently dropped on Regenerate.
+    const prev = game.groupSetup || [];
+    const merged = setup.map((row, i) => {
+      const prevRow = prev[i];
+      return prevRow && Array.isArray(prevRow.initialSeeds) && prevRow.initialSeeds.length
+        ? { ...row, initialSeeds: prevRow.initialSeeds, name: prevRow.name || row.name }
+        : row;
+    });
+    newMap(randomSeed(), null, merged);
     showToast(t('hint.groupsApplied', { n: setup.length }));
   });
 }
@@ -1373,6 +1415,43 @@ function showVictory() {
 
 $('victory-continue').addEventListener('click', closeVictory);
 
+// --- D1: generic big-popup for disasters / big events / mutations ---------
+//
+// Same look as the victory overlay but reusable: title + body paragraph,
+// closes after 10 s or on click anywhere on the overlay / OK button.
+// Used for pest swarms, cold snaps, births, trader visits, and rare
+// mutations — anything the player would regret missing.
+const bigPopupEl = $('big-popup');
+const bigPopupTitleEl = $('big-popup-title');
+const bigPopupDetailEl = $('big-popup-detail');
+const bigPopupCloseBtn = $('big-popup-close');
+let bigPopupTimer = null;
+function groupLabel(gid) {
+  if (gid == null) return t('group.tabAll');
+  const grp = game.groups?.[gid];
+  if (!grp) return '';
+  return grp.name || t('group.label', { letter: String.fromCharCode(65 + gid) });
+}
+function showBigPopup(titleKey, bodyKey, params = {}) {
+  bigPopupTitleEl.textContent = t(titleKey, params);
+  bigPopupDetailEl.textContent = t(bodyKey, params);
+  bigPopupEl.hidden = false;
+  if (bigPopupTimer) clearTimeout(bigPopupTimer);
+  bigPopupTimer = setTimeout(closeBigPopup, 10000);
+}
+function closeBigPopup() {
+  bigPopupEl.hidden = true;
+  if (bigPopupTimer) {
+    clearTimeout(bigPopupTimer);
+    bigPopupTimer = null;
+  }
+}
+bigPopupCloseBtn.addEventListener('click', closeBigPopup);
+// A click anywhere on the dimmed backdrop closes too.
+bigPopupEl.addEventListener('click', (ev) => {
+  if (ev.target === bigPopupEl) closeBigPopup();
+});
+
 $('victory-new').addEventListener('click', () => {
   newMap(randomSeed());
   victoryEl.hidden = true;
@@ -1423,17 +1502,36 @@ setInterval(() => {
   if (gameoverEl.hidden === game.over) gameoverEl.hidden = !game.over;
   const season = game.consumeSeasonChange();
   if (season) showToast(t('note.' + season));
-  if (game.consumePestEvent()) showToast(t('note.pests'));
-  if (game.consumeColdEvent()) showToast(t('note.cold'));
+  // D1: pest / cold / birth / trader / mutation now surface as big
+  // popups (auto-close after 10 s or on click). The transient toast
+  // remains for low-stakes notes like the seasonal banner.
+  const pest = game.consumePestEvent();
+  if (pest) showBigPopup('popup.pest.title', 'popup.pest.body', { n: pest.n || '?' });
+  if (game.consumeColdEvent()) showBigPopup('popup.cold.title', 'popup.cold.body');
   const baby = game.consumeBirthEvent();
-  if (baby) showToast(t('note.birth', { name: baby }));
+  if (baby) {
+    const name = typeof baby === 'string' ? baby : baby.name;
+    const gid = typeof baby === 'object' ? baby.groupId : null;
+    showBigPopup('popup.birth.title', 'popup.birth.body', { name, group: groupLabel(gid) });
+  }
   const trader = game.consumeTraderEvent();
   if (trader) {
     const cropList = trader.seeds.map((id) => t('crop.' + id)).join(', ');
-    showToast(t('note.trader', { wood: trader.wood, crops: cropList }));
+    showBigPopup('popup.trader.title', 'popup.trader.body', {
+      wood: trader.wood,
+      crops: cropList,
+      group: groupLabel(trader.groupId),
+    });
     // Trader gifts may include crops the colony had never grown — rebuild
     // the picker so they show up as new options to sow.
     rebuildCropPicker();
+  }
+  const mut = game.consumeMutationEvent();
+  if (mut) {
+    showBigPopup('popup.mutation.title', 'popup.mutation.body', {
+      crop: t('crop.' + mut.crop),
+      group: groupLabel(mut.groupId),
+    });
   }
   if (game.consumeWinEvent()) showVictory();
 }, 150);

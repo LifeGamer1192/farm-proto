@@ -70,21 +70,51 @@ export function freshCodex(game) {
   return codex;
 }
 
-/** Note in the codex if this genome is the best variety of its crop yet. */
-export function recordCodex(game, cropId, genome) {
+/**
+ * Note in the codex if this genome is the best variety of its crop yet.
+ * Updates the colony-wide codex, plus the harvesting group's per-group
+ * codex when `groupId` is provided (α25 follow-up — before this fix the
+ * group codex stayed frozen at initial state).
+ */
+export function recordCodex(game, cropId, genome, groupId) {
   const c = game.codex[cropId];
   if (c && genomeQuality(genome) > genomeQuality(c.best)) c.best = genome;
+  else if (!c) {
+    game.codex[cropId] = { origin: genome, best: genome };
+  }
+  if (groupId == null) return;
+  const grp = game.groups?.[groupId];
+  if (!grp) return;
+  const gc = grp.codex[cropId];
+  if (gc) {
+    if (genomeQuality(genome) > genomeQuality(gc.best)) gc.best = genome;
+  } else {
+    grp.codex[cropId] = { origin: genome, best: genome };
+  }
 }
 
-export function seedCount(game, cropId) {
-  const s = game.seeds[cropId];
-  return s ? s.length : 0;
+/**
+ * The seed list to read from. `groupId` null/undefined → colony-wide
+ * aggregate (`game.seeds`). Otherwise → that group's per-group pool
+ * (`game.groups[groupId].seeds`). After B1 (α25 follow-up) the per-group
+ * lists are the canonical store and `game.seeds` holds the union — see
+ * the addSeed / takeSeed mirror logic below.
+ */
+function seedList(game, cropId, groupId) {
+  if (groupId == null) return game.seeds[cropId] || [];
+  const g = game.groups?.[groupId];
+  if (!g || !g.seeds) return [];
+  return g.seeds[cropId] || [];
+}
+
+export function seedCount(game, cropId, groupId) {
+  return seedList(game, cropId, groupId).length;
 }
 
 /** The best (highest-quality) seed of a crop in stock, or null. */
-export function bestSeed(game, cropId) {
-  const s = game.seeds[cropId];
-  if (!s || s.length === 0) return null;
+export function bestSeed(game, cropId, groupId) {
+  const s = seedList(game, cropId, groupId);
+  if (s.length === 0) return null;
   let best = s[0];
   for (const seed of s) {
     if (genomeQuality(seed.genome) > genomeQuality(best.genome)) best = seed;
@@ -93,45 +123,100 @@ export function bestSeed(game, cropId) {
 }
 
 /** Quality rank ★ of the best seed of a crop, or 0 if there are none. */
-export function bestSeedRank(game, cropId) {
-  const seed = bestSeed(game, cropId);
+export function bestSeedRank(game, cropId, groupId) {
+  const seed = bestSeed(game, cropId, groupId);
   return seed ? qualityRank(seed.genome) : 0;
 }
 
-/** Sow tasks for a crop already lined up — queued plus in colonists' hands. */
-export function pendingSows(game, cropId) {
+/**
+ * Sow tasks for a crop already lined up — queued plus in colonists'
+ * hands. When `groupId` is set, only counts tasks belonging to that
+ * group (so two groups don't double-book one colony-wide pending count).
+ */
+export function pendingSows(game, cropId, groupId) {
   let n = 0;
+  const taskGroupId = (task) => {
+    if (!task.assignee) return null;
+    const c = game.colonists.find((cc) => cc.name === task.assignee);
+    return c ? c.groupId : null;
+  };
   for (const task of game.taskQueue) {
-    if (task.type === TaskType.SOW && task.cropId === cropId) n++;
+    if (task.type !== TaskType.SOW || task.cropId !== cropId) continue;
+    if (groupId == null) { n++; continue; }
+    const tg = taskGroupId(task);
+    // An unassigned queued sow may end up being picked by any group, so
+    // it is left out of per-group pending counts — fenced off as "shared"
+    // demand. Once a colonist takes it, their group counts it via the
+    // currentTask path below.
+    if (tg === groupId) n++;
   }
   for (const c of game.colonists) {
     const ct = c.currentTask;
-    if (ct && ct.type === TaskType.SOW && ct.cropId === cropId) n++;
+    if (!ct || ct.type !== TaskType.SOW || ct.cropId !== cropId) continue;
+    if (groupId == null || c.groupId === groupId) n++;
   }
   return n;
 }
 
 /** True if a seed of this crop can still be spared for another sow order. */
-export function canSow(game, cropId) {
-  return seedCount(game, cropId) > pendingSows(game, cropId);
+export function canSow(game, cropId, groupId) {
+  return seedCount(game, cropId, groupId) > pendingSows(game, cropId, groupId);
 }
 
-/** Remove and return the best-quality seed of a crop (null if none). */
-export function takeSeed(game, cropId) {
-  const seed = bestSeed(game, cropId);
+/**
+ * Remove and return the best-quality seed of a crop (null if none).
+ * When `groupId` is given, takes from that group's pool first; the
+ * colony aggregate (`game.seeds`) is kept in lock-step. When omitted
+ * (player-issued sow without an assignee group), scans every group and
+ * takes from whichever has the best seed.
+ */
+export function takeSeed(game, cropId, groupId) {
+  const seed = bestSeed(game, cropId, groupId);
   if (!seed) return null;
-  const list = game.seeds[cropId];
-  list.splice(list.indexOf(seed), 1);
+  if (groupId != null) {
+    const g = game.groups?.[groupId];
+    if (g?.seeds?.[cropId]) {
+      const i = g.seeds[cropId].indexOf(seed);
+      if (i >= 0) g.seeds[cropId].splice(i, 1);
+    }
+  } else {
+    // Find whichever group holds the chosen seed object and pull it out
+    // of that group's pool too, so the per-group view stays consistent
+    // with the colony aggregate.
+    for (const g of game.groups || []) {
+      const list = g.seeds?.[cropId];
+      if (!list) continue;
+      const i = list.indexOf(seed);
+      if (i >= 0) { list.splice(i, 1); break; }
+    }
+  }
+  const colList = game.seeds[cropId];
+  if (colList) {
+    const i = colList.indexOf(seed);
+    if (i >= 0) colList.splice(i, 1);
+  }
   return seed;
 }
 
-/** Add a bred seed to a crop's stock and record it in the codex. */
-export function addSeed(game, cropId, genome) {
-  const s = game.seeds[cropId];
-  if (s) {
-    s.push({ genome });
-    recordCodex(game, cropId, genome);
+/**
+ * Add a bred seed to a crop's stock and record it in the codex. When
+ * `groupId` is provided the seed is filed into that group's per-group
+ * pool AND into the colony aggregate (same object reference, so a later
+ * takeSeed removes both copies). When omitted, only the colony pool is
+ * touched — used by legacy paths that don't know an owner.
+ */
+export function addSeed(game, cropId, genome, groupId) {
+  const seed = { genome };
+  if (groupId != null) {
+    const g = game.groups?.[groupId];
+    if (g) {
+      if (!g.seeds[cropId]) g.seeds[cropId] = [];
+      g.seeds[cropId].push(seed);
+    }
   }
+  if (!game.seeds[cropId]) game.seeds[cropId] = [];
+  game.seeds[cropId].push(seed);
+  recordCodex(game, cropId, genome, groupId);
 }
 
 // The same-crop plant pollinating `plant` from an adjacent tile, if any —
@@ -155,30 +240,40 @@ function pollenSource(game, plant) {
 /**
  * Breed SEEDS_PER_HARVEST seeds from a harvested crop, crossing it with an
  * adjacent same-crop plant (or self-pollinating). Returns the seed count.
+ *
+ * `groupId` is the colonist's group — used so the per-group codex (and
+ * eventually the per-group seed stock, see B1) records the new variety.
  */
-export function gatherSeeds(game, plant) {
+export function gatherSeeds(game, plant, groupId) {
   const mate = pollenSource(game, plant);
   const otherGenome = mate ? mate.genome : plant.genome;
   for (let i = 0; i < SEEDS_PER_HARVEST; i++) {
     const child = crossGenomes(plant.genome, otherGenome);
-    addSeed(game, plant.cropId, child.genome);
+    addSeed(game, plant.cropId, child.genome, groupId);
     if (child.legendary) {
       game._pushLog({
         icon: '✨',
         text: t('log.mutation', { crop: t('crop.' + plant.cropId) }),
         cls: 'log-meal',
+        groupId,
       });
+      // D1: surface mutations as a one-shot big-popup event.
+      game._mutationEvent = { crop: plant.cropId, groupId };
     }
   }
   return SEEDS_PER_HARVEST;
 }
 
-/** The crop with the largest seed stock (used to choose what to auto-sow). */
-export function mostStockedCrop(game) {
+/**
+ * The crop with the largest seed stock (used to choose what to auto-sow).
+ * Per-group when `groupId` is given so each colony grows from its own
+ * stash; otherwise looks at the colony aggregate.
+ */
+export function mostStockedCrop(game, groupId) {
   let best = null;
   let bestN = 0;
   for (const id of CROP_IDS) {
-    const n = seedCount(game, id);
+    const n = seedCount(game, id, groupId);
     if (n > bestN) {
       bestN = n;
       best = id;

@@ -95,6 +95,45 @@ export function freshStorage() {
   return s;
 }
 
+/**
+ * α25 follow-up (B2 / B3): write `n` units of `key` into the colony's
+ * on-hand store AND mirror the same change onto the producer group's
+ * per-group store so the per-group panels stay in sync. When `groupId`
+ * is null the change is colony-wide only (legacy paths).
+ */
+export function storageAdd(game, groupId, key, n) {
+  if (!Number.isFinite(n) || n === 0) return;
+  game.storage[key] = (game.storage[key] || 0) + n;
+  if (groupId == null) return;
+  const g = game.groups?.[groupId];
+  if (g && g.storage) g.storage[key] = (g.storage[key] || 0) + n;
+}
+
+/** Counterpart to storageAdd — decrement from colony + group store. */
+export function storageSub(game, groupId, key, n) {
+  if (!Number.isFinite(n) || n === 0) return;
+  game.storage[key] = Math.max(0, (game.storage[key] || 0) - n);
+  if (groupId == null) return;
+  const g = game.groups?.[groupId];
+  if (g && g.storage) g.storage[key] = Math.max(0, (g.storage[key] || 0) - n);
+}
+
+/**
+ * Pick the group with the largest balance of `key` (used to deduct shared
+ * costs like hearth fuel / pest spoilage / unattributed consumption). Falls
+ * back to null when no group holds any of the resource.
+ */
+export function largestGroupHolder(game, key) {
+  if (!game.groups || game.groups.length === 0) return null;
+  let best = null;
+  let bestN = 0;
+  for (const g of game.groups) {
+    const n = g.storage?.[key] || 0;
+    if (n > bestN) { bestN = n; best = g; }
+  }
+  return best;
+}
+
 /** A fresh stockpile's items map with every storable item at 0. */
 export function freshStockpileItems() {
   const items = {};
@@ -182,6 +221,19 @@ export function nearestStockpile(game, colonist, pred) {
 }
 
 /**
+ * α25 follow-up (B2): prefer a stockpile owned by the colonist's group;
+ * if none satisfy `pred`, fall back to any matching stockpile. Used by
+ * the autonomy decision tree so colonists hauling food head to their
+ * own warehouses first.
+ */
+export function nearestOwnStockpile(game, colonist, pred) {
+  const gid = colonist.groupId;
+  const own = nearestStockpile(game, colonist, (sp) => sp.ownerId === gid && pred(sp));
+  if (own) return own;
+  return nearestStockpile(game, colonist, pred);
+}
+
+/**
  * Mood lift from eating one unit of an item. Combines the item's base
  * nutrition with a quality multiplier (0.5..1.5 over the 0..1 quality
  * range). A high-quality Tier-2 dish therefore lifts mood meaningfully
@@ -221,13 +273,23 @@ export function feed(game, colonist) {
     game.meals.missed += 1;
     if (grp) grp.meals.missed += 1;
   };
+  // B2: when picking on-hand food, prefer items the colonist's own group
+  // produced. If their group has none of `id`, fall back to the colony
+  // aggregate; the deduction still uses the eater's group so the per-
+  // group panel reflects who actually ate.
+  const ownStore = grp?.storage;
   // Cooked meal / dish on hand — prefer the highest-quality option.
   const cookedIds = ['meal', ...DISH_IDS].filter((id) => game.storage[id] > 0);
   if (cookedIds.length > 0) {
-    cookedIds.sort((a, b) => (game.storage.quality?.[b] || 0.5) - (game.storage.quality?.[a] || 0.5));
+    // Order by own-group availability first, then by quality.
+    cookedIds.sort((a, b) => {
+      const own = (ownStore?.[b] || 0) - (ownStore?.[a] || 0);
+      if (own !== 0) return own;
+      return (game.storage.quality?.[b] || 0.5) - (game.storage.quality?.[a] || 0.5);
+    });
     const pick = cookedIds[0];
     const quality = game.storage.quality?.[pick] || 0.5;
-    game.storage[pick] -= 1;
+    storageSub(game, groupId, pick, 1);
     colonist.hunger = 0;
     colonist.mood = Math.min(1, colonist.mood + moodFromEating(pick, quality));
     bumpEaten();
@@ -237,7 +299,7 @@ export function feed(game, colonist) {
   const onHand = largestEdibleRaw(game.storage, FOOD_TYPES);
   if (onHand) {
     const quality = game.storage.quality?.[onHand] || 0.5;
-    game.storage[onHand] -= 1;
+    storageSub(game, groupId, onHand, 1);
     colonist.hunger = 0;
     colonist.mood = Math.min(1, colonist.mood + moodFromEating(onHand, quality));
     bumpEaten();
@@ -275,14 +337,16 @@ export function feed(game, colonist) {
  * Run a single recipe-based cook step: pick the best affordable
  * recipe, consume its ingredients (averaging their qualities into the
  * dish's quality), and add the output to game.storage. Returns the
- * recipe used, or null when nothing can be cooked.
+ * recipe used, or null when nothing can be cooked. When `groupId` is
+ * provided, ingredient consumption and dish output are mirrored into
+ * that group's per-group store (B2).
  */
-export function cookOne(game) {
+export function cookOne(game, groupId) {
   const recipe = pickBestAffordable(game.storage);
   if (!recipe) return null;
   const q = averageInputQuality(recipe, game.storage.quality);
   for (const [ing, n] of Object.entries(recipe.ingredients)) {
-    game.storage[ing] = Math.max(0, (game.storage[ing] || 0) - n);
+    storageSub(game, groupId, ing, n);
   }
   // Output count + quality update: blend new quality with whatever was
   // already in the bucket so a fresh batch can lift a stale stack.
@@ -290,7 +354,7 @@ export function cookOne(game) {
   const prevQ = game.storage.quality?.[recipe.id] ?? 0.5;
   const newCount = prevCount + recipe.out;
   const newQ = (prevQ * prevCount + q * recipe.out) / Math.max(1, newCount);
-  game.storage[recipe.id] = newCount;
+  storageAdd(game, groupId, recipe.id, recipe.out);
   if (!game.storage.quality) game.storage.quality = {};
   game.storage.quality[recipe.id] = newQ;
   return recipe;
