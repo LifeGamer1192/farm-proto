@@ -10,7 +10,9 @@
 // (save / load / mods) without dragging class methods along.
 
 import { STARTING_WOOD } from './config.js';
-import { CROP_IDS, getCrop } from './crops.js';
+import { CROP_IDS, CROP_TYPES, getCrop } from './crops.js';
+
+const CROP_TYPES_HAS = (id) => Object.prototype.hasOwnProperty.call(CROP_TYPES, id);
 import { freshGenome, genomeQuality } from './genetics.js';
 
 /**
@@ -142,9 +144,38 @@ export function aggregateStartingCrops(groups) {
 export function createGroup(id, setup = {}) {
   const color = GROUP_COLORS[id % GROUP_COLORS.length];
   const scriptId = AUTONOMY_SCRIPTS.includes(setup.scriptId) ? setup.scriptId : 'balanced';
-  const startingCrops = setup.startingCrops || pickStartingCropsForGroup(setup.seedTypes || 8);
-  const seedsPerCrop = setup.seedsPerCrop ?? 12;
-  const { seeds, codex } = freshSeedsForGroup(startingCrops, seedsPerCrop);
+
+  // Alpha 25: if the setup carries an explicit `initialSeeds` array
+  // (the start-screen seed picker emits this) honour it verbatim —
+  // each entry is `{ id, count }` and only the listed crops are
+  // seeded. Otherwise fall back to the random α23 starter assortment.
+  let seeds;
+  let codex;
+  let startingCrops;
+  if (Array.isArray(setup.initialSeeds) && setup.initialSeeds.length > 0) {
+    seeds = {};
+    codex = {};
+    startingCrops = [];
+    for (const id of CROP_IDS) seeds[id] = [];
+    for (const slot of setup.initialSeeds) {
+      const cropId = slot.id;
+      if (!CROP_TYPES_HAS(cropId)) continue;
+      startingCrops.push(cropId);
+      const list = seeds[cropId];
+      for (let i = 0; i < (slot.count | 0); i++) list.push({ genome: freshGenome() });
+      if (list.length > 0) {
+        let best = list[0].genome;
+        for (const s of list) {
+          if (genomeQuality(s.genome) > genomeQuality(best)) best = s.genome;
+        }
+        codex[cropId] = { origin: list[0].genome, best };
+      }
+    }
+  } else {
+    startingCrops = setup.startingCrops || pickStartingCropsForGroup(setup.seedTypes || 8);
+    const seedsPerCrop = setup.seedsPerCrop ?? 12;
+    ({ seeds, codex } = freshSeedsForGroup(startingCrops, seedsPerCrop));
+  }
 
   // Per-group starting wood — defaults to STARTING_WOOD if not set.
   // The colony's shared pool is the sum across every group, so a setup

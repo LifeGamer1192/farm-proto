@@ -230,12 +230,74 @@ function colonistStateLabel(c) {
   return detail ? `${base} (${detail})` : base;
 }
 
+// --- Per-group view state (alpha 25) ----------------------------------
+//
+// `selectedGroupId` is the colony group the side panels show. `null`
+// means "All colonies" — every colonist / every codex entry / every
+// log line is visible. The group-tab strip above the Colony panel
+// switches between groups (and back to All). Defaults to All until
+// the player picks a tab.
+let selectedGroupId = null;
+
+function colonistsInView() {
+  if (selectedGroupId == null) return game.colonists;
+  return game.colonists.filter((c) => c.groupId === selectedGroupId);
+}
+
+function groupTabsEl() {
+  return document.getElementById('group-tabs');
+}
+
+function renderGroupTabs() {
+  const el = groupTabsEl();
+  if (!el) return;
+  if (!game.groups || game.groups.length <= 1) {
+    // No need for the tab strip with a single group.
+    el.innerHTML = '';
+    return;
+  }
+  const tabs = [
+    `<button type="button" class="group-tab${selectedGroupId == null ? ' active' : ''}" data-group="all">${t('group.tabAll')}</button>`,
+  ];
+  for (const g of game.groups) {
+    const sel = selectedGroupId === g.id ? ' active' : '';
+    tabs.push(
+      `<button type="button" class="group-tab${sel}" data-group="${g.id}">` +
+      `<span class="group-chip" style="background:${g.color.fill}"></span>` +
+      `${t('group.label', { letter: String.fromCharCode(65 + g.id) })}` +
+      `</button>`,
+    );
+  }
+  el.innerHTML = tabs.join('');
+}
+
+function setupGroupTabsHandler() {
+  const el = groupTabsEl();
+  if (!el || el.dataset.bound) return;
+  el.dataset.bound = '1';
+  el.addEventListener('click', (ev) => {
+    const btn = ev.target.closest('button.group-tab[data-group]');
+    if (!btn) return;
+    const val = btn.dataset.group;
+    selectedGroupId = val === 'all' ? null : Number(val);
+    // Selected colonist may no longer be in the visible group.
+    if (selectedGroupId != null && game.selectedColonist) {
+      const c = game.colonists.find((x) => x.name === game.selectedColonist);
+      if (!c || c.groupId !== selectedGroupId) game.selectedColonist = null;
+    }
+    renderGroupTabs();
+    refreshPanels();
+  });
+}
+
 function updateColonistsPanel() {
+  setupGroupTabsHandler();
+  renderGroupTabs();
   // Drop a stale selection if that colonist is no longer with us.
   if (game.selectedColonist && !game.colonists.some((c) => c.name === game.selectedColonist)) {
     game.selectedColonist = null;
   }
-  colonistsEl.innerHTML = game.colonists
+  colonistsEl.innerHTML = colonistsInView()
     .map((c) => {
       const bars =
         statBar('stat.fed', 1 - c.hunger) +
@@ -278,24 +340,36 @@ const STAT_ICON = {
 const labelIcon = (icon, text) => `<span class="stat-ico">${icon}</span>${text}`;
 
 function updateColonyStats() {
+  // When a specific group tab is active, show that group's identity-tracked
+  // figures (own colonists, own seed stock, own meals/missed/lost counters).
+  // The on-hand pool (food, wood, stockpiles) is shared across colonies in
+  // α25, so those rows continue to show colony-wide totals. A future α will
+  // route writes into per-group ledgers so even pools split cleanly.
+  const g = selectedGroupId == null ? null : game.groups[selectedGroupId];
   const s = game.storage;
   const ti = (it) => game.totalItem(it);
   let spUsed = 0;
   for (const sp of game.stockpiles) spUsed += game.stockpileFood(sp);
   const spCap = game.stockpiles.length * STOCKPILE_CAP;
-  // Seed total across every crop the colony holds.
+  // Seed total — either this group's stash, or the colony-wide aggregate.
+  const seedSrc = g ? g.seeds : game.seeds;
   let seedTotal = 0;
-  for (const id of CROP_IDS) seedTotal += game.seeds[id]?.length || 0;
+  for (const id of CROP_IDS) seedTotal += seedSrc[id]?.length || 0;
+  const popCount = g ? g.colonists.length : game.colonists.length;
+  const mealsEaten = g ? g.meals.eaten : game.meals.eaten;
+  const mealsMissed = g ? g.meals.missed : game.meals.missed;
+  const cropsLost = g ? g.cropsLost : game.cropsLost;
+  const pestsLost = g ? g.pestsLost : game.pestsLost;
   renderRows(colonyStatsEl, [
-    [labelIcon(STAT_ICON.population, t('stat.population')), game.colonists.length],
+    [labelIcon(STAT_ICON.population, t('stat.population')), popCount],
     [labelIcon(STAT_ICON.food, t('stat.foodStored')), game.totalFood],
     [labelIcon(STAT_ICON.wood, t('stat.wood')), Math.ceil(s.wood)],
     [labelIcon(STAT_ICON.seeds, t('stat.seedTotal')), seedTotal],
     [labelIcon(STAT_ICON.warehouse, t('stat.stockpiles')), `${spUsed} / ${spCap}`],
-    [labelIcon(STAT_ICON.meals, t('stat.meals')), game.meals.eaten],
-    [labelIcon(STAT_ICON.missed, t('stat.missed')), game.meals.missed],
-    [labelIcon(STAT_ICON.cropsLost, t('stat.cropsLost')), game.cropsLost],
-    [labelIcon(STAT_ICON.spoiled, t('stat.spoiled')), game.pestsLost],
+    [labelIcon(STAT_ICON.meals, t('stat.meals')), mealsEaten],
+    [labelIcon(STAT_ICON.missed, t('stat.missed')), mealsMissed],
+    [labelIcon(STAT_ICON.cropsLost, t('stat.cropsLost')), cropsLost],
+    [labelIcon(STAT_ICON.spoiled, t('stat.spoiled')), pestsLost],
   ]);
   // Breakdown sub-panel: per-food on-hand counts (combined raw on-hand and
   // any cooked meals). Hidden until the user expands the disclosure.
@@ -417,9 +491,14 @@ function updateSeedPanel() {
 // Only crops the colony has actually held seed of make it into the codex.
 function updateCodexPanel() {
   const legend = QUALITY_GENES.map((g) => t('gene.' + g)).join(' · ');
-  const ids = CROP_IDS.filter((id) => game.codex[id]);
+  // When a specific group tab is active, show only that group's codex.
+  // The colony-wide codex is the union of every group's best variety.
+  const codex = selectedGroupId == null
+    ? game.codex
+    : (game.groups[selectedGroupId]?.codex || {});
+  const ids = CROP_IDS.filter((id) => codex[id]);
   const rows = ids.map((id) => {
-    const c = game.codex[id];
+    const c = codex[id];
     const genes = QUALITY_GENES.map((gid) => {
       const cur = Math.round(phenotype(c.best, gid) * 100);
       const org = Math.round(phenotype(c.origin, gid) * 100);
@@ -440,31 +519,45 @@ function updateCodexPanel() {
   codexEl.innerHTML = `<p class="codex-legend">${legend}</p>${rows}`;
   for (const cv of codexEl.querySelectorAll('canvas.codex-preview')) {
     const id = cv.dataset.crop;
-    game.renderer.drawCropPreview(cv.getContext('2d'), cv.width, cv.height, id, game.codex[id].best);
+    game.renderer.drawCropPreview(cv.getContext('2d'), cv.width, cv.height, id, codex[id].best);
   }
 }
 
 // The activity log keeps up to ~1000 events. It re-renders only when an
 // entry is added (game.logRev) and prepends just the new entries, so the
 // panel stays cheap and does not snap to the top while it is scrolled.
+//
+// Alpha 25: when a group tab is active, the log filters to entries the
+// colonist's group is responsible for. Colony-wide events (cold snap,
+// trader visit, pest outbreak) carry no groupId and always show.
 let lastLogRev = -1;
+let lastLogGroup = null;
 const logEntryHtml = (e) => `<li class="${e.cls}">${e.icon} ${e.text}</li>`;
+function logEntryMatches(e) {
+  if (selectedGroupId == null) return true;
+  return e.groupId === undefined || e.groupId === selectedGroupId;
+}
 function updateLog() {
-  if (game.logRev === lastLogRev) return;
+  // Group-tab change forces a rebuild even if no new entries arrived.
+  if (game.logRev === lastLogRev && selectedGroupId === lastLogGroup) return;
+  const groupChanged = selectedGroupId !== lastLogGroup;
   const added = game.logRev - lastLogRev;
   lastLogRev = game.logRev;
-  // Full rebuild after a reset, or if more changed than the log now holds.
-  if (added < 0 || added >= game.log.length) {
-    logEl.innerHTML = game.log.map(logEntryHtml).join('');
+  lastLogGroup = selectedGroupId;
+  // Full rebuild on group switch, on reset, or when more entries arrived
+  // than the log now holds (older ones evicted).
+  if (groupChanged || added < 0 || added >= game.log.length) {
+    logEl.innerHTML = game.log.filter(logEntryMatches).map(logEntryHtml).join('');
     return;
   }
   const followNewest = logEl.scrollTop <= 1;
   const beforeH = logEl.scrollHeight;
   const frag = document.createElement('template');
-  frag.innerHTML = game.log.slice(0, added).map(logEntryHtml).join('');
+  frag.innerHTML = game.log.slice(0, added).filter(logEntryMatches).map(logEntryHtml).join('');
   logEl.prepend(frag.content);
+  // Cap the visible count loosely at game.log.length so the DOM does not
+  // grow unbounded as filtered entries accumulate.
   while (logEl.childElementCount > game.log.length) logEl.lastElementChild.remove();
-  // Keep the player's place if they have scrolled back to read history.
   if (!followNewest) logEl.scrollTop += logEl.scrollHeight - beforeH;
 }
 
@@ -530,6 +623,166 @@ function newMap(seed, biomeId, groupSetup) {
   updateBiomePicker();
   updateGroupSetup();
   refreshPanels();
+}
+
+// --- Start screen (alpha 25) ------------------------------------------
+//
+// Boot does NOT auto-generate a world any more — the start screen shows
+// first, and only when the player clicks Generate do we call newMap()
+// and reveal the simulation UI. The start screen carries the full
+// per-group setup (script / colonists / wood / 4 initial seeds + qty);
+// the in-sim "Apply group setup" widget keeps the simpler subset.
+
+const startScreenEl = $('start-screen');
+const startBiomesEl = $('start-biomes');
+const startSeedInputEl = $('start-seed');
+const startSeedRandomBtn = $('start-seed-random');
+const startGroupCountEl = $('start-group-count');
+const startGroupCountLabelEl = $('start-group-count-label');
+const startGroupListEl = $('start-group-list');
+const startGenerateBtn = $('start-generate');
+
+let startBiomeId = 'temperate';
+const NO_CROP = '__random'; // marker value for "pick randomly"
+const SEED_SLOTS = 4;
+const SEED_DEFAULT_QTY = 12;
+
+function pickRandomSeed(excluded) {
+  const pool = CROP_IDS.filter((id) => id !== 'wildgreens' && !excluded.has(id));
+  if (pool.length === 0) return null;
+  return pool[Math.floor(Math.random() * pool.length)];
+}
+
+function readStartGroupSetup() {
+  if (!startGroupListEl) return null;
+  const rows = [...startGroupListEl.querySelectorAll('.group-row')];
+  return rows.map((row, i) => {
+    // Collect seed slots: each slot is a {id, count} pair. NO_CROP →
+    // pick a random non-duplicate crop at generate time.
+    const slots = [...row.querySelectorAll('.group-seed-slot')].map((slot) => ({
+      id: slot.querySelector('select')?.value || NO_CROP,
+      count: Math.max(0, Math.min(99, parseInt(slot.querySelector('input')?.value, 10) || 0)),
+    }));
+    // Resolve random slots; dedup so we don't gift the same crop twice.
+    const used = new Set();
+    const initialSeeds = [];
+    for (const slot of slots) {
+      let id = slot.id;
+      if (id === NO_CROP || !id) id = pickRandomSeed(used);
+      if (!id || used.has(id)) continue;
+      used.add(id);
+      if (slot.count > 0) initialSeeds.push({ id, count: slot.count });
+    }
+    return {
+      name: `Colony ${String.fromCharCode(65 + i)}`,
+      scriptId: row.querySelector('select.group-script')?.value || 'balanced',
+      colonistCount: Math.max(1, Math.min(20,
+        parseInt(row.querySelector('input.group-colonists')?.value, 10) || 4)),
+      startingWood: Math.max(0, Math.min(999,
+        parseInt(row.querySelector('input.group-wood')?.value, 10) || 30)),
+      initialSeeds,
+    };
+  });
+}
+
+function renderStartGroupRows(n) {
+  if (!startGroupListEl) return;
+  const prev = readStartGroupSetup() || [];
+  const setup = [];
+  for (let i = 0; i < n; i++) {
+    setup.push(prev[i] || { scriptId: 'balanced', colonistCount: 4, startingWood: 30, initialSeeds: [] });
+  }
+  // Build a list of crop ids for the dropdowns. Exclude wildgreens —
+  // that's a discovery item, not a starter choice.
+  const cropChoices = CROP_IDS.filter((id) => id !== 'wildgreens');
+  const cropOptHTML = (selected) => {
+    const opts = [`<option value="${NO_CROP}"${selected === NO_CROP || !selected ? ' selected' : ''}>${t('start.random')}</option>`];
+    for (const id of cropChoices) {
+      opts.push(`<option value="${id}"${id === selected ? ' selected' : ''}>${t('crop.' + id)}</option>`);
+    }
+    return opts.join('');
+  };
+  startGroupListEl.innerHTML = setup.map((s, i) => {
+    const color = GROUP_COLORS[i] || null;
+    const chip = color ? `<span class="group-chip" style="background:${color.fill}"></span>` : '';
+    const scriptOpts = AUTONOMY_OPTIONS.map(
+      (id) => `<option value="${id}"${id === s.scriptId ? ' selected' : ''}>${t('script.' + id)}</option>`,
+    ).join('');
+    // Seed slot HTML — 4 dropdowns per group.
+    const slots = [];
+    for (let k = 0; k < SEED_SLOTS; k++) {
+      const slot = s.initialSeeds[k] || { id: NO_CROP, count: SEED_DEFAULT_QTY };
+      slots.push(
+        `<span class="group-seed-slot">` +
+        `<select>${cropOptHTML(slot.id || NO_CROP)}</select>` +
+        `<input type="number" min="0" max="99" value="${slot.count ?? SEED_DEFAULT_QTY}">` +
+        `</span>`,
+      );
+    }
+    return (
+      `<div class="group-row" data-group="${i}">` +
+      `${chip}<strong>${t('group.label', { letter: String.fromCharCode(65 + i) })}</strong> ` +
+      `<select class="group-script">${scriptOpts}</select>` +
+      `<label class="group-colcount">${t('group.colonists')} ` +
+      `<input class="group-colonists" type="number" min="1" max="20" value="${s.colonistCount}"></label>` +
+      `<label class="group-colcount">${t('group.startingWood')} ` +
+      `<input class="group-wood" type="number" min="0" max="999" value="${s.startingWood ?? 30}"></label>` +
+      `<div class="group-seed-row">` +
+      `<span class="start-row-label" style="margin:0 4px 0 0">${t('group.initialSeeds')}</span>` +
+      slots.join('') +
+      `</div>` +
+      `</div>`
+    );
+  }).join('');
+}
+
+function showStartScreen() {
+  if (!startScreenEl) return;
+  if (startGroupCountEl) {
+    const n = parseInt(startGroupCountEl.value, 10) || 1;
+    if (startGroupCountLabelEl) startGroupCountLabelEl.textContent = n;
+    renderStartGroupRows(n);
+  }
+  startScreenEl.hidden = false;
+}
+
+function hideStartScreen() {
+  if (startScreenEl) startScreenEl.hidden = true;
+}
+
+if (startBiomesEl) {
+  startBiomesEl.addEventListener('click', (ev) => {
+    const btn = ev.target.closest('button[data-biome]');
+    if (!btn) return;
+    startBiomeId = btn.dataset.biome;
+    for (const b of startBiomesEl.querySelectorAll('button')) b.classList.toggle('active', b === btn);
+  });
+}
+if (startGroupCountEl) {
+  startGroupCountEl.addEventListener('input', () => {
+    const n = Math.max(1, Math.min(8, parseInt(startGroupCountEl.value, 10) || 1));
+    if (startGroupCountLabelEl) startGroupCountLabelEl.textContent = n;
+    renderStartGroupRows(n);
+  });
+}
+if (startSeedRandomBtn) {
+  startSeedRandomBtn.addEventListener('click', () => {
+    startSeedInputEl.value = String(randomSeed());
+  });
+}
+if (startGenerateBtn) {
+  startGenerateBtn.addEventListener('click', () => {
+    const raw = startSeedInputEl.value.trim();
+    const seed = raw === ''
+      ? randomSeed()
+      : (/^\d+$/.test(raw) ? Number(raw) >>> 0 : hashSeed(raw));
+    const setup = readStartGroupSetup();
+    newMap(seed, startBiomeId, setup);
+    game.paused = false;
+    updatePauseBtn();
+    hideStartScreen();
+    showToast(t('hint.welcome'));
+  });
 }
 
 // --- Group setup (alpha 23) --------------------------------------------
@@ -1097,11 +1350,15 @@ targetAllBtn.addEventListener('click', () => {
 tipNextEl.addEventListener('click', nextTip);
 setInterval(nextTip, 45000); // a fresh tip every so often
 
+// Alpha 25: a placeholder world is built so the renderer always has
+// something to draw, but the simulation stays paused and the start
+// screen covers the canvas until the player presses Generate.
 newMap(randomSeed());
+game.paused = true;
 applyI18n();
 updateToolPanels();
 game.start();
-showToast(t('hint.welcome'));
+showStartScreen();
 setInterval(() => {
   updateColonistsPanel();
   updateTaskPanel();

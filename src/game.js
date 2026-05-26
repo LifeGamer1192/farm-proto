@@ -673,11 +673,19 @@ export class Game {
     if (!WORK_TYPES.includes(task.type)) return;
     if (task.type === TaskType.STORE || task.type === TaskType.FETCH) return;
     let where = `${t('task.' + task.type)} (${task.x}, ${task.y})`;
-    if (task.assignee) where += ` · ${task.assignee}`;
+    // Attribute to the colonist's group so the activity log can filter
+    // by colony tab in α25's per-group view.
+    let groupId;
+    if (task.assignee) {
+      where += ` · ${task.assignee}`;
+      const c = this.colonists.find((x) => x.name === task.assignee);
+      if (c) groupId = c.groupId;
+    }
     this._pushLog({
       icon: task.status === 'done' ? '✓' : '✗',
       text: `${where} — ${this._outcomeText(task)}`,
       cls: task.status === 'done' ? 'log-ok' : 'log-fail',
+      groupId,
     });
   }
 
@@ -882,6 +890,10 @@ export class Game {
           task.outcome = 'weeded';
         } else {
           this.cropsLost += 1;
+          // Per-group attribution (α25): the colonist scrapping the
+          // crop is the one charged with the loss.
+          const grp = this.groups?.[colonist?.groupId];
+          if (grp) grp.cropsLost += 1;
           task.outcome = 'culled';
           task.outcomeData = { crop: plant.cropId };
         }
@@ -1093,7 +1105,12 @@ export class Game {
     if (this.colonists.some((c) => c.dead)) {
       for (const c of this.colonists) {
         if (c.dead) {
-          this._pushLog({ icon: '☠', text: t('log.died', { name: c.name }), cls: 'log-fail' });
+          this._pushLog({
+            icon: '☠',
+            text: t('log.died', { name: c.name }),
+            cls: 'log-fail',
+            groupId: c.groupId,
+          });
           // Hand this colonist's queued work back to the whole colony.
           for (const task of this.taskQueue) {
             if (task.assignee === c.name) task.assignee = null;

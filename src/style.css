@@ -387,6 +387,108 @@ button.primary:hover {
   font-size: 0.95em;
 }
 
+/* Start screen overlay (alpha 25). */
+.start-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(11, 24, 16, 0.92);
+  overflow: auto;
+  padding: 24px;
+}
+.start-screen[hidden] { display: none !important; }
+.start-card {
+  max-width: 720px;
+  width: 100%;
+  background: #1b2a1f;
+  border: 1px solid #2a3f2b;
+  border-radius: 8px;
+  padding: 20px 26px;
+  color: var(--text);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+}
+.start-card h2 { margin: 0 0 6px; font-size: 1.3rem; }
+.start-hint { margin: 0 0 18px; color: var(--muted); font-size: 0.9rem; }
+.start-row {
+  margin: 0 0 14px;
+}
+.start-row-label {
+  display: block;
+  font-size: 0.7rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin: 0 0 4px;
+}
+.start-group-list { margin: 6px 0 0; }
+.start-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin: 18px 0 0;
+}
+.start-actions .primary { padding: 8px 22px; font-size: 1rem; }
+
+/* Per-group expanded row (alpha 25) — seed slots laid out below the
+   short controls row. */
+.group-seed-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  margin-top: 4px;
+  font-size: 0.72rem;
+}
+.group-seed-slot {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 4px;
+  border: 1px solid #2a3f2b;
+  border-radius: 3px;
+}
+.group-seed-slot select,
+.group-seed-slot input[type='number'] {
+  font-size: 0.72rem;
+  padding: 1px 3px;
+}
+.group-seed-slot input[type='number'] { width: 3.2em; }
+
+/* Group tab switcher in side panels (alpha 25). */
+.group-tabs {
+  display: flex;
+  gap: 3px;
+  flex-wrap: wrap;
+  margin: 0 0 6px;
+}
+.group-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 7px;
+  border: 1px solid #2a3f2b;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.02);
+  font-size: 0.72rem;
+  cursor: pointer;
+  color: var(--text);
+}
+.group-tab.active {
+  background: var(--accent);
+  color: #11240f;
+  border-color: var(--accent);
+  font-weight: 600;
+}
+.group-tab .group-chip { width: 9px; height: 9px; }
+
+/* Activity log shrunk to roughly 4 visible rows (alpha 25). The full
+   history is still kept (TASK_LOG_SIZE entries) — scroll inside. */
+.task-log {
+  max-height: 5.6em;
+}
+
 /* Group setup widgets (alpha 23). */
 .group-slider {
   display: flex;

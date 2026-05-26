@@ -209,6 +209,18 @@ function moodFromEating(itemId, quality) {
 export function feed(game, colonist) {
   colonist.eatCooldown = EAT_RETRY;
   const name = colonist.name;
+  const groupId = colonist.groupId;
+  // Per-group meal counters (α25) live alongside the colony-wide totals
+  // so the panel can show either depending on the selected tab.
+  const grp = game.groups?.[groupId];
+  const bumpEaten = () => {
+    game.meals.eaten += 1;
+    if (grp) grp.meals.eaten += 1;
+  };
+  const bumpMissed = () => {
+    game.meals.missed += 1;
+    if (grp) grp.meals.missed += 1;
+  };
   // Cooked meal / dish on hand — prefer the highest-quality option.
   const cookedIds = ['meal', ...DISH_IDS].filter((id) => game.storage[id] > 0);
   if (cookedIds.length > 0) {
@@ -218,8 +230,8 @@ export function feed(game, colonist) {
     game.storage[pick] -= 1;
     colonist.hunger = 0;
     colonist.mood = Math.min(1, colonist.mood + moodFromEating(pick, quality));
-    game.meals.eaten += 1;
-    game._pushLog({ icon: '🍲', text: t('log.ate', { name }), cls: 'log-meal' });
+    bumpEaten();
+    game._pushLog({ icon: '🍲', text: t('log.ate', { name }), cls: 'log-meal', groupId });
     return;
   }
   const onHand = largestEdibleRaw(game.storage, FOOD_TYPES);
@@ -228,8 +240,8 @@ export function feed(game, colonist) {
     game.storage[onHand] -= 1;
     colonist.hunger = 0;
     colonist.mood = Math.min(1, colonist.mood + moodFromEating(onHand, quality));
-    game.meals.eaten += 1;
-    game._pushLog({ icon: '🍴', text: t('log.ate', { name }), cls: 'log-meal' });
+    bumpEaten();
+    game._pushLog({ icon: '🍴', text: t('log.ate', { name }), cls: 'log-meal', groupId });
     return;
   }
   // Fall back to stockpiles — prefer cooked, then any raw edible.
@@ -245,17 +257,18 @@ export function feed(game, colonist) {
       sp.items[pick] -= 1;
       colonist.hunger = 0;
       colonist.mood = Math.min(1, colonist.mood + moodFromEating(pick, 0.5));
-      game.meals.eaten += 1;
+      bumpEaten();
       game._pushLog({
         icon: pick === 'meal' || isDish(pick) ? '🍲' : '🍴',
         text: t('log.ate', { name }),
         cls: 'log-meal',
+        groupId,
       });
       return;
     }
   }
-  game.meals.missed += 1;
-  game._pushLog({ icon: '⚠', text: t('log.hungry', { name }), cls: 'log-warn' });
+  bumpMissed();
+  game._pushLog({ icon: '⚠', text: t('log.hungry', { name }), cls: 'log-warn', groupId });
 }
 
 /**
