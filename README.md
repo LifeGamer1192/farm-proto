@@ -234,6 +234,22 @@ and surviving the winter.
   warehouse will not auto-queue unless the wood for it is already
   in stock.
 
+### Alpha 22 — biomes and a sturdier pathfinder
+
+- **Biomes** — pick one of four starts in the World panel:
+  Temperate (the classic balanced map), Arid (dry, hot, few trees,
+  more predators), Cold (chilly year-round, plenty of trees and
+  game, harsh winters) and Wetlands (lakes everywhere, rich soil,
+  lush plant life). Each biome dials the terrain knobs (water
+  fraction, moisture range, fertility), the wild-life spawn mix and
+  the climate offsets, and overlays a subtle tint on the map.
+- **Pathfinder hardening** — A* now takes a `maxIterations` cap so a
+  sealed-off goal can't pin a frame, and an opt-in `fallbackToNearest`
+  flag returns the path to the closest reachable tile when the goal
+  itself is unreachable. Long colonist routes go through a midpoint
+  via `findPathStaged`, and a per-frame `PathCache` lets multiple
+  colonists aimed at the same tile share one A* result.
+
 ### Alpha 21 — skills, sleep, and a three-year celebration
 
 - Each colonist now carries four **skills** — farming, agility,

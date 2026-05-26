@@ -72,7 +72,15 @@ export class Animal {
       const row = map.tiles[ty];
       if (!row || !row[tx] || row[tx].type === TileType.WATER) continue;
       if (row[tx].structure === 'fence') continue;
-      const path = findPath(map, { x: this.tileX, y: this.tileY }, { x: tx, y: ty }, true);
+      // Wander A* is capped so a deer stuck in a fenced-off pocket
+      // does not pin the frame searching every reachable tile.
+      const path = findPath(
+        map,
+        { x: this.tileX, y: this.tileY },
+        { x: tx, y: ty },
+        true,
+        { maxIterations: 1500 },
+      );
       if (path && path.length > 0) {
         this.path = path;
         return;

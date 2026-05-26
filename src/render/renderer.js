@@ -167,9 +167,13 @@ export class Renderer {
     }
     ctx.stroke();
 
-    // --- seasonal tint ---
+    // --- seasonal + biome tint (alpha 22) ---
     if (scene.seasonTint) {
       ctx.fillStyle = scene.seasonTint;
+      ctx.fillRect(0, 0, cw, ch);
+    }
+    if (scene.biomeTint) {
+      ctx.fillStyle = scene.biomeTint;
       ctx.fillRect(0, 0, cw, ch);
     }
 

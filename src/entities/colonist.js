@@ -7,7 +7,7 @@
 // and marks it done (or failed). Each update it also ages its stats:
 // hunger climbs, starvation eats health, and health recovers when fed.
 
-import { findPath } from '../core/pathfinder.js';
+import { findPath, findPathStaged } from '../core/pathfinder.js';
 import { TileType } from '../map/tile.js';
 import { TaskType } from '../tasks.js';
 import { isRipe } from '../crops.js';
@@ -202,7 +202,15 @@ export class Colonist {
     }
 
     const anchor = this._anchor();
-    const path = findPath(map, anchor, { x: task.x, y: task.y });
+    const goal = { x: task.x, y: task.y };
+    // Path search uses the colony's per-frame cache when available so
+    // four colonists heading to the same hearth or stockpile in the
+    // same tick share one A* result. Long routes are split through a
+    // midpoint checkpoint; the goal-unreachable case still returns
+    // null (the task fails) — falling back to "nearest" would leave
+    // the colonist walking toward a tile they can never reach.
+    const cache = map.pathCache;
+    let path = cache ? cache.findCached(map, anchor, goal, false) : findPathStaged(map, anchor, goal);
     if (!path) return this._fail(task, 'unreachable');
     this.path = [anchor, ...path];
     this.state = 'walking';

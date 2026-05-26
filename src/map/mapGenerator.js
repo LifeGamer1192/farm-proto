@@ -109,8 +109,15 @@ function distanceToWater(tiles, cols, rows) {
  * @param {number} seed  uint32 seed
  * @returns {{cols:number, rows:number, seed:number, waterThreshold:number, tiles:object[][]}}
  */
-export function generateMap(cols, rows, seed) {
+export function generateMap(cols, rows, seed, biome = null) {
   const rand = mulberry32(seed >>> 0);
+  // Biome dials the terrain knobs — water plenty, soil moisture range,
+  // and a global fertility bias. Falls back to the global defaults if
+  // no biome is provided so existing tests keep working unchanged.
+  const waterLevel = biome?.waterLevel ?? WATER_LEVEL;
+  const minWaterFrac = biome?.minWaterFraction ?? MIN_WATER_FRACTION;
+  const moistureRange = biome?.moistureRange ?? MOISTURE_RANGE;
+  const fertilityBonus = biome?.fertilityBonus ?? 0;
   // Distinct noise fields drawn from one stream — still fully deterministic.
   const elevationNoise = makeFractalNoise(rand, 4, 3);
   const fertilityNoise = makeFractalNoise(rand, 3, 4);
@@ -138,12 +145,11 @@ export function generateMap(cols, rows, seed) {
     }
   }
 
-  // Choose a water threshold that guarantees at least MIN_WATER_FRACTION
-  // of the map is water, so a shoreline is always present.
-  const waterThreshold = Math.max(
-    WATER_LEVEL,
-    percentile(elevations, MIN_WATER_FRACTION),
-  );
+  // Choose a water threshold that guarantees at least minWaterFrac of
+  // the map is water, so a shoreline is always present. The biome's
+  // overrides flow through here so arid maps stay dry and wetland maps
+  // pool generously.
+  const waterThreshold = Math.max(waterLevel, percentile(elevations, minWaterFrac));
   for (let y = 0; y < rows; y++) {
     for (let x = 0; x < cols; x++) {
       if (tiles[y][x].elevation <= waterThreshold) {
@@ -169,15 +175,22 @@ export function generateMap(cols, rows, seed) {
       }
 
       const d = dist[y][x];
-      const nearWater = d < 0 ? 0 : Math.max(0, 1 - d / MOISTURE_RANGE);
+      const nearWater = d < 0 ? 0 : Math.max(0, 1 - d / moistureRange);
       tile.moisture = clamp01(0.15 + nearWater * 0.85);
 
       const soil = fertilityNoise(fx, fy);
-      tile.fertility = clamp01(soil * 0.7 + tile.moisture * 0.3);
+      tile.fertility = clamp01(soil * 0.7 + tile.moisture * 0.3 + fertilityBonus);
     }
   }
 
-  return { cols, rows, seed: seed >>> 0, waterThreshold, tiles };
+  return {
+    cols,
+    rows,
+    seed: seed >>> 0,
+    waterThreshold,
+    tiles,
+    biome: biome ? biome.id : null,
+  };
 }
 
 /**

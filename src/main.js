@@ -521,11 +521,30 @@ function applyI18n() {
 
 // --- map lifecycle --------------------------------------------------------
 
-function newMap(seed) {
-  game.newMap(seed);
+function newMap(seed, biomeId) {
+  game.newMap(seed, biomeId);
   seedInput.value = String(game.seed);
   rebuildCropPicker();
+  updateBiomePicker();
   refreshPanels();
+}
+
+// --- Biome picker (alpha 22) ---------------------------------------------
+const biomePickerEl = $('biomes');
+function updateBiomePicker() {
+  if (!biomePickerEl) return;
+  const current = game.biome?.id || 'temperate';
+  for (const b of biomePickerEl.querySelectorAll('button[data-biome]')) {
+    b.classList.toggle('active', b.dataset.biome === current);
+  }
+}
+if (biomePickerEl) {
+  biomePickerEl.addEventListener('click', (ev) => {
+    const btn = ev.target.closest('button[data-biome]');
+    if (!btn) return;
+    newMap(randomSeed(), btn.dataset.biome);
+    showToast(t('hint.biome.' + btn.dataset.biome));
+  });
 }
 
 function applySeed() {

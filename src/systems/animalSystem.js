@@ -20,8 +20,11 @@ import { t } from '../i18n.js';
  * scatters them on random land tiles.
  */
 export function spawnAnimals(game, landTiles) {
+  // The active biome's spawn mix wins if set; otherwise fall back to
+  // the global ANIMAL_SPAWN_MIX from config.
+  const mix = game.biome?.animalSpawnMix || ANIMAL_SPAWN_MIX;
   const specList = [];
-  for (const { species, n } of ANIMAL_SPAWN_MIX) {
+  for (const { species, n } of mix) {
     for (let i = 0; i < n; i++) specList.push(species);
   }
   while (specList.length < ANIMAL_COUNT) specList.push('boar');

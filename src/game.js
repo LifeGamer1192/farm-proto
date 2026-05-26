@@ -54,6 +54,8 @@ import { Renderer } from './render/renderer.js';
 import { Colonist } from './entities/colonist.js';
 import { TaskType, WORK_TYPES, createTask } from './tasks.js';
 import { scatterPlants, PlantKind } from './world.js';
+import { PathCache } from './core/pathfinder.js';
+import { getBiome, DEFAULT_BIOME } from './biomes.js';
 import { getCrop, cropSuitability, survivalChance, isRipe } from './crops.js';
 import {
   freshGenome,
@@ -272,10 +274,21 @@ export class Game {
     return Math.round(CANVAS_H / this.tileSize);
   }
 
-  /** Generate a fresh map, scatter plants, and place colonists and animals. */
-  newMap(seed) {
-    this.map = generateMap(GRID_COLS, GRID_ROWS, seed);
-    scatterPlants(this.map);
+  /**
+   * Generate a fresh map, scatter plants, and place colonists and animals.
+   * @param {number} seed
+   * @param {?string} [biomeId] one of the BIOME_IDS (alpha 22). Falls
+   *   back to the previous biome (or the default) when omitted.
+   */
+  newMap(seed, biomeId) {
+    if (biomeId) this.biome = getBiome(biomeId);
+    if (!this.biome) this.biome = getBiome(DEFAULT_BIOME);
+    this.map = generateMap(GRID_COLS, GRID_ROWS, seed, this.biome);
+    // Attach a per-frame path cache to the map — colonist.assignTask
+    // looks for `map.pathCache` and reuses its results across colonists
+    // heading to the same tile in the same tick.
+    this.map.pathCache = new PathCache();
+    scatterPlants(this.map, this.biome);
     this.stats = mapStats(this.map);
     this.camera = new Camera(this._viewCols(), this._viewRows(), GRID_COLS, GRID_ROWS);
 
@@ -372,8 +385,10 @@ export class Game {
 
   _updateEnvironment() {
     const info = clockInfo(this.clock);
-    info.temperature = temperatureAt(info.yearProgress);
-    info.daylight = daylightAt(info.yearProgress);
+    const tOffset = this.biome?.tempOffset || 0;
+    const dOffset = this.biome?.daylightOffset || 0;
+    info.temperature = temperatureAt(info.yearProgress) + tOffset;
+    info.daylight = Math.max(0, Math.min(1, daylightAt(info.yearProgress) + dOffset));
     this.environment = info;
   }
 
@@ -983,6 +998,9 @@ export class Game {
     if (this.paused) return;
     const simDt = realDt * this.speed;
     this.clock += simDt;
+    // Fresh frame — drop last tick's cached pathfinder results so a
+    // fence built last frame invalidates routes through it.
+    if (this.map.pathCache) this.map.pathCache.nextFrame();
     const prevSeason = this.environment.seasonIndex;
     this._updateEnvironment();
     if (this.environment.seasonIndex !== prevSeason) {
@@ -1010,6 +1028,7 @@ export class Game {
       taskQueue: this.taskQueue,
       tileSize: this.tileSize,
       seasonTint: SEASON_TINT[this.environment.season],
+      biomeTint: this.biome?.mapTint || null,
       clock: this.clock,
       selectedColonist: this.selectedColonist,
       hearthsLit: this.hearthsLit,
