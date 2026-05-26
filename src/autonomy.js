@@ -446,6 +446,16 @@ export function farmerBreedScript(game, colonist) {
       return createTask(TaskType.HARVEST, crop.x, crop.y);
     }
   }
+  // Critical warehouse pivot — even a breeding-focused colony can't keep
+  // sowing if the harvest has nowhere to land. Uses the same script-level
+  // helper as the balanced/farmer scripts so the threshold stays in sync.
+  const critical = game._warehousesCritical?.() || false;
+  if (critical && game.autoMode) {
+    const dec = wantsWarehouse(game, colonist, { utilThreshold: 0.95 });
+    if (dec && dec.build) {
+      return createTask(TaskType.BUILD, dec.spot.x, dec.spot.y, { structure: dec.build });
+    }
+  }
   if (game.hearthsLit && game.rawFood > 0 && game.storage.meal < MEAL_TARGET) {
     for (const h of game.hearths) {
       if (!game._tileClaimed(h.x, h.y)) return createTask(TaskType.COOK, h.x, h.y);
