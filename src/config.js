@@ -219,7 +219,7 @@ export const BIRTH_CHANCE = 0.35;
 // Hard cap on the colony's population (the prototype was built around
 // four colonists; the renderer and overlap math keep working past that,
 // but this keeps the experience tractable).
-export const POPULATION_CAP = 10;
+export const POPULATION_CAP = 100;
 
 // Winter trader: always arrives once per winter, drops a small gift of
 // wood and a few seed packets to help the colony through.

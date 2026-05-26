@@ -537,50 +537,6 @@ export class Game {
     });
   }
 
-  // Feed a colonist (called when an eat task ends). A cooked meal is eaten
-  // first and lifts the mood; raw food just fills. On-hand food goes first,
-  // but a hungry colonist will also help itself straight from a stockpile.
-  _feed(colonist) {
-    colonist.eatCooldown = EAT_RETRY;
-    const name = colonist.name;
-    if (this.storage.meal > 0) {
-      this.storage.meal -= 1;
-      colonist.hunger = 0;
-      colonist.mood = Math.min(1, colonist.mood + MEAL_MOOD_BONUS);
-      this.meals.eaten += 1;
-      this._pushLog({ icon: '🍲', text: t('log.ate', { name }), cls: 'log-meal' });
-      return;
-    }
-    const onHand = this._largestFood(this.storage, FOOD_TYPES);
-    if (onHand) {
-      this.storage[onHand] -= 1;
-      colonist.hunger = 0;
-      // A more nutritious raw food lifts the mood a little; a bland one
-      // barely budges it. Cooked meals still use the bigger MEAL bonus.
-      colonist.mood = Math.min(1, colonist.mood + nutritionOf(onHand) * 0.04);
-      this.meals.eaten += 1;
-      this._pushLog({ icon: '🍴', text: t('log.ate', { name }), cls: 'log-meal' });
-      return;
-    }
-    const sp = this.stockpiles.find((s) => this.stockpileFood(s) > 0);
-    if (sp) {
-      const it = sp.items.meal > 0 ? 'meal' : this._largestFood(sp.items, STOCKPILE_ITEMS);
-      sp.items[it] -= 1;
-      colonist.hunger = 0;
-      if (it === 'meal') colonist.mood = Math.min(1, colonist.mood + MEAL_MOOD_BONUS);
-      else colonist.mood = Math.min(1, colonist.mood + nutritionOf(it) * 0.04);
-      this.meals.eaten += 1;
-      this._pushLog({
-        icon: it === 'meal' ? '🍲' : '🍴',
-        text: t('log.ate', { name }),
-        cls: 'log-meal',
-      });
-      return;
-    }
-    this.meals.missed += 1;
-    this._pushLog({ icon: '⚠', text: t('log.hungry', { name }), cls: 'log-warn' });
-  }
-
   // Apply the world effect of a completed task.
   _applyTaskEffect(task, colonist) {
     const tile = this.map.tiles[task.y][task.x];
