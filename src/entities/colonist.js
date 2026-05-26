@@ -189,8 +189,10 @@ export class Colonist {
       const p = tile.plant;
       if (!p || p.kind !== 'crop' || p.withered) return this._fail(task, 'noCrop');
     } else if (task.type === TaskType.WEED) {
+      // Weeding now accepts ANY crop — withered (auto-cleanup) or
+      // still-living (player explicitly chose to scrap it).
       const p = tile.plant;
-      if (!p || p.kind !== 'crop' || !p.withered) return this._fail(task, 'noWeed');
+      if (!p || p.kind !== 'crop') return this._fail(task, 'noWeed');
     } else if (task.type === TaskType.STORE || task.type === TaskType.FETCH) {
       if (tile.structure !== 'stockpile') return this._fail(task, 'noStockpile');
     } else if (task.type === TaskType.BUILD) {

@@ -146,9 +146,13 @@ export function createGroup(id, setup = {}) {
   const seedsPerCrop = setup.seedsPerCrop ?? 12;
   const { seeds, codex } = freshSeedsForGroup(startingCrops, seedsPerCrop);
 
-  // Per-group storage (starts with a slice of wood proportional to its
-  // colonist count, so a tiny group does not get the full kit).
-  const storage = { wood: STARTING_WOOD, meal: 0 };
+  // Per-group starting wood — defaults to STARTING_WOOD if not set.
+  // The colony's shared pool is the sum across every group, so a setup
+  // with 4 groups × 30 wood begins with 120 wood total.
+  const startingWood = Number.isFinite(setup.startingWood)
+    ? Math.max(0, setup.startingWood | 0)
+    : STARTING_WOOD;
+  const storage = { wood: startingWood, meal: 0 };
   for (const cid of CROP_IDS) storage[cid] = 0;
   storage.forage = 0;
   storage.meat = 0;
@@ -159,6 +163,7 @@ export function createGroup(id, setup = {}) {
     color,
     scriptId,
     colonistCount: setup.colonistCount ?? 4,
+    startingWood,
     startingCrops,
     seeds,
     codex,

@@ -553,6 +553,8 @@ function readGroupSetup() {
     scriptId: row.querySelector('select.group-script')?.value || 'balanced',
     colonistCount: Math.max(1, Math.min(20,
       parseInt(row.querySelector('input.group-colonists')?.value, 10) || 4)),
+    startingWood: Math.max(0, Math.min(999,
+      parseInt(row.querySelector('input.group-wood')?.value, 10) || 30)),
   }));
 }
 
@@ -562,7 +564,7 @@ function renderGroupRows(n) {
   const prev = readGroupSetup() || [];
   const setup = [];
   for (let i = 0; i < n; i++) {
-    setup.push(prev[i] || { scriptId: 'balanced', colonistCount: 4 });
+    setup.push(prev[i] || { scriptId: 'balanced', colonistCount: 4, startingWood: 30 });
   }
   // Group color is decided by the game; the row shows it as a chip so
   // the user knows what color each colony will be.
@@ -578,6 +580,8 @@ function renderGroupRows(n) {
       `<select class="group-script" data-group="${i}">${opts}</select>` +
       `<label class="group-colcount">${t('group.colonists')} ` +
       `<input class="group-colonists" type="number" min="1" max="20" value="${s.colonistCount}"></label>` +
+      `<label class="group-colcount">${t('group.startingWood')} ` +
+      `<input class="group-wood" type="number" min="0" max="999" value="${s.startingWood ?? 30}"></label>` +
       `</div>`
     );
   }).join('');
@@ -752,7 +756,7 @@ function showTooltip(clientX, clientY, pos) {
 
 // Range tools paint a task on every tile a drag crosses; single-target
 // tools (move / hunt) keep the classic drag-to-pan.
-const PAINT_TOOLS = new Set(['harvest', 'sow', 'till', 'water', 'build', 'cancel']);
+const PAINT_TOOLS = new Set(['harvest', 'sow', 'till', 'water', 'weed', 'build', 'cancel']);
 
 let activePointer = null;
 let dragged = false;

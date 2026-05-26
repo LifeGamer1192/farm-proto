@@ -32,6 +32,7 @@ const STRINGS = {
     'label.groupCount': 'Groups',
     'group.label': 'Colony {letter}',
     'group.colonists': 'Colonists',
+    'group.startingWood': 'Wood',
     'script.balanced': 'Balanced',
     'script.farmer': 'Farmer',
     'script.scout': 'Scout',
@@ -52,6 +53,7 @@ const STRINGS = {
     'task.sow': 'Sow',
     'task.till': 'Till',
     'task.water': 'Water',
+    'task.weed': 'Weed',
     'task.eat': 'Eat',
     'task.rest': 'Rest',
     'task.leisure': 'Leisure',
@@ -134,6 +136,8 @@ const STRINGS = {
       'Till tool — click land to till the soil. Crops sown on tilled soil survive better.',
     'hint.task.water':
       'Water tool — click a growing crop. Watered crops grow faster for a while.',
+    'hint.task.weed':
+      'Weed tool — click a crop tile to pull it. Withered crops clear away; a living crop is deliberately culled (counted as a loss).',
     'hint.cropStats': 'growth {grow}d · yield {yield} · nutrition {nut}%',
 
     'note.spring': 'Spring — mild. Crops grow steadily; a good time to sow.',
@@ -297,6 +301,7 @@ const STRINGS = {
     'stat.bestSeed': 'Best seed',
     'out.weeded': 'cleared a dead crop',
     'out.noWeed': 'nothing to clear',
+    'out.culled': 'culled a living {crop}',
     'out.noSeed': 'out of {crop} seed',
     'tip.stored': '{n}/{cap} stored',
     'tip.hearthLit': 'lit',
@@ -417,6 +422,7 @@ const STRINGS = {
     'label.groupCount': 'グループ数',
     'group.label': 'コロニー{letter}',
     'group.colonists': 'コロニスト',
+    'group.startingWood': '初期材木',
     'script.balanced': 'バランス型',
     'script.farmer': '農耕型',
     'script.scout': '探索型',
@@ -437,6 +443,7 @@ const STRINGS = {
     'task.sow': '種まき',
     'task.till': '耕す',
     'task.water': '水やり',
+    'task.weed': '除草',
     'task.eat': '食事',
     'task.rest': '休憩',
     'task.leisure': '娯楽',
@@ -519,6 +526,8 @@ const STRINGS = {
       '耕すツール — 陸地をクリックして土を耕します。耕した土では作物が枯れにくくなります。',
     'hint.task.water':
       '水やりツール — 育成中の作物をクリック。しばらく成長が速くなります。',
+    'hint.task.weed':
+      '除草ツール — 作物タイルをクリックして引き抜きます。枯死株は撤去、生育中の作物は意図的に間引き（損失としてカウント）。',
     'hint.cropStats': '成長 {grow}日 · 収量 {yield} · 栄養価 {nut}%',
 
     'note.spring': '春 — 穏やか。作物は順調に育ち、種まきの好機です。',
@@ -681,6 +690,7 @@ const STRINGS = {
     'stat.bestSeed': '最良の種',
     'out.weeded': '枯死株を除草した',
     'out.noWeed': '撤去するものがない',
+    'out.culled': '生育中の{crop}を間引いた',
     'out.noSeed': '{crop}の種切れ',
     'tip.stored': '収納 {n}/{cap}',
     'tip.hearthLit': '点火中',

@@ -365,6 +365,11 @@ export class Game {
     this.seeds = aggregateSeeds(this.groups);
     this.codex = aggregateCodex(this.groups);
     this.startingCrops = aggregateStartingCrops(this.groups);
+    // Colony wood = sum of every group's startingWood. Resources stay
+    // pooled in this alpha; per-group wood ledgers come with α24.
+    let totalWood = 0;
+    for (const grp of this.groups) totalWood += grp.startingWood || 0;
+    this.storage.wood = totalWood;
     this.meals = { eaten: 0, missed: 0 };
     this.cropsLost = 0;
     this.pestsLost = 0;
@@ -596,6 +601,11 @@ export class Game {
     if (type === TaskType.WATER) {
       const p = tile.plant;
       if (!p || p.kind !== PlantKind.CROP || p.withered) return 'err.noCrop';
+    }
+    if (type === TaskType.WEED) {
+      // Explicit player weed: any crop is OK (withered or still growing).
+      const p = tile.plant;
+      if (!p || p.kind !== PlantKind.CROP) return 'err.noCrop';
     }
     if (type === TaskType.COOK && tile.structure !== 'hearth') return 'err.noHearth';
     if (type === TaskType.BUILD) {
@@ -833,12 +843,21 @@ export class Game {
         }
       }
     } else if (task.type === TaskType.WEED) {
+      // Pull any crop off the tile — withered (cleanup) or still-living
+      // (explicit player scrap). A live crop is counted as a loss so the
+      // Crops-lost stat reflects the deliberate cull.
       const plant = tile.plant;
-      if (plant && plant.kind === PlantKind.CROP && plant.withered) {
+      if (plant && plant.kind === PlantKind.CROP) {
         const i = this.crops.indexOf(plant);
         if (i >= 0) this.crops.splice(i, 1);
         tile.plant = null;
-        task.outcome = 'weeded';
+        if (plant.withered) {
+          task.outcome = 'weeded';
+        } else {
+          this.cropsLost += 1;
+          task.outcome = 'culled';
+          task.outcomeData = { crop: plant.cropId };
+        }
       } else {
         task.outcome = 'noWeed';
       }
