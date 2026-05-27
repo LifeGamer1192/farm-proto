@@ -122,6 +122,10 @@ function spawnBabyInto(game, parentGroup) {
   const baby = new Colonist(pos.x, pos.y, name, gid);
   game.colonists.push(baby);
   if (parentGroup) parentGroup.colonists.push(baby);
+  // BUG-4 fix: persistent birth counter.
+  if (game.stats?.birthsByGroup) {
+    game.stats.birthsByGroup[gid] = (game.stats.birthsByGroup[gid] || 0) + 1;
+  }
   game._birthEvent = { name, groupId: gid };
   game._pushLog({
     icon: '👶',
@@ -177,6 +181,16 @@ export function runWinterTrader(game) {
     gifts.push(id);
   }
   game._traderEvent = { wood: TRADER_WOOD_GIFT, seeds: gifts, groupId: recipientId };
+  // BUG-4 fix: keep a per-year trader visit record on stats so a post-
+  // game summary can verify the winter event fired even after the log
+  // ring buffer has rotated past it.
+  if (game.stats?.traderVisitsByYear) {
+    game.stats.traderVisitsByYear[year] = {
+      groupId: recipientId,
+      wood: TRADER_WOOD_GIFT,
+      seeds: gifts.slice(),
+    };
+  }
   game._pushLog({
     icon: '🛒',
     text: t('log.trader', {

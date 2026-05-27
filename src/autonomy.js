@@ -14,6 +14,7 @@
 
 import { TaskType, createTask } from './tasks.js';
 import { isRipe } from './crops.js';
+import { tileBlocksCrop } from './systems/cropSystem.js';
 import {
   ON_HAND_LOW,
   ON_HAND_CAP,
@@ -186,6 +187,41 @@ function pickAutoHutVariant(game, gid) {
 }
 
 /**
+ * Balanced-script emergency farming: when this colony has zero food in
+ * storage AND fewer than 2 own-group living crops, queue sow/till
+ * immediately so the colonist does not waste its first season on hunt
+ * → chop → infra while seeds rot in the bag.
+ *
+ * Returns a SOW or TILL task, or null when the situation is not
+ * critical (food on hand, crops already growing, no seeds, no spot).
+ *
+ * @param {object} game
+ * @param {object} colonist
+ * @returns {?object}
+ */
+function _balancedEmergencyFarm(game, colonist) {
+  const gid = colonist.groupId;
+  const ownFood = game._totalFoodFor(gid);
+  if (ownFood > 0) return null;
+  let ownAlive = 0;
+  for (const crop of game.crops) {
+    if (crop.ownerId !== gid) continue;
+    if (crop.withered) continue;
+    ownAlive++;
+    if (ownAlive >= 2) return null;
+  }
+  const sowCrop = game._mostStockedCrop(gid);
+  if (!sowCrop) return null;
+  const sowSpot = game._pickAutoSowSpot(colonist, sowCrop);
+  if (sowSpot) {
+    return createTask(TaskType.SOW, sowSpot.x, sowSpot.y, { cropId: sowCrop });
+  }
+  const tillSpot = game._pickTillSpot(colonist, sowCrop);
+  if (tillSpot) return createTask(TaskType.TILL, tillSpot.x, tillSpot.y);
+  return null;
+}
+
+/**
  * H4: own-colony infra builder — returns a BUILD task for the most
  * urgent missing structure (hut → hearth → warehouse), or null when
  * everything's covered. Extracted so every script (balanced, farmer,
@@ -339,6 +375,18 @@ export function pickAutonomousTask(game, colonist) {
       return createTask(TaskType.WEED, crop.x, crop.y);
     }
   }
+  // 4b. Balanced-only emergency farming: when this colony has no food in
+  // store AND essentially no own crops growing, jump straight to sow/till
+  // instead of letting the colonist chase hunt → chop → infra. Without
+  // this, a fresh balanced colony spends its starter wood on huts and
+  // hearths while its seed packets sit idle, and starves before any crop
+  // ripens. Scope is intentionally narrow (scriptId === 'balanced') so
+  // scout stays disadvantaged on purpose — a scout colony is supposed
+  // to learn that hunting alone is unreliable.
+  if (game.autoMode && game.groups?.[gid]?.scriptId === 'balanced') {
+    const em = _balancedEmergencyFarm(game, colonist);
+    if (em) return em;
+  }
   // 5. Throw up a fence between the colony and a nearby boar — colony-
   // wide plan, see Game#_nextFenceTile.
   if (
@@ -399,7 +447,7 @@ export function pickAutonomousTask(game, colonist) {
     // 10. Till new ground and sow the most-stocked crop.
     const sowCrop = game._mostStockedCrop(colonist.groupId);
     if (sowCrop) {
-      const sowSpot = game._pickAutoSowSpot(colonist);
+      const sowSpot = game._pickAutoSowSpot(colonist, sowCrop);
       if (sowSpot) {
         return createTask(TaskType.SOW, sowSpot.x, sowSpot.y, { cropId: sowCrop });
       }
@@ -470,7 +518,7 @@ export function farmerScript(game, colonist) {
   if (game.autoMode) {
     const sowCrop = game._mostStockedCrop(colonist.groupId);
     if (sowCrop) {
-      const sowSpot = game._pickAutoSowSpot(colonist);
+      const sowSpot = game._pickAutoSowSpot(colonist, sowCrop);
       if (sowSpot) {
         return createTask(TaskType.SOW, sowSpot.x, sowSpot.y, { cropId: sowCrop });
       }
@@ -559,7 +607,7 @@ function fieldPlanFor(game, colonist) {
   return grp.fieldPlan;
 }
 
-function pickRectSowSpot(game, colonist) {
+function pickRectSowSpot(game, colonist, cropId) {
   const plan = fieldPlanFor(game, colonist);
   if (!plan) return null;
   const gid = colonist.groupId;
@@ -572,13 +620,14 @@ function pickRectSowSpot(game, colonist) {
       if (!game._canUseFrom(gid, t.tilledBy)) continue;
       if (game._tileClaimed(x, y)) continue;
       if (colonist.isUnreachable?.(x, y, game.clock)) continue;
+      if (tileBlocksCrop(t, cropId)) continue;
       return { x, y };
     }
   }
   return null;
 }
 
-function pickRectTillSpot(game, colonist) {
+function pickRectTillSpot(game, colonist, cropId) {
   const plan = fieldPlanFor(game, colonist);
   if (!plan) return null;
   for (let dy = 0; dy < plan.h; dy++) {
@@ -590,6 +639,7 @@ function pickRectTillSpot(game, colonist) {
       if (t.tilled || t.plant || t.structure) continue;
       if (game._tileClaimed(x, y)) continue;
       if (colonist.isUnreachable?.(x, y, game.clock)) continue;
+      if (tileBlocksCrop(t, cropId)) continue;
       return { x, y };
     }
   }
@@ -655,9 +705,9 @@ export function farmerBreedScript(game, colonist) {
   if (game.autoMode) {
     const sowCrop = game._mostStockedCrop(colonist.groupId);
     if (sowCrop) {
-      const sowSpot = pickRectSowSpot(game, colonist);
+      const sowSpot = pickRectSowSpot(game, colonist, sowCrop);
       if (sowSpot) return createTask(TaskType.SOW, sowSpot.x, sowSpot.y, { cropId: sowCrop });
-      const tillSpot = pickRectTillSpot(game, colonist);
+      const tillSpot = pickRectTillSpot(game, colonist, sowCrop);
       if (tillSpot) return createTask(TaskType.TILL, tillSpot.x, tillSpot.y);
     }
   }

@@ -557,6 +557,116 @@ button.primary:hover {
   border-radius: 4px;
 }
 
+/* α26 polish: enriched mutation popup — side-by-side parent/child
+   previews, top-changes callout, and a sparkle accent. The whole detail
+   lives inside .mut-wrap so the popup's max-width can be widened just
+   for this variant, leaving other popups untouched. */
+.gameover-box:has(.mut-wrap) {
+  max-width: 360px;
+  text-align: left;
+}
+.mut-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.mut-lead {
+  text-align: center;
+  font-size: 0.92rem;
+  margin: 4px 0 2px;
+  line-height: 1.4;
+  color: #f3e5b3;
+}
+.mut-sparkle {
+  display: block;
+  margin: 0 auto 6px;
+  width: 220px; height: 4px;
+  background: linear-gradient(90deg, transparent, #ffd96b 30%, #fff5c0 50%, #ffd96b 70%, transparent);
+  opacity: 0.9;
+  filter: blur(1px);
+  animation: mut-sparkle-pulse 1.6s ease-in-out infinite;
+  pointer-events: none;
+}
+@keyframes mut-sparkle-pulse {
+  0%, 100% { opacity: 0.45; transform: scaleX(0.85); }
+  50%      { opacity: 1;    transform: scaleX(1.05); }
+}
+.mut-meta {
+  margin: -4px 0 8px;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 0.72rem;
+  color: var(--muted);
+}
+.mut-badge {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 8px;
+  background: rgba(255, 215, 110, 0.16);
+  color: #ffd96b;
+  border: 1px solid rgba(255, 215, 110, 0.4);
+}
+.mut-when { color: var(--muted); }
+.mut-previews {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  margin: 6px 0 8px;
+}
+.mut-figure {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.7rem;
+  color: var(--muted);
+}
+.mut-figure figcaption { white-space: nowrap; }
+.mut-preview-child {
+  box-shadow: 0 0 18px 2px rgba(255, 215, 110, 0.5);
+}
+.mut-vs {
+  font-weight: 600;
+  color: var(--muted);
+  font-size: 0.8rem;
+  letter-spacing: 0.04em;
+}
+.mut-stars-old { color: var(--muted); }
+.mut-stars-new { color: #ffd96b; text-shadow: 0 0 6px rgba(255, 215, 110, 0.5); }
+.mut-arrow { color: var(--muted); margin: 0 4px; }
+.mut-top {
+  margin: 0 0 10px;
+  padding: 6px 8px;
+  background: rgba(255, 215, 110, 0.08);
+  border-left: 2px solid #ffd96b;
+  border-radius: 3px;
+}
+.mut-section-head {
+  font-size: 0.74rem;
+  margin-bottom: 4px;
+  color: #ffd96b;
+}
+.mut-top-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.76rem;
+  padding: 1px 0;
+  font-variant-numeric: tabular-nums;
+}
+.mut-top-row.mut-up   .mut-top-delta { color: #8bd17a; }
+.mut-top-row.mut-down .mut-top-delta { color: #d97a7a; }
+.mut-top-name { color: var(--muted); }
+.mut-all summary {
+  cursor: pointer;
+  font-size: 0.72rem;
+  color: var(--muted);
+  margin-bottom: 4px;
+}
+.mut-all summary:hover { color: var(--accent); }
+
 /* Activity log shrunk to roughly 4 visible rows (alpha 25). The full
    history is still kept (TASK_LOG_SIZE entries) — scroll inside. */
 .task-log {

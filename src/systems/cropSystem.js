@@ -249,6 +249,11 @@ export function gatherSeeds(game, plant, groupId) {
     const child = crossGenomes(plant.genome, otherGenome);
     addSeed(game, plant.cropId, child.genome, groupId);
     if (child.legendary) {
+      // BUG-4 fix: persistent per-group mutation counter — survives
+      // the activity log's ring-buffer rotation. Also lets the popup
+      // show "Mutation #N for this colony" as a flavour tag.
+      const mbg = game.stats?.mutationsByGroup;
+      const seq = mbg ? (mbg[groupId] = (mbg[groupId] || 0) + 1) : null;
       game._pushLog({
         icon: '✨',
         text: t('log.mutation', { crop: t('crop.' + plant.cropId) }),
@@ -257,12 +262,17 @@ export function gatherSeeds(game, plant, groupId) {
       });
       // D1/F3: surface mutations as a one-shot big-popup event. Carry
       // the mutated genome + the parent's so the popup can render a
-      // codex-style gene panel comparing the two strains.
+      // codex-style gene panel comparing the two strains. Also pass
+      // the per-group mutation count + the parent's tile so the popup
+      // can show a celebratory "Nth mutation" badge and the season.
       game._mutationEvent = {
         crop: plant.cropId,
         groupId,
         genome: child.genome,
         parent: plant.genome,
+        seq,
+        year: game.environment?.year ?? null,
+        season: game.environment?.season ?? null,
       };
     }
   }
@@ -300,13 +310,25 @@ function homeAnchor(game, colonist) {
   return { x: colonist.tileX, y: colonist.tileY };
 }
 
+/** BUG-3 fix: a tile that withered `cropId` 3+ times in a row is
+ * blacklisted for that crop (the suitability is clearly too low to be
+ * worth another seed). The streak resets on a successful harvest of
+ * the same crop. */
+export const WITHER_BLACKLIST_THRESHOLD = 3;
+export function tileBlocksCrop(tile, cropId) {
+  if (!tile || !tile.witherStreak || cropId == null) return false;
+  return (tile.witherStreak[cropId] || 0) >= WITHER_BLACKLIST_THRESHOLD;
+}
+
 /**
  * The closest empty tilled tile within range, ready to be sown.
  * E3: searches from the colonist's group anchor and only accepts tiles
  * tilled by that same group. With this filter, a Colony B sower never
  * targets a Colony A bed and the two colonies' farms stay separate.
+ * BUG-3 fix: when `cropId` is passed, tiles that withered the same
+ * crop 3+ times are skipped.
  */
-export function pickAutoSowSpot(game, colonist) {
+export function pickAutoSowSpot(game, colonist, cropId) {
   const anchor = homeAnchor(game, colonist);
   const cx = anchor.x;
   const cy = anchor.y;
@@ -324,6 +346,7 @@ export function pickAutoSowSpot(game, colonist) {
       if (!game._canUseFrom(gid, t.tilledBy)) continue;
       if (game._tileClaimed(x, y)) continue;
       if (colonist.isUnreachable?.(x, y, game.clock)) continue;
+      if (tileBlocksCrop(t, cropId)) continue;
       const d = Math.abs(dx) + Math.abs(dy);
       if (d < bestD) {
         bestD = d;
@@ -360,6 +383,7 @@ export function pickTillSpot(game, colonist, cropId) {
       if (t.tilled || t.plant || t.structure) continue;
       if (game._tileClaimed(x, y)) continue;
       if (colonist.isUnreachable?.(x, y, game.clock)) continue;
+      if (tileBlocksCrop(t, cropId)) continue;
       let score = cropSuitability(cropDef, t);
       if (touchesTilled(game, x, y, gid)) score += 0.5;
       if (score > bestScore) {

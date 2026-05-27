@@ -1559,10 +1559,15 @@ bigPopupEl.addEventListener('click', (ev) => {
 let pestPopupShown = false;
 
 /**
- * F3: detailed mutation popup. Renders the same gene panel + ★ rank as
- * the codex, plus a side-by-side preview of the new variant against
- * its parent. Falls back to a plain text body when the event lacks a
- * genome (e.g. an old test event without the genome attached).
+ * F3 / α26 polish: detailed mutation popup. Now renders:
+ *   - lead with crop + group + season/year + per-group mutation index
+ *   - side-by-side parent vs new-variant previews so the visual change
+ *     is the first thing you see
+ *   - star-rank delta + overall quality delta
+ *   - "biggest changes" callout for the top 2 gene deltas, then the
+ *     full per-gene bar table underneath
+ * Falls back to a plain text body when the event lacks a genome
+ * (e.g. an old test event without the genome attached).
  */
 function showMutationPopup(mut) {
   if (!popupsEnabled) return;
@@ -1579,31 +1584,91 @@ function showMutationPopup(mut) {
     crop: t('crop.' + mut.crop),
     group: groupLabel(mut.groupId),
   });
-  const ranks = parentRank != null
-    ? `${'★'.repeat(parentRank)} → ${'★'.repeat(newRank)}`
-    : `${'★'.repeat(newRank)}`;
-  const genes = QUALITY_GENES.map((gid) => {
+  const stars = parentRank != null
+    ? `<span class="mut-stars-old">${'★'.repeat(parentRank)}</span> <span class="mut-arrow">→</span> <span class="mut-stars-new">${'★'.repeat(newRank)}</span>`
+    : `<span class="mut-stars-new">${'★'.repeat(newRank)}</span>`;
+  // Overall quality % delta (mean of QUALITY_GENES phenotypes).
+  const meanPct = (genome) => {
+    if (!genome) return null;
+    let sum = 0;
+    for (const gid of QUALITY_GENES) sum += phenotype(genome, gid);
+    return Math.round((sum / QUALITY_GENES.length) * 100);
+  };
+  const childQ = meanPct(mut.genome);
+  const parentQ = meanPct(mut.parent);
+  const deltaQ = parentQ != null ? childQ - parentQ : 0;
+  const qualityLine = parentQ != null
+    ? t('popup.mutation.qualityDelta', {
+        parent: parentQ, child: childQ,
+        sign: deltaQ > 0 ? '+' : '', delta: deltaQ,
+      })
+    : `${t('label.rank')}: ${childQ}%`;
+  // Per-gene rows with deltas.
+  const geneRows = QUALITY_GENES.map((gid) => {
     const cur = Math.round(phenotype(mut.genome, gid) * 100);
     const org = mut.parent ? Math.round(phenotype(mut.parent, gid) * 100) : cur;
     const delta = cur - org;
-    const arrow = delta > 0 ? '▲' : (delta < 0 ? '▼' : '·');
-    return (
-      `<div class="mut-gene-row">` +
-      `<span class="mut-gene-name">${t('gene.' + gid)}</span>` +
-      `<span class="mut-gene-bar"><i style="width:${cur}%"></i><u style="left:${org}%"></u></span>` +
-      `<span class="mut-gene-delta">${arrow} ${cur}% <em>(${org}%)</em></span>` +
+    return { gid, cur, org, delta };
+  });
+  // Top 2 biggest absolute deltas — highlight them in a callout.
+  const topChanges = geneRows.slice().sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta)).slice(0, 2)
+    .filter((r) => r.delta !== 0);
+  const renderArrow = (d) => {
+    if (d >= 30) return '▲▲';
+    if (d > 0)  return '▲';
+    if (d <= -30) return '▼▼';
+    if (d < 0)  return '▼';
+    return '·';
+  };
+  const topHtml = topChanges.length
+    ? `<div class="mut-top"><div class="mut-section-head">🏆 ${t('popup.mutation.topChanges')}</div>` +
+      topChanges.map((r) => {
+        const cls = r.delta > 0 ? 'mut-up' : 'mut-down';
+        return `<div class="mut-top-row ${cls}"><span class="mut-top-name">${t('gene.' + r.gid)}</span>` +
+               `<span class="mut-top-delta">${renderArrow(r.delta)} ${r.org}% → ${r.cur}% (${r.delta > 0 ? '+' : ''}${r.delta}%)</span></div>`;
+      }).join('') +
       `</div>`
-    );
-  }).join('');
+    : '';
+  const genesHtml = geneRows.map((r) => (
+    `<div class="mut-gene-row">` +
+    `<span class="mut-gene-name">${t('gene.' + r.gid)}</span>` +
+    `<span class="mut-gene-bar"><i style="width:${r.cur}%"></i><u style="left:${r.org}%"></u></span>` +
+    `<span class="mut-gene-delta">${renderArrow(r.delta)} ${r.cur}% <em>(${r.org}%)</em></span>` +
+    `</div>`
+  )).join('');
+  const seqLabel = (mut.seq != null)
+    ? `<span class="mut-badge">${t('popup.mutation.seq', { n: mut.seq })}</span>`
+    : '';
+  const whenLabel = (mut.year != null && mut.season)
+    ? `<span class="mut-when">${t('popup.mutation.when', { year: mut.year, season: t('season.' + mut.season) })}</span>`
+    : '';
+  // Wrap the whole rich detail in one block so the browser's HTML
+  // parser doesn't auto-close the popup's <p> ancestor at the first
+  // <div>. Everything inside lives in the wrapper as proper block
+  // markup — figures, details, etc.
   const html =
-    `<p class="mut-lead">${lead}</p>` +
-    `<p class="mut-rank">${t('label.rank')}: <b>${ranks}</b></p>` +
-    `<div class="mut-genes">${genes}</div>` +
-    `<canvas class="mut-preview" width="64" height="64"></canvas>`;
+    `<div class="mut-wrap">` +
+    `<div class="mut-sparkle"></div>` +
+    `<div class="mut-lead">${lead}</div>` +
+    `<div class="mut-meta">${seqLabel}${whenLabel}</div>` +
+    `<div class="mut-previews">` +
+      `<figure class="mut-figure"><canvas class="mut-preview mut-preview-parent" width="96" height="96"></canvas>` +
+      `<figcaption>${t('popup.mutation.parent')} ${parentRank != null ? '★'.repeat(parentRank) : ''}</figcaption></figure>` +
+      `<div class="mut-vs">VS</div>` +
+      `<figure class="mut-figure"><canvas class="mut-preview mut-preview-child" width="96" height="96"></canvas>` +
+      `<figcaption>${t('popup.mutation.child')} ★${newRank}</figcaption></figure>` +
+    `</div>` +
+    `<div class="mut-rank"><b>${stars}</b> &middot; ${qualityLine}</div>` +
+    topHtml +
+    `<details class="mut-all"><summary>${t('popup.mutation.allGenes')}</summary>` +
+    `<div class="mut-genes">${genesHtml}</div></details>` +
+    `</div>`;
   showBigPopup('popup.mutation.title', null, {}, { detailHtml: html });
-  // Paint the preview canvas after the popup renders the new HTML.
-  const cv = bigPopupDetailEl.querySelector('canvas.mut-preview');
-  if (cv) game.renderer.drawCropPreview(cv.getContext('2d'), cv.width, cv.height, mut.crop, mut.genome);
+  // Paint both preview canvases after the popup renders.
+  const cvNew = bigPopupDetailEl.querySelector('canvas.mut-preview-child');
+  if (cvNew) game.renderer.drawCropPreview(cvNew.getContext('2d'), cvNew.width, cvNew.height, mut.crop, mut.genome);
+  const cvOld = bigPopupDetailEl.querySelector('canvas.mut-preview-parent');
+  if (cvOld && mut.parent) game.renderer.drawCropPreview(cvOld.getContext('2d'), cvOld.width, cvOld.height, mut.crop, mut.parent);
 }
 
 $('victory-new').addEventListener('click', () => {

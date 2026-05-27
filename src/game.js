@@ -255,7 +255,14 @@ export class Game {
     return this.map.seed;
   }
   get speed() {
-    return SPEED_LEVELS[this.speedIndex];
+    // Guard against direct out-of-range assignment (game.speedIndex = 99):
+    // the setter clamps, but raw property writes skip it and would produce
+    // a NaN simDt that propagates to clock / environment.year.
+    const idx = this.speedIndex;
+    if (!Number.isInteger(idx) || idx < 0 || idx >= SPEED_LEVELS.length) {
+      return SPEED_LEVELS[DEFAULT_SPEED];
+    }
+    return SPEED_LEVELS[idx];
   }
   // --- Food / stockpile delegates (foodSystem) ---------------------------
   get rawFood()    { return fsRawFood(this); }
@@ -284,7 +291,7 @@ export class Game {
   _addSeed(cropId, genome, groupId)             { return csAddSeed(this, cropId, genome, groupId); }
   _gatherSeeds(plant, groupId)                  { return csGatherSeeds(this, plant, groupId); }
   _mostStockedCrop(groupId)                     { return csMostStockedCrop(this, groupId); }
-  _pickAutoSowSpot(colonist)     { return csPickAutoSowSpot(this, colonist); }
+  _pickAutoSowSpot(colonist, cropId) { return csPickAutoSowSpot(this, colonist, cropId); }
   _pickTillSpot(colonist, crop)  { return csPickTillSpot(this, colonist, crop); }
   _touchesTilled(x, y)           { return csTouchesTilled(this, x, y); }
   // A hearth warms and cooks only while the colony has wood to burn.
@@ -327,6 +334,14 @@ export class Game {
     this.map.pathCache = new PathCache();
     scatterPlants(this.map, this.biome);
     this.stats = mapStats(this.map);
+    // BUG-4 fix: persistent run-history counters that survive past the
+    // log's 1000-entry ring buffer. Keyed by group id where relevant so
+    // a post-game / debug tool can attribute deaths and births to the
+    // group that suffered them.
+    this.stats.deathsByGroup = {};
+    this.stats.birthsByGroup = {};
+    this.stats.mutationsByGroup = {};
+    this.stats.traderVisitsByYear = {};
     this.camera = new Camera(this._viewCols(), this._viewRows(), GRID_COLS, GRID_ROWS);
 
     // Build per-group records (identity / color / script). For α23 the
@@ -742,6 +757,12 @@ export class Game {
           const crop = getCrop(plant.cropId);
           const n = Math.max(1, Math.round(crop.yield * yieldMult(plant.genome)));
           const prevCount = this.storage[plant.cropId] || 0;
+          // BUG-3 fix: a successful harvest proves this tile can grow this
+          // crop, so clear its wither streak. Only the relevant cropId is
+          // cleared — bad streaks for *other* crops on the same tile stay.
+          if (tile.witherStreak && tile.witherStreak[plant.cropId]) {
+            tile.witherStreak[plant.cropId] = 0;
+          }
           storageAdd(this, colonist?.groupId, plant.cropId, n);
           // Alpha 24: blend the harvested batch's quality (from the seed's
           // ★ rank, mapped 0..1) into whatever stock was already on hand.
@@ -1411,6 +1432,9 @@ export class Game {
     if (this.colonists.some((c) => c.dead)) {
       for (const c of this.colonists) {
         if (c.dead) {
+          // BUG-4 fix: stats counter survives the 1000-entry log rotation.
+          const dbg = this.stats.deathsByGroup;
+          if (dbg) dbg[c.groupId] = (dbg[c.groupId] || 0) + 1;
           this._pushLog({
             icon: '☠',
             text: t('log.died', { name: c.name }),
@@ -1455,6 +1479,13 @@ export class Game {
       if (crop.doomed && crop.growth >= crop.witherAt) {
         crop.withered = true;
         this.cropsLost += 1;
+        // BUG-3 fix: track wither streak per (tile, cropId). Once a tile
+        // racks up 3+ withers for the same crop, the auto-sow / auto-till
+        // pickers skip it for that crop — the suitability is clearly too
+        // low to be worth a fourth seed. The streak resets when a crop of
+        // the same kind is harvested successfully on the tile.
+        if (!tile.witherStreak) tile.witherStreak = {};
+        tile.witherStreak[crop.cropId] = (tile.witherStreak[crop.cropId] || 0) + 1;
         this._pushLog({
           icon: '✗',
           text: t('log.withered', {
@@ -1494,6 +1525,10 @@ export class Game {
     }
     if (this.paused) return;
     const simDt = realDt * this.speed;
+    // Belt + suspenders: even with the get-speed() guard a caller could
+    // hand in a non-finite realDt. Skip the frame instead of poisoning
+    // clock / environment with NaN.
+    if (!Number.isFinite(simDt) || simDt <= 0) return;
     this.clock += simDt;
     // Fresh frame — drop last tick's cached pathfinder results so a
     // fence built last frame invalidates routes through it.
