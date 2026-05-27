@@ -203,12 +203,18 @@ function _balancedEmergencyFarm(game, colonist) {
   const gid = colonist.groupId;
   const ownFood = game._totalFoodFor(gid);
   if (ownFood > 0) return null;
+  // Target ~3 growing crops per colonist before the colony is allowed to
+  // drop out of emergency mode and resume hunt / chop / infra. Anything
+  // lower starves the founding year (a 4-colonist start with only 2
+  // crops in the ground produces a couple of harvests at most).
+  const ownPop = game.groups?.[gid]?.colonists?.length || 0;
+  const targetAlive = Math.max(4, ownPop * 3);
   let ownAlive = 0;
   for (const crop of game.crops) {
     if (crop.ownerId !== gid) continue;
     if (crop.withered) continue;
     ownAlive++;
-    if (ownAlive >= 2) return null;
+    if (ownAlive >= targetAlive) return null;
   }
   const sowCrop = game._mostStockedCrop(gid);
   if (!sowCrop) return null;
