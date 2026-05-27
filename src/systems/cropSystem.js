@@ -247,6 +247,13 @@ export function gatherSeeds(game, plant, groupId) {
   const otherGenome = mate ? mate.genome : plant.genome;
   for (let i = 0; i < SEEDS_PER_HARVEST; i++) {
     const child = crossGenomes(plant.genome, otherGenome);
+    // S1: capture the group's previous codex best BEFORE addSeed runs
+    // (which updates the codex), so we can tell whether `child` is a
+    // genuine new record. Every legendary still produces a log entry;
+    // only the disruptive big-popup is gated on the new-best test.
+    const grp = game.groups?.[groupId];
+    const prevBestGenome = grp?.codex?.[plant.cropId]?.best;
+    const prevBestScore = prevBestGenome ? genomeQuality(prevBestGenome) : -Infinity;
     addSeed(game, plant.cropId, child.genome, groupId);
     if (child.legendary) {
       // BUG-4 fix: persistent per-group mutation counter — survives
@@ -260,20 +267,25 @@ export function gatherSeeds(game, plant, groupId) {
         cls: 'log-meal',
         groupId,
       });
-      // D1/F3: surface mutations as a one-shot big-popup event. Carry
-      // the mutated genome + the parent's so the popup can render a
-      // codex-style gene panel comparing the two strains. Also pass
-      // the per-group mutation count + the parent's tile so the popup
-      // can show a celebratory "Nth mutation" badge and the season.
-      game._mutationEvent = {
-        crop: plant.cropId,
-        groupId,
-        genome: child.genome,
-        parent: plant.genome,
-        seq,
-        year: game.environment?.year ?? null,
-        season: game.environment?.season ?? null,
-      };
+      // D1/F3/S1: pop only when this legendary actually pushes the
+      // group's codex record forward. A farming colony was averaging a
+      // mutation popup every few seconds because legendaries fire on
+      // ~21% of harvests; capping the popups to "true new records"
+      // keeps the rare-mutation moment rare again. The log entry above
+      // still fires for every legendary so the breeding programme is
+      // fully recorded.
+      const childScore = genomeQuality(child.genome);
+      if (childScore > prevBestScore) {
+        game._mutationEvent = {
+          crop: plant.cropId,
+          groupId,
+          genome: child.genome,
+          parent: prevBestGenome || plant.genome,
+          seq,
+          year: game.environment?.year ?? null,
+          season: game.environment?.season ?? null,
+        };
+      }
     }
   }
   return SEEDS_PER_HARVEST;
