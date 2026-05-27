@@ -743,18 +743,29 @@ export class Game {
   }
 
   // Log colony work tasks; personal tasks and routine hauling would flood it.
-  _logWorkTask(task) {
+  // R1: three-tier groupId fallback so every work log lands in the right
+  // per-group tab:
+  //   1. assignee's group (player-issued "give Ada this task" orders)
+  //   2. task.groupId    (N2 stamp, set on enqueue for "All colonists"
+  //                       orders and on the breed-cull WEED queue)
+  //   3. colonist.groupId (autonomy tasks built directly by
+  //                       _autonomousTask have no assignee or groupId,
+  //                       so this final fallback uses the worker who
+  //                       just completed the task)
+  // Without (3), HARVEST / SOW / TILL / WEED / COOK / etc. produced by
+  // autonomy ended up in the "All" tab only.
+  _logWorkTask(task, colonist) {
     if (!WORK_TYPES.includes(task.type)) return;
     if (task.type === TaskType.STORE || task.type === TaskType.FETCH) return;
     let where = `${t('task.' + task.type)} (${task.x}, ${task.y})`;
-    // Attribute to the colonist's group so the activity log can filter
-    // by colony tab in α25's per-group view.
     let groupId;
     if (task.assignee) {
       where += ` · ${task.assignee}`;
       const c = this.colonists.find((x) => x.name === task.assignee);
       if (c) groupId = c.groupId;
     }
+    if (groupId == null && task.groupId != null) groupId = task.groupId;
+    if (groupId == null && colonist) groupId = colonist.groupId;
     this._pushLog({
       icon: task.status === 'done' ? '✓' : '✗',
       text: `${where} — ${this._outcomeText(task)}`,
@@ -1406,7 +1417,7 @@ export class Game {
       const task = c.currentTask;
       if (task && (task.status === 'done' || task.status === 'failed')) {
         if (task.status === 'done') this._applyTaskEffect(task, c);
-        this._logWorkTask(task);
+        this._logWorkTask(task, c);
         c.currentTask = null;
       }
       if (!c.currentTask) {
@@ -1419,7 +1430,7 @@ export class Game {
           if (c.currentTask.outcome === 'unreachable') {
             c.markUnreachable(c.currentTask.x, c.currentTask.y, this.clock);
           }
-          this._logWorkTask(c.currentTask);
+          this._logWorkTask(c.currentTask, c);
           c.currentTask = null;
         }
       }
