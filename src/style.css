@@ -667,10 +667,12 @@ button.primary:hover {
 }
 .mut-all summary:hover { color: var(--accent); }
 
-/* Activity log shrunk to roughly 4 visible rows (alpha 25). The full
-   history is still kept (TASK_LOG_SIZE entries) — scroll inside. */
+/* Activity log: 4 visible rows by default (Q1). The full history is
+   still kept (TASK_LOG_SIZE entries) — scroll inside.
+   This rule is overridden further down by the canonical .task-log
+   block; both kept aligned at the same 4-row height. */
 .task-log {
-  max-height: 5.6em;
+  max-height: 84px;
 }
 
 /* Group setup widgets (alpha 23). */
@@ -723,8 +725,11 @@ button.primary:hover {
   font-size: 0.82rem;
   line-height: 1.35;
   font-variant-numeric: tabular-nums;
-  /* Keep a window of recent events; older ones scroll back into view. */
-  max-height: 172px;
+  /* Q1: show roughly 4 rows by default; older entries scroll into view.
+     History capacity is still TASK_LOG_SIZE (1000) entries — only the
+     visible window shrank. ~17.7 px per row + 4 px gap, so 4 rows fit
+     in ~84 px. */
+  max-height: 84px;
   overflow-y: auto;
 }
 

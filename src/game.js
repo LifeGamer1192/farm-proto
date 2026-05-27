@@ -553,9 +553,18 @@ export class Game {
     this.camera.resize(this._viewCols(), this._viewRows());
   }
 
+  /**
+   * Q2: center the camera on the player-selected colonist when one is
+   * picked from the Colonists panel; otherwise fall back to the first
+   * colonist alive (legacy behaviour).
+   */
   centerOnColonist() {
-    const c = this.colonists[0];
-    if (c) this.camera.centerOn(c.x + 0.5, c.y + 0.5);
+    let target = null;
+    if (this.selectedColonist) {
+      target = this.colonists.find((c) => c.name === this.selectedColonist);
+    }
+    if (!target) target = this.colonists[0];
+    if (target) this.camera.centerOn(target.x + 0.5, target.y + 0.5);
   }
 
   _updateEnvironment() {
