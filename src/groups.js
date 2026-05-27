@@ -185,7 +185,16 @@ export function createGroup(id, setup = {}) {
     : STARTING_WOOD;
   const storage = { wood: startingWood, meal: 0 };
   for (const cid of CROP_IDS) storage[cid] = 0;
-  storage.forage = 0;
+  // α26 follow-up: a balanced colony gets a small starter forage so it
+  // can ride out the founding-year sow→grow gap without starving. Other
+  // scripts get nothing — farmer/farmer_breed start sowing immediately
+  // and don't need the cushion, while the scout script is intentionally
+  // left disadvantaged so the player feels the cost of hunting alone.
+  const colonistCount = setup.colonistCount ?? 4;
+  const BALANCED_STARTER_FORAGE_PER_HEAD = 6;
+  storage.forage = (scriptId === 'balanced')
+    ? colonistCount * BALANCED_STARTER_FORAGE_PER_HEAD
+    : 0;
   storage.meat = 0;
 
   return {

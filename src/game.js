@@ -410,8 +410,17 @@ export class Game {
     // Colony wood = sum of every group's startingWood. Resources stay
     // pooled in this alpha; per-group wood ledgers come with α24.
     let totalWood = 0;
-    for (const grp of this.groups) totalWood += grp.startingWood || 0;
+    let totalForage = 0;
+    for (const grp of this.groups) {
+      totalWood   += grp.startingWood       || 0;
+      totalForage += grp.storage?.forage    || 0;
+    }
     this.storage.wood = totalWood;
+    // Aggregate any starter forage groups carry — e.g. the balanced
+    // script's founding-year cushion. Without mirroring this into the
+    // colony-wide aggregate, the sum-of-groups invariant in storageSub
+    // (foodSystem.js) breaks and the first meal silently does nothing.
+    this.storage.forage = totalForage;
     this.meals = { eaten: 0, missed: 0 };
     this.cropsLost = 0;
     this.pestsLost = 0;

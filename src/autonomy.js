@@ -203,23 +203,19 @@ function _balancedEmergencyFarm(game, colonist) {
   const gid = colonist.groupId;
   const ownPop = game.groups?.[gid]?.colonists?.length || 0;
   if (ownPop === 0) return null;
-  // Fire while the colony has neither (a) at least 2 days of food per
-  // head in store nor (b) a viable field (3 growing crops per head).
-  // Exiting on `ownFood > 0` alone proved too eager — the first harvest
-  // ticked food up to 5 and the colonist immediately defected to
-  // hunt/chop, leaving the next harvest gap to starvation.
-  const FOOD_PER_HEAD_OK = 2;
-  const CROPS_PER_HEAD_OK = 3;
+  // Light pivot: only fire while the colony literally has no food and no
+  // crops in the ground. A too-sticky threshold blocks the colonist from
+  // chopping wood / building huts, which on a cold seed kills them
+  // faster than a thin field would. Once either condition is satisfied,
+  // normal priorities resume (hunt/chop/infra/till+sow).
   const ownFood = game._totalFoodFor(gid);
-  const foodOk = ownFood >= ownPop * FOOD_PER_HEAD_OK;
-  if (foodOk) {
-    let ownAlive = 0;
-    for (const crop of game.crops) {
-      if (crop.ownerId !== gid) continue;
-      if (crop.withered) continue;
-      ownAlive++;
-      if (ownAlive >= ownPop * CROPS_PER_HEAD_OK) return null;
-    }
+  if (ownFood > 0) return null;
+  let ownAlive = 0;
+  for (const crop of game.crops) {
+    if (crop.ownerId !== gid) continue;
+    if (crop.withered) continue;
+    ownAlive++;
+    if (ownAlive >= ownPop) return null;
   }
   const sowCrop = game._mostStockedCrop(gid);
   if (!sowCrop) return null;
