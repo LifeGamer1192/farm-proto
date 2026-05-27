@@ -3,7 +3,7 @@
 // that pick the next farming spot. Extracted from game.js so the seed/
 // genetics economy lives in one tunable place.
 
-import { CROP_IDS, getCrop, cropSuitability } from '../crops.js';
+import { CROP_IDS, WILD_CROP_IDS, getCrop, cropSuitability } from '../crops.js';
 import {
   freshGenome,
   crossGenomes,
@@ -18,13 +18,14 @@ import { t } from '../i18n.js';
 
 /**
  * Pick the colony's starting seed assortment — eight random crops, with
- * at least one grain so there is always a staple to plant. Wildgreens
- * is reserved for the foraging discovery loop and never seeds the
- * starter list.
+ * at least one grain so there is always a staple to plant. Every wild
+ * ancestor (α27) is reserved for the foraging discovery loop and never
+ * seeds the starter list.
  */
 export function pickStartingCrops() {
   const want = 8;
-  const eligible = CROP_IDS.filter((id) => id !== 'wildgreens');
+  const wild = new Set(WILD_CROP_IDS);
+  const eligible = CROP_IDS.filter((id) => !wild.has(id));
   const grains = eligible.filter((id) => getCrop(id).category === 'grain');
   const others = eligible.filter((id) => getCrop(id).category !== 'grain');
   const pick = (pool) => pool.splice(Math.floor(Math.random() * pool.length), 1)[0];

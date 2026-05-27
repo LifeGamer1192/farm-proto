@@ -17,11 +17,16 @@ export const BIOMES = {
     // Wildlife / vegetation density.
     treeChance: 0.08,
     wildPlantChance: 0.012,
+    // α27: every biome now spawns 11 animals across 7 species, with
+    // weighting biased toward what each climate plausibly supports.
     animalSpawnMix: [
-      { species: 'boar',   n: 2 },
+      { species: 'boar',   n: 1 },
       { species: 'wolf',   n: 1 },
-      { species: 'deer',   n: 3 },
+      { species: 'bear',   n: 1 },
+      { species: 'deer',   n: 2 },
       { species: 'rabbit', n: 2 },
+      { species: 'sheep',  n: 2 },
+      { species: 'fowl',   n: 2 },
     ],
     // Climate offsets added to the seasonal curve (°C and 0..1 daylight).
     tempOffset: 0,
@@ -39,11 +44,15 @@ export const BIOMES = {
     fertilityBonus: -0.1,
     treeChance: 0.025,
     wildPlantChance: 0.008,
+    // Arid: light forest game, more fowl + sheep that tolerate dry land.
     animalSpawnMix: [
-      { species: 'boar',   n: 3 },
+      { species: 'boar',   n: 1 },
       { species: 'wolf',   n: 2 },
+      { species: 'bear',   n: 0 },
       { species: 'deer',   n: 1 },
       { species: 'rabbit', n: 2 },
+      { species: 'sheep',  n: 2 },
+      { species: 'fowl',   n: 3 },
     ],
     tempOffset: +8,
     daylightOffset: +0.1,
@@ -57,11 +66,15 @@ export const BIOMES = {
     fertilityBonus: -0.05,
     treeChance: 0.14,
     wildPlantChance: 0.010,
+    // Cold: more bears + wolves, fewer fowl.
     animalSpawnMix: [
       { species: 'boar',   n: 1 },
       { species: 'wolf',   n: 2 },
-      { species: 'deer',   n: 3 },
+      { species: 'bear',   n: 2 },
+      { species: 'deer',   n: 2 },
       { species: 'rabbit', n: 2 },
+      { species: 'sheep',  n: 1 },
+      { species: 'fowl',   n: 1 },
     ],
     tempOffset: -10,
     daylightOffset: -0.05,
@@ -76,11 +89,15 @@ export const BIOMES = {
     fertilityBonus: +0.05,
     treeChance: 0.10,
     wildPlantChance: 0.025,
+    // Wetlands: lush life, fowl thrive near water.
     animalSpawnMix: [
-      { species: 'boar',   n: 3 },
+      { species: 'boar',   n: 2 },
       { species: 'wolf',   n: 1 },
+      { species: 'bear',   n: 1 },
       { species: 'deer',   n: 2 },
       { species: 'rabbit', n: 2 },
+      { species: 'sheep',  n: 1 },
+      { species: 'fowl',   n: 2 },
     ],
     tempOffset: +2,
     daylightOffset: 0,

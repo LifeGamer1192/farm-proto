@@ -159,12 +159,19 @@ import {
   animalNear as asAnimalNear,
   nearestAnimalToColony as asNearestAnimalToColony,
   nearestTree as asNearestTree,
+  nearestWildPlant as asNearestWildPlant,
   updateAnimals as asUpdateAnimals,
 } from './systems/animalSystem.js';
 
 // Re-exported so main.js (and any other UI consumer) keeps a stable
 // import path even though the data now lives in foodSystem.
 export const STOCKPILE_ITEMS = _STOCKPILE_ITEMS;
+
+// α27: how often the Run-history sampler captures a snapshot, and how
+// many samples it keeps. 10 sim-seconds × 500 samples ≈ 5000 sim-
+// seconds of history (~1.4 in-game years at default speed).
+const HISTORY_INTERVAL = 10;
+const HISTORY_SIZE = 500;
 
 export class Game {
   constructor(canvas) {
@@ -236,6 +243,8 @@ export class Game {
     this.log = [];
     this.logRev = 0;
     this.lastAssignReason = '';
+    // α27 run-history sampler — see _sampleHistory.
+    this.history = { samples: [], timer: 0 };
 
     this.clock = 0;
     this.environment = null;
@@ -429,6 +438,8 @@ export class Game {
     this._coldEvent = false;
     this._coldActive = false;
     this._mutationEvent = null;
+    // α27: fresh map = fresh history.
+    this.history = { samples: [], timer: 0 };
     this._birthEvent = null;
     this._traderEvent = null;
     this._traderYear = 0;
@@ -635,6 +646,7 @@ export class Game {
   _animalNear(x, y, range, c)     { return asAnimalNear(this, x, y, range, c); }
   _nearestAnimalToColony(range)   { return asNearestAnimalToColony(this, range); }
   _nearestTree(colonist, range)   { return asNearestTree(this, colonist, range); }
+  _nearestWildPlant(colonist, range) { return asNearestWildPlant(this, colonist, range); }
 
   /**
    * Queue a work task at a tile, if it makes sense there.
@@ -824,21 +836,24 @@ export class Game {
       } else if (plant) {
         storageAdd(this, colonist?.groupId, 'forage', 1);
         storageAdd(this, colonist?.groupId, 'wood', WILD_WOOD_YIELD);
-        // Low chance to gather a wild-greens seed from the foraged plant.
-        // Wild seed is weak — barely any yield or nutrition — but it can
-        // be sown like a regular crop, planting the seed of a future
-        // "real" variety once the colony starts breeding it.
+        // Low chance to gather an ancestor seed from the foraged plant.
+        // α27: every wild plant carries a `wildId` for one of the five
+        // ancestor species; the dropped seed matches that id so foraging
+        // discovers whichever ancestor lives on this tile. Old saves
+        // without wildId fall back to wildgreens.
         let seeds = 0;
+        const wildId = plant.wildId || 'wildgreens';
         if (Math.random() < WILDGREENS_SEED_CHANCE) {
           const genome = freshGenome();
-          this._addSeed('wildgreens', genome, colonist?.groupId);
+          this._addSeed(wildId, genome, colonist?.groupId);
           seeds = 1;
         }
         if (seeds > 0) {
           task.outcome = 'foragedSeed';
-          task.outcomeData = { n: 1, seeds };
+          task.outcomeData = { n: 1, seeds, crop: wildId };
         } else {
           task.outcome = 'foraged';
+          task.outcomeData = { crop: wildId };
         }
       }
       tile.plant = null;
@@ -1574,8 +1589,38 @@ export class Game {
     this._updateAnimals(simDt);
     this._growCrops(simDt);
     this._updatePests(simDt);
+    this._sampleHistory(simDt);
     // Surviving the three-year goal lights the celebration overlay once.
     esCheckVictory(this);
+  }
+
+  /**
+   * α27: sample the colony's headline numbers every HISTORY_INTERVAL
+   * sim-seconds into a ring buffer. The Run-history panel walks this
+   * buffer to draw sparklines. Sampling is cheap (eight numbers per
+   * tick), so we keep up to HISTORY_SIZE entries — about 1.4 game-years
+   * at the default 10-second interval.
+   */
+  _sampleHistory(simDt) {
+    if (!this.history) return;
+    this.history.timer += simDt;
+    if (this.history.timer < HISTORY_INTERVAL) return;
+    this.history.timer = 0;
+    let seedTotal = 0;
+    for (const id of Object.keys(this.seeds)) seedTotal += this.seeds[id]?.length || 0;
+    const sample = {
+      t: this.clock,
+      population: this.colonists.length,
+      totalFood: this.totalFood,
+      wood: Math.floor(this.storage.wood || 0),
+      seedTotal,
+      mealsEaten: this.meals.eaten,
+      mealsMissed: this.meals.missed,
+      cropsLost: this.cropsLost,
+      animals: this.animals.length,
+    };
+    this.history.samples.push(sample);
+    if (this.history.samples.length > HISTORY_SIZE) this.history.samples.shift();
   }
 
   render() {

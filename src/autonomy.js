@@ -568,6 +568,14 @@ export function scoutScript(game, colonist) {
       return createTask(TaskType.HUNT, a.tileX, a.tileY, { animalId: a.id });
     }
   }
+  // α27: scout also forages — wild plants drop forage + a 20% chance of
+  // an ancestor seed, which keeps the breeding pipeline fed even without
+  // farmland. Sits between hunt and chop so a scout colony's discovery
+  // loop fires before it starts stripping the forest.
+  if (game.autoMode) {
+    const wild = game._nearestWildPlant(colonist, AUTO_SEARCH_RANGE);
+    if (wild) return createTask(TaskType.HARVEST, wild.x, wild.y);
+  }
   // Auto-chop trees aggressively so wood is plentiful.
   if (game.autoMode) {
     const tree = game._nearestTree(colonist, AUTO_SEARCH_RANGE);

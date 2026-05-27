@@ -56,7 +56,13 @@ export const WILD_PLANT_CHANCE = 0.012;
 // Fraction of land tiles that start with a tree (chopped for wood, alpha 18).
 export const TREE_CHANCE = 0.08;
 // Chance a forage harvest also drops a wild-greens seed (alpha 20).
+// α27: every wild ancestor uses the same drop rate, with the species
+// taken from the foraged tile's `wildId`.
 export const WILDGREENS_SEED_CHANCE = 0.2;
+// Chance a raw crop drops a fresh seed when eaten (α27). Only crops
+// flagged `seedsAfterEating` in crops.js (fruit-veg / fruit / legume)
+// roll against this — others always return 0 seeds.
+export const SEEDS_AFTER_EATING_CHANCE = 0.25;
 
 // --- skills, sleep & celebrations (alpha 21) -----------------------------
 
@@ -119,14 +125,20 @@ export const MOOD_ADAPT = 0.15; // how fast mood drifts toward its target
 
 // --- wild animals (alpha 7) ----------------------------------------------
 
-export const ANIMAL_COUNT = 8;
-// Mix of wild-animal species spawned at map start (alpha 20). Totals
-// should match ANIMAL_COUNT — first matches use up the budget in order.
+// α27 raised this from 8 to 11 when bear / sheep / fowl joined the
+// roster, so every species still has a comfortable presence on the map.
+export const ANIMAL_COUNT = 11;
+// Mix of wild-animal species spawned at map start (alpha 20 / 27).
+// Totals should match ANIMAL_COUNT — first matches use up the budget
+// in order; spawnAnimals falls back to 'boar' for any shortfall.
 export const ANIMAL_SPAWN_MIX = [
-  { species: 'boar',   n: 2 },
+  { species: 'boar',   n: 1 },
   { species: 'wolf',   n: 1 },
-  { species: 'deer',   n: 3 },
+  { species: 'bear',   n: 1 },
+  { species: 'deer',   n: 2 },
   { species: 'rabbit', n: 2 },
+  { species: 'sheep',  n: 2 },
+  { species: 'fowl',   n: 2 },
 ];
 export const ANIMAL_SPEED = 1.6; // tiles per second (slow)
 export const ANIMAL_DAMAGE = 0.07; // colonist health lost per attack

@@ -73,6 +73,37 @@ export function nearestAnimalToColony(game, range) {
 }
 
 /**
+ * The nearest wild plant tile within `range` of a colonist that no one
+ * is already foraging. α27: used by the scout script so a hunting-
+ * focused group also gathers ancestor seeds for the breeding pipeline.
+ */
+export function nearestWildPlant(game, colonist, range) {
+  const cx = colonist.tileX;
+  const cy = colonist.tileY;
+  let best = null;
+  let bestD = range;
+  const r = Math.ceil(range);
+  for (let dy = -r; dy <= r; dy++) {
+    for (let dx = -r; dx <= r; dx++) {
+      const x = cx + dx;
+      const y = cy + dy;
+      const row = game.map.tiles[y];
+      const tl = row && row[x];
+      if (!tl || !tl.plant) continue;
+      if (tl.plant.kind !== PlantKind.WILD) continue;
+      if (game._tileClaimed(x, y)) continue;
+      if (colonist.isUnreachable?.(x, y, game.clock)) continue;
+      const d = Math.hypot(dx, dy);
+      if (d < bestD) {
+        bestD = d;
+        best = { x, y };
+      }
+    }
+  }
+  return best;
+}
+
+/**
  * The nearest fully-grown tree within `range` of a colonist that no one
  * is already chopping. Used by the wood-low auto-chop branch.
  */

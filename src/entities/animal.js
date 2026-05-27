@@ -19,13 +19,18 @@ const PAUSE = 3; // sim-seconds an animal rests between strolls
  * Per-species traits. `hostile` decides whether the animal harries
  * colonists; `meat` is the yield for a successful hunt; `wander` is
  * how often (in sim-seconds) it picks a new wander goal; `speedMul`
- * multiplies the global ANIMAL_SPEED.
+ * multiplies the global ANIMAL_SPEED. `domesticable` (α27) marks a
+ * species as a future animal-husbandry candidate — currently a hint
+ * flag only, with no behavioural effect.
  */
 export const SPECIES = {
-  boar: { hostile: true, meat: 4, wander: 1.0, speedMul: 1.0 },
-  wolf: { hostile: true, meat: 5, wander: 0.7, speedMul: 1.4 },
-  deer: { hostile: false, meat: 6, wander: 0.9, speedMul: 1.2 },
+  boar:   { hostile: true,  meat: 4, wander: 1.0, speedMul: 1.0 },
+  wolf:   { hostile: true,  meat: 5, wander: 0.7, speedMul: 1.4 },
+  bear:   { hostile: true,  meat: 8, wander: 0.5, speedMul: 0.9 },
+  deer:   { hostile: false, meat: 6, wander: 0.9, speedMul: 1.2 },
   rabbit: { hostile: false, meat: 2, wander: 0.6, speedMul: 1.6 },
+  sheep:  { hostile: false, meat: 4, wander: 0.8, speedMul: 1.0, domesticable: true },
+  fowl:   { hostile: false, meat: 2, wander: 0.5, speedMul: 1.3, domesticable: true },
 };
 
 export class Animal {

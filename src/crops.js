@@ -87,26 +87,59 @@ export const CROP_TYPES = {
 
   // ----- Nuts (堅果類) -----
   almond:      { id:'almond',      label:'Almond',       category:'nut',      growthTime:60, yield:6, color:'#9aa66a', ripeColor:'#c8a47a', soil:{fertility:0.25,moisture:0.20,sunlight:0.55}, nutrition:0.70 },
+  walnut:      { id:'walnut',      label:'Walnut',       category:'nut',      growthTime:70, yield:5, color:'#6f8a48', ripeColor:'#7a5d36', soil:{fertility:0.35,moisture:0.30,sunlight:0.35}, nutrition:0.65 },
+  chestnut:    { id:'chestnut',    label:'Chestnut',     category:'nut',      growthTime:65, yield:7, color:'#7ea34b', ripeColor:'#864b22', soil:{fertility:0.40,moisture:0.30,sunlight:0.30}, nutrition:0.60 },
 
-  // ----- Wild greens (alpha 20) — sown from a seed gathered while
-  //       foraging a wild plant. Very weak: tiny yield, almost no
-  //       nutrition, slow to grow. Selective breeding (cross-pollinate
-  //       on harvest, codex tracks the best variety) is the only way
-  //       to bring it up to a useful crop.
+  // ----- Wild ancestors (alpha 20 / alpha 27) — sown from a seed
+  //       gathered while foraging a wild plant. Very weak: tiny yield,
+  //       almost no nutrition, slow to grow. Selective breeding (cross-
+  //       pollinate on harvest, codex tracks the best variety) is the
+  //       only way to bring them up to a useful crop, and α27 widens
+  //       the catalogue from one wild leaf to five wild ancestors so
+  //       every food category can be discovered through foraging.
   wildgreens:  { id:'wildgreens',  label:'Wild greens',  category:'leaf',     growthTime:50, yield:1, color:'#6b8d4a', ripeColor:'#8aa756', soil:{fertility:0.20,moisture:0.30,sunlight:0.30}, nutrition:0.10 },
+  wildgrain:   { id:'wildgrain',   label:'Wild grain',   category:'grain',    growthTime:70, yield:1, color:'#a0a05a', ripeColor:'#c4b070', soil:{fertility:0.20,moisture:0.20,sunlight:0.35}, nutrition:0.10 },
+  wildlegume:  { id:'wildlegume',  label:'Wild legume',  category:'legume',   growthTime:60, yield:1, color:'#7ba858', ripeColor:'#a4b878', soil:{fertility:0.20,moisture:0.25,sunlight:0.30}, nutrition:0.12 },
+  wildroot:    { id:'wildroot',    label:'Wild root',    category:'root',     growthTime:65, yield:1, color:'#5e8a4a', ripeColor:'#a08458', soil:{fertility:0.20,moisture:0.30,sunlight:0.25}, nutrition:0.12 },
+  wildberry:   { id:'wildberry',   label:'Wild berry',   category:'fruit',    growthTime:55, yield:1, color:'#6b9450', ripeColor:'#c43048', soil:{fertility:0.20,moisture:0.30,sunlight:0.30}, nutrition:0.12 },
 };
+
+// Wild ancestor crops — discovered through foraging, never in the
+// starter pool. Used by cropSystem.freshSeeds, groups.js seed pick,
+// main.js picker filters, and world.js scatter (one wild plant tile
+// represents one of these ancestors).
+export const WILD_CROP_IDS = ['wildgreens', 'wildgrain', 'wildlegume', 'wildroot', 'wildberry'];
 
 // Crops you cannot eat raw — must be cooked first (alpha 24). The list
 // covers categories that need cooking in real life: grains, legumes
-// and the lone nut. Wild greens stays edible raw (foraged early-game
-// fallback). Everything else defaults to edible.
+// and the cultivated nuts. Wild ancestors stay edible raw (foraged
+// early-game fallback), even when their cultivated descendants do not.
+// Everything else defaults to edible.
 const _INEDIBLE_RAW = new Set([
   'wheat', 'rice', 'maize', 'oats', 'barley',
   'bean', 'soybean', 'pea', 'lentil', 'chickpea',
-  'almond',
+  'almond', 'walnut', 'chestnut',
 ]);
 for (const id of Object.keys(CROP_TYPES)) {
   CROP_TYPES[id].edibleRaw = !_INEDIBLE_RAW.has(id);
+}
+
+// Crops that drop a seed when eaten raw (alpha 27). Modelled on real-
+// world plants whose edible part contains the seeds — fruit-veg, fruit
+// and legumes qualify. Cooked items and root/leaf/grain/nut crops do
+// not (grains/nuts you'd already have separated the seed by cooking
+// or shelling). foodSystem.feed() rolls SEEDS_AFTER_EATING_CHANCE
+// against this flag.
+const _SEEDS_AFTER_EATING = new Set([
+  // Fruit-veg
+  'tomato', 'eggplant', 'cucumber', 'pepper',
+  // Fruit (incl. wild ancestor)
+  'strawberry', 'melon', 'wildberry',
+  // Legumes (incl. wild ancestor)
+  'bean', 'pea', 'soybean', 'lentil', 'chickpea', 'wildlegume',
+]);
+for (const id of Object.keys(CROP_TYPES)) {
+  CROP_TYPES[id].seedsAfterEating = _SEEDS_AFTER_EATING.has(id);
 }
 
 // Display / iteration order.

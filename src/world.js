@@ -4,6 +4,7 @@
 import { TileType } from './map/tile.js';
 import { mulberry32 } from './core/rng.js';
 import { WILD_PLANT_CHANCE, TREE_CHANCE } from './config.js';
+import { WILD_CROP_IDS } from './crops.js';
 
 export const PlantKind = {
   WILD: 'wild', // small bush; harvested for a bite of forage
@@ -39,7 +40,12 @@ export function scatterPlants(map, biome = null) {
         tile.plant = { kind: PlantKind.TREE, growth: 1 };
         trees++;
       } else if (roll < treeChance + wildChance) {
-        tile.plant = { kind: PlantKind.WILD };
+        // α27: each wild plant is one of five ancestor species. Picked
+        // deterministically off the same RNG so the same seed always
+        // grows the same patchwork. Foraging the tile drops a seed of
+        // this species (game.js HARVEST branch).
+        const wildId = WILD_CROP_IDS[Math.floor(rand() * WILD_CROP_IDS.length)];
+        tile.plant = { kind: PlantKind.WILD, wildId };
         wild++;
       }
     }

@@ -1127,3 +1127,39 @@ button.primary:hover {
   width: auto;
   padding: 8px 16px;
 }
+
+/* α27 Run history sparklines. One row per metric: label / svg / value. */
+.history-graphs {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.history-graphs .hist-row {
+  display: grid;
+  grid-template-columns: 84px 1fr 42px;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+}
+.history-graphs .hist-label {
+  color: var(--ink-mute, #b6b6b6);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.history-graphs .hist-svg {
+  width: 100%;
+  height: 36px;
+  background: rgba(0, 0, 0, 0.18);
+  border-radius: 3px;
+}
+.history-graphs .hist-value {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink, #e6e6e6);
+}
+.history-graphs .hist-empty {
+  fill: var(--ink-mute, #b6b6b6);
+  font-size: 12px;
+  font-style: italic;
+}

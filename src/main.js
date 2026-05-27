@@ -17,6 +17,7 @@ import {
   CROP_IDS,
   CROP_TYPES,
   CATEGORIES,
+  WILD_CROP_IDS,
   cropsOfCategory,
 } from './crops.js';
 import {
@@ -670,6 +671,90 @@ function updateEnvPanel() {
   ]);
 }
 
+// --- α27 Run history sparklines -----------------------------------------
+//
+// `game.history.samples` is a ring buffer the engine pushes one snapshot
+// into every HISTORY_INTERVAL sim-seconds. We draw 8 small SVG charts so
+// the player can eyeball trends without leaving the live screen. Drawing
+// is skipped when the panel is collapsed — it's a closed-by-default
+// <details> so the cost is zero until the player opens it.
+
+const historyGraphsEl = $('history-graphs');
+const historyPanelEl = $('history-panel');
+
+const HISTORY_METRICS = [
+  { key: 'population',  label: 'hist.population',  color: '#6fb1e0' },
+  { key: 'totalFood',   label: 'hist.food',        color: '#e6b25a' },
+  { key: 'wood',        label: 'hist.wood',        color: '#b08652' },
+  { key: 'seedTotal',   label: 'hist.seeds',       color: '#9ab85a' },
+  { key: 'mealsEaten',  label: 'hist.meals',       color: '#a576c2' },
+  { key: 'mealsMissed', label: 'hist.missed',      color: '#d85a5a' },
+  { key: 'cropsLost',   label: 'hist.cropsLost',   color: '#c47030' },
+  { key: 'animals',     label: 'hist.animals',     color: '#7ea670' },
+];
+
+let lastHistoryRender = -1;
+function updateHistoryGraphs() {
+  if (!historyGraphsEl) return;
+  // Skip the SVG build entirely while the panel is closed.
+  if (historyPanelEl && !historyPanelEl.open) return;
+  const samples = game.history?.samples || [];
+  if (samples.length === lastHistoryRender) return;
+  lastHistoryRender = samples.length;
+  const w = 220;
+  const h = 36;
+  const pad = 2;
+  const out = [];
+  for (const m of HISTORY_METRICS) {
+    const last = samples.length > 0 ? samples[samples.length - 1][m.key] : 0;
+    let body = '';
+    if (samples.length < 2) {
+      body = `<text x="${w / 2}" y="${h / 2 + 4}" text-anchor="middle" class="hist-empty">—</text>`;
+    } else {
+      let min = Infinity;
+      let max = -Infinity;
+      for (const s of samples) {
+        const v = s[m.key];
+        if (v < min) min = v;
+        if (v > max) max = v;
+      }
+      if (max === min) {
+        // Flat line in the middle — still shows the metric is being tracked.
+        const y = h / 2;
+        body = `<line x1="${pad}" y1="${y}" x2="${w - pad}" y2="${y}" stroke="${m.color}" stroke-width="1.4" />`;
+      } else {
+        const range = max - min;
+        const n = samples.length;
+        const pts = samples.map((s, i) => {
+          const x = pad + (i / (n - 1)) * (w - pad * 2);
+          const y = h - pad - ((s[m.key] - min) / range) * (h - pad * 2);
+          return `${x.toFixed(1)},${y.toFixed(1)}`;
+        }).join(' ');
+        body = `<polyline points="${pts}" fill="none" stroke="${m.color}" stroke-width="1.4" />`;
+      }
+    }
+    out.push(
+      `<div class="hist-row">` +
+      `<span class="hist-label">${t(m.label)}</span>` +
+      `<svg class="hist-svg" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" width="${w}" height="${h}">${body}</svg>` +
+      `<span class="hist-value">${last}</span>` +
+      `</div>`
+    );
+  }
+  historyGraphsEl.innerHTML = out.join('');
+}
+
+// When the user opens / closes the panel, force a redraw so the chart
+// appears immediately on open instead of waiting for the next poll.
+if (historyPanelEl) {
+  historyPanelEl.addEventListener('toggle', () => {
+    if (historyPanelEl.open) {
+      lastHistoryRender = -1;
+      updateHistoryGraphs();
+    }
+  });
+}
+
 function refreshPanels() {
   updateMapStats();
   updateColonistsPanel();
@@ -681,6 +766,7 @@ function refreshPanels() {
   updateLog();
   updateEnvPanel();
   updateLegend();
+  updateHistoryGraphs();
 }
 
 // --- i18n -----------------------------------------------------------------
@@ -746,8 +832,9 @@ const NO_CROP = '__random'; // marker value for "pick randomly"
 const SEED_SLOTS = 4;
 const SEED_DEFAULT_QTY = 12;
 
+const WILD_SET = new Set(WILD_CROP_IDS);
 function pickRandomSeed(excluded) {
-  const pool = CROP_IDS.filter((id) => id !== 'wildgreens' && !excluded.has(id));
+  const pool = CROP_IDS.filter((id) => !WILD_SET.has(id) && !excluded.has(id));
   if (pool.length === 0) return null;
   return pool[Math.floor(Math.random() * pool.length)];
 }
@@ -791,9 +878,9 @@ function renderStartGroupRows(n) {
   for (let i = 0; i < n; i++) {
     setup.push(prev[i] || { scriptId: 'balanced', colonistCount: 4, startingWood: 30, initialSeeds: [] });
   }
-  // Build a list of crop ids for the dropdowns. Exclude wildgreens —
-  // that's a discovery item, not a starter choice.
-  const cropChoices = CROP_IDS.filter((id) => id !== 'wildgreens');
+  // Build a list of crop ids for the dropdowns. Exclude every wild
+  // ancestor — those are discovery items, not starter choices.
+  const cropChoices = CROP_IDS.filter((id) => !WILD_SET.has(id));
   const cropOptHTML = (selected) => {
     const opts = [`<option value="${NO_CROP}"${selected === NO_CROP || !selected ? ' selected' : ''}>${t('start.random')}</option>`];
     for (const id of cropChoices) {

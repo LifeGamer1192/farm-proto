@@ -10,7 +10,7 @@
 // (save / load / mods) without dragging class methods along.
 
 import { STARTING_WOOD } from './config.js';
-import { CROP_IDS, CROP_TYPES, getCrop } from './crops.js';
+import { CROP_IDS, WILD_CROP_IDS, CROP_TYPES, getCrop } from './crops.js';
 
 const CROP_TYPES_HAS = (id) => Object.prototype.hasOwnProperty.call(CROP_TYPES, id);
 import { freshGenome, genomeQuality } from './genetics.js';
@@ -87,7 +87,8 @@ export function freshSeedsForGroup(startingCrops, seedsPerCrop) {
  * discovery only); a grain is guaranteed for the staple slot.
  */
 export function pickStartingCropsForGroup(want = 8) {
-  const eligible = CROP_IDS.filter((id) => id !== 'wildgreens');
+  const wild = new Set(WILD_CROP_IDS);
+  const eligible = CROP_IDS.filter((id) => !wild.has(id));
   const grains = eligible.filter((id) => getCrop(id).category === 'grain');
   const others = eligible.filter((id) => getCrop(id).category !== 'grain');
   const pick = (pool) => pool.splice(Math.floor(Math.random() * pool.length), 1)[0];

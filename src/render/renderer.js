@@ -487,7 +487,7 @@ export class Renderer {
 
   _drawPlant(plant, cx, cy, watered) {
     if (plant.kind === PlantKind.WILD) {
-      this._drawWild(cx, cy);
+      this._drawWild(cx, cy, plant.wildId);
     } else if (plant.kind === PlantKind.TREE) {
       this._drawTree(plant, cx, cy);
     } else if (plant.kind === PlantKind.STUMP) {
@@ -497,7 +497,22 @@ export class Renderer {
     }
   }
 
-  _drawWild(cx, cy) {
+  // α27: wild plants come in five ancestor species. Branches keep the
+  // same overall footprint (≈ ts*0.45 across) so foraging tooltips and
+  // task-pick paths don't shift; the variant just changes the silhouette.
+  _drawWild(cx, cy, wildId) {
+    switch (wildId) {
+      case 'wildgrain':  return this._drawWildGrain(cx, cy);
+      case 'wildlegume': return this._drawWildLegume(cx, cy);
+      case 'wildroot':   return this._drawWildRoot(cx, cy);
+      case 'wildberry':  return this._drawWildBerry(cx, cy);
+      case 'wildgreens':
+      default:           return this._drawWildGreens(cx, cy);
+    }
+  }
+
+  // Three small green pebbles — the original wildgreens look.
+  _drawWildGreens(cx, cy) {
     const ctx = this.ctx;
     const r = this.ts * 0.15;
     ctx.fillStyle = '#2e6b34';
@@ -510,6 +525,114 @@ export class Renderer {
     ]) {
       ctx.beginPath();
       ctx.arc(cx + ox, cy + oy, r, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+    }
+  }
+
+  // Three thin upright stalks with a tiny seed head on top.
+  _drawWildGrain(cx, cy) {
+    const ctx = this.ctx;
+    const ts = this.ts;
+    const baseY = cy + ts * 0.18;
+    ctx.strokeStyle = '#8d8f3a';
+    ctx.lineWidth = 1.2;
+    for (const off of [-0.18, 0, 0.18]) {
+      const tipX = cx + ts * off;
+      const tipY = cy - ts * 0.22;
+      ctx.beginPath();
+      ctx.moveTo(cx + ts * off * 0.4, baseY);
+      ctx.lineTo(tipX, tipY);
+      ctx.stroke();
+      // Seed head.
+      ctx.fillStyle = '#b5a358';
+      ctx.beginPath();
+      ctx.ellipse(tipX, tipY - ts * 0.04, ts * 0.045, ts * 0.07, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  // Sprawling vine with a couple of small pods hanging off it.
+  _drawWildLegume(cx, cy) {
+    const ctx = this.ctx;
+    const ts = this.ts;
+    // Vine curve.
+    ctx.strokeStyle = '#5b8a3a';
+    ctx.lineWidth = 1.4;
+    ctx.beginPath();
+    ctx.moveTo(cx - ts * 0.22, cy + ts * 0.18);
+    ctx.quadraticCurveTo(cx, cy - ts * 0.05, cx + ts * 0.22, cy + ts * 0.18);
+    ctx.stroke();
+    // Two small leaves.
+    ctx.fillStyle = '#6da840';
+    for (const off of [-0.12, 0.12]) {
+      ctx.beginPath();
+      ctx.ellipse(cx + ts * off, cy - ts * 0.02, ts * 0.07, ts * 0.05, off * 2, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    // Two pods.
+    ctx.fillStyle = '#a4c468';
+    ctx.strokeStyle = '#4a6f2a';
+    ctx.lineWidth = 0.8;
+    for (const off of [-0.16, 0.16]) {
+      ctx.beginPath();
+      ctx.ellipse(cx + ts * off, cy + ts * 0.10, ts * 0.05, ts * 0.10, off * 2, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+    }
+  }
+
+  // A rosette of long pointed leaves at ground level — root hidden.
+  _drawWildRoot(cx, cy) {
+    const ctx = this.ctx;
+    const ts = this.ts;
+    ctx.fillStyle = '#4f8a3a';
+    ctx.strokeStyle = '#2a5520';
+    ctx.lineWidth = 0.9;
+    for (const ang of [-1.2, -0.6, 0, 0.6, 1.2]) {
+      ctx.save();
+      ctx.translate(cx, cy + ts * 0.05);
+      ctx.rotate(ang);
+      ctx.beginPath();
+      ctx.ellipse(0, -ts * 0.13, ts * 0.04, ts * 0.16, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+      ctx.restore();
+    }
+  }
+
+  // A green bush dotted with little red berries — the visual hook.
+  _drawWildBerry(cx, cy) {
+    const ctx = this.ctx;
+    const ts = this.ts;
+    const r = ts * 0.16;
+    // Foliage clump.
+    ctx.fillStyle = '#3d7a3a';
+    ctx.strokeStyle = '#23491f';
+    ctx.lineWidth = 1;
+    for (const [ox, oy] of [
+      [-r * 0.7, r * 0.5],
+      [r * 0.7, r * 0.5],
+      [0, -r * 0.7],
+    ]) {
+      ctx.beginPath();
+      ctx.arc(cx + ox, cy + oy, r * 0.95, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+    }
+    // Berries — bright red dots scattered over the foliage.
+    ctx.fillStyle = '#d3354a';
+    ctx.strokeStyle = '#7e1d2a';
+    ctx.lineWidth = 0.6;
+    for (const [ox, oy] of [
+      [-r * 0.4, -r * 0.1],
+      [r * 0.45, -r * 0.05],
+      [-r * 0.05, r * 0.45],
+      [r * 0.15, -r * 0.55],
+      [-r * 0.55, r * 0.5],
+    ]) {
+      ctx.beginPath();
+      ctx.arc(cx + ox, cy + oy, Math.max(1.1, ts * 0.04), 0, Math.PI * 2);
       ctx.fill();
       ctx.stroke();
     }
@@ -1430,8 +1553,11 @@ export class Renderer {
   _drawAnimal(cx, cy, species = 'boar') {
     switch (species) {
       case 'wolf':   return this._drawWolf(cx, cy);
+      case 'bear':   return this._drawBear(cx, cy);
       case 'deer':   return this._drawDeer(cx, cy);
       case 'rabbit': return this._drawRabbit(cx, cy);
+      case 'sheep':  return this._drawSheep(cx, cy);
+      case 'fowl':   return this._drawFowl(cx, cy);
       case 'boar':
       default:       return this._drawBoar(cx, cy);
     }
@@ -1717,6 +1843,180 @@ export class Renderer {
     ctx.fillStyle = '#120d08';
     ctx.beginPath();
     ctx.arc(cx + rx * 1.1, cy - ry * 0.35, 0.7 + ts * 0.02, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // A bear: hulking dark-brown body, broad shoulders, rounded ears,
+  // short snout. Larger than a boar so it reads as the apex predator.
+  _drawBear(cx, cy) {
+    const ctx = this.ctx;
+    const ts = this.ts;
+    const rx = ts * 0.40;
+    const ry = ts * 0.26;
+    // Shadow.
+    ctx.fillStyle = 'rgba(0,0,0,0.32)';
+    ctx.beginPath();
+    ctx.ellipse(cx, cy + ry * 0.85, rx * 1.1, ry * 0.5, 0, 0, Math.PI * 2);
+    ctx.fill();
+    // Stubby legs.
+    ctx.strokeStyle = '#2a1a10';
+    ctx.lineWidth = Math.max(2, ts * 0.09);
+    for (const lx of [-0.55, -0.18, 0.22, 0.58]) {
+      ctx.beginPath();
+      ctx.moveTo(cx + rx * lx, cy + ry * 0.4);
+      ctx.lineTo(cx + rx * lx, cy + ry * 1.05);
+      ctx.stroke();
+    }
+    // Body — dark brown with a deeper shoulder gradient.
+    const grad = ctx.createLinearGradient(cx, cy - ry, cx, cy + ry);
+    grad.addColorStop(0, '#5a3a20');
+    grad.addColorStop(1, '#2e1c0e');
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
+    ctx.fillStyle = grad;
+    ctx.fill();
+    ctx.lineWidth = 1.8;
+    ctx.strokeStyle = '#1a0f06';
+    ctx.stroke();
+    // Head (large, set close to the body — no neck).
+    ctx.fillStyle = '#4a2f1a';
+    ctx.beginPath();
+    ctx.ellipse(cx + rx * 0.88, cy - ry * 0.05, rx * 0.42, ry * 0.55, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    // Rounded ears (signature bear silhouette).
+    ctx.fillStyle = '#3a2414';
+    for (const off of [-0.05, 0.18]) {
+      ctx.beginPath();
+      ctx.arc(cx + rx * (0.78 + off), cy - ry * 0.5, ts * 0.06, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+    }
+    // Snout.
+    ctx.fillStyle = '#1a0f06';
+    ctx.beginPath();
+    ctx.ellipse(cx + rx * 1.18, cy + ry * 0.05, rx * 0.14, ry * 0.16, 0, 0, Math.PI * 2);
+    ctx.fill();
+    // Eye.
+    ctx.fillStyle = '#0a0604';
+    ctx.beginPath();
+    ctx.arc(cx + rx * 0.95, cy - ry * 0.18, 1.0 + ts * 0.025, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // A sheep: woolly cloud-shaped body in cream, with a small dark face
+  // and short legs. Reads as a peaceful, domesticable grazer.
+  _drawSheep(cx, cy) {
+    const ctx = this.ctx;
+    const ts = this.ts;
+    const rx = ts * 0.30;
+    const ry = ts * 0.22;
+    // Shadow.
+    ctx.fillStyle = 'rgba(0,0,0,0.24)';
+    ctx.beginPath();
+    ctx.ellipse(cx, cy + ry * 0.95, rx * 1.05, ry * 0.42, 0, 0, Math.PI * 2);
+    ctx.fill();
+    // Short legs.
+    ctx.strokeStyle = '#2a2018';
+    ctx.lineWidth = Math.max(1.4, ts * 0.06);
+    for (const lx of [-0.45, -0.15, 0.15, 0.45]) {
+      ctx.beginPath();
+      ctx.moveTo(cx + rx * lx, cy + ry * 0.5);
+      ctx.lineTo(cx + rx * lx, cy + ry * 1.1);
+      ctx.stroke();
+    }
+    // Fluffy wool — a base ellipse with overlapping bumps along the top.
+    ctx.fillStyle = '#f4ecdc';
+    ctx.strokeStyle = '#9c8d70';
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    for (const off of [-0.55, -0.2, 0.15, 0.5]) {
+      ctx.beginPath();
+      ctx.arc(cx + rx * off, cy - ry * 0.55, ts * 0.08, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+    }
+    // Dark face (sheep face hangs out at the front of the wool).
+    ctx.fillStyle = '#3a2c1f';
+    ctx.beginPath();
+    ctx.ellipse(cx + rx * 0.85, cy + ry * 0.05, rx * 0.22, ry * 0.32, 0, 0, Math.PI * 2);
+    ctx.fill();
+    // Tiny ear.
+    ctx.fillStyle = '#3a2c1f';
+    ctx.beginPath();
+    ctx.ellipse(cx + rx * 0.65, cy - ry * 0.28, ts * 0.04, ts * 0.06, -0.4, 0, Math.PI * 2);
+    ctx.fill();
+    // Eye.
+    ctx.fillStyle = '#f4ecdc';
+    ctx.beginPath();
+    ctx.arc(cx + rx * 0.95, cy - ry * 0.05, 0.7 + ts * 0.018, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // A fowl: small round body with a curved beak and a red comb on top.
+  // Reads at a glance as poultry — the future-domestication candidate.
+  _drawFowl(cx, cy) {
+    const ctx = this.ctx;
+    const ts = this.ts;
+    const rx = ts * 0.18;
+    const ry = ts * 0.18;
+    // Shadow.
+    ctx.fillStyle = 'rgba(0,0,0,0.22)';
+    ctx.beginPath();
+    ctx.ellipse(cx, cy + ry * 1.0, rx * 1.1, ry * 0.35, 0, 0, Math.PI * 2);
+    ctx.fill();
+    // Two thin yellow legs.
+    ctx.strokeStyle = '#d8a23a';
+    ctx.lineWidth = Math.max(1.2, ts * 0.05);
+    for (const lx of [-0.25, 0.25]) {
+      ctx.beginPath();
+      ctx.moveTo(cx + rx * lx, cy + ry * 0.5);
+      ctx.lineTo(cx + rx * lx, cy + ry * 1.0);
+      ctx.stroke();
+    }
+    // Round body — warm tan.
+    ctx.fillStyle = '#e6c277';
+    ctx.strokeStyle = '#7e5a24';
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    // Head — slightly forward and up.
+    ctx.beginPath();
+    ctx.arc(cx + rx * 0.55, cy - ry * 0.5, rx * 0.5, 0, Math.PI * 2);
+    ctx.fillStyle = '#e6c277';
+    ctx.fill();
+    ctx.stroke();
+    // Red comb on top of the head.
+    ctx.fillStyle = '#c43b3b';
+    ctx.beginPath();
+    ctx.arc(cx + rx * 0.4, cy - ry * 0.9, ts * 0.045, 0, Math.PI * 2);
+    ctx.arc(cx + rx * 0.6, cy - ry * 0.95, ts * 0.05, 0, Math.PI * 2);
+    ctx.arc(cx + rx * 0.78, cy - ry * 0.85, ts * 0.04, 0, Math.PI * 2);
+    ctx.fill();
+    // Beak — a small orange triangle.
+    ctx.fillStyle = '#e88a2a';
+    ctx.beginPath();
+    ctx.moveTo(cx + rx * 1.0, cy - ry * 0.45);
+    ctx.lineTo(cx + rx * 1.25, cy - ry * 0.4);
+    ctx.lineTo(cx + rx * 1.0, cy - ry * 0.3);
+    ctx.closePath();
+    ctx.fill();
+    // Tail feather (one cocked up at the back).
+    ctx.strokeStyle = '#7e5a24';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(cx - rx * 0.9, cy - ry * 0.1);
+    ctx.quadraticCurveTo(cx - rx * 1.3, cy - ry * 0.6, cx - rx * 1.05, cy - ry * 0.85);
+    ctx.stroke();
+    // Eye.
+    ctx.fillStyle = '#120d08';
+    ctx.beginPath();
+    ctx.arc(cx + rx * 0.7, cy - ry * 0.55, 0.6 + ts * 0.015, 0, Math.PI * 2);
     ctx.fill();
   }
 }

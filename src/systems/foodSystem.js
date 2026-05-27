@@ -7,9 +7,10 @@
 // Functions take the `game` instance as first arg; engine keeps the old
 // method names on Game as thin shims (autonomy.js and tests rely on them).
 
-import { STARTING_WOOD, EAT_RETRY, MEAL_MOOD_BONUS } from '../config.js';
+import { STARTING_WOOD, EAT_RETRY, MEAL_MOOD_BONUS, SEEDS_AFTER_EATING_CHANCE } from '../config.js';
 import { CROP_IDS, getCrop } from '../crops.js';
 import { DISH_IDS, getRecipe, isDish, pickBestAffordable, averageInputQuality } from '../recipes.js';
+import { freshGenome } from '../genetics.js';
 import { t } from '../i18n.js';
 
 // Raw food categories — what pests can spoil and what a cook task uses.
@@ -56,6 +57,19 @@ export function nutritionOf(foodId) {
   if (NUTRITION[foodId] !== undefined) return NUTRITION[foodId];
   const crop = getCrop(foodId);
   return crop ? crop.nutrition : 0.3;
+}
+
+/**
+ * α27: roll a seed drop for crops flagged `seedsAfterEating` (the fruit-
+ * veg / fruit / legume cluster, plus their wild ancestors). Cooked dishes
+ * and non-crop items are skipped. The seed lands in the eater's own
+ * group via `game._addSeed`, mirroring the foraging seed loop.
+ */
+function maybeDropSeedAfterEating(game, foodId, groupId) {
+  const crop = getCrop(foodId);
+  if (!crop || !crop.seedsAfterEating) return;
+  if (Math.random() >= SEEDS_AFTER_EATING_CHANCE) return;
+  game._addSeed(foodId, freshGenome(), groupId);
 }
 
 /** Multi-nutrient profile for an item (always returns the 4 keys). */
@@ -356,6 +370,7 @@ export function feed(game, colonist) {
     colonist.hunger = 0;
     colonist.mood = Math.min(1, colonist.mood + moodFromEating(onHand, quality));
     bumpEaten();
+    maybeDropSeedAfterEating(game, onHand, groupId);
     game._pushLog({ icon: '🍴', text: t('log.ate', { name }), cls: 'log-meal', groupId });
     return;
   }
@@ -377,6 +392,7 @@ export function feed(game, colonist) {
       colonist.hunger = 0;
       colonist.mood = Math.min(1, colonist.mood + moodFromEating(pick, 0.5));
       bumpEaten();
+      maybeDropSeedAfterEating(game, pick, groupId);
       game._pushLog({
         icon: pick === 'meal' || isDish(pick) ? '🍲' : '🍴',
         text: t('log.ate', { name }),
