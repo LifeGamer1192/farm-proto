@@ -149,11 +149,13 @@ export function createGroup(id, setup = {}) {
   // Alpha 25: if the setup carries an explicit `initialSeeds` array
   // (the start-screen seed picker emits this) honour it verbatim —
   // each entry is `{ id, count }` and only the listed crops are
-  // seeded. Otherwise fall back to the random α23 starter assortment.
+  // seeded. B1: an EMPTY array is honoured too (the player chose
+  // "None" for every slot → start with zero seeds); only a missing
+  // array falls back to the random α23 starter assortment.
   let seeds;
   let codex;
   let startingCrops;
-  if (Array.isArray(setup.initialSeeds) && setup.initialSeeds.length > 0) {
+  if (Array.isArray(setup.initialSeeds)) {
     seeds = {};
     codex = {};
     startingCrops = [];

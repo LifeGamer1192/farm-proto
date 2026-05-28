@@ -871,14 +871,21 @@ button.primary:hover {
   grid-template-columns: 74px 1fr 34px;
   align-items: center;
   gap: 6px;
+  /* A1: without an explicit row height the track collapses to the 8px
+     bar, leaving the text spans 0-height; the name's overflow:hidden
+     then clipped it away entirely. Pin a line-height + min-height so
+     the label and % render. */
+  min-height: 16px;
+  line-height: 1.4;
   font-size: 0.7rem;
   color: #c4cebd;
 }
+.ped-gene-name,
+.ped-gene-pct { align-self: center; }
 .ped-gene-name {
   color: #b3bfa6;
   white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  overflow: visible;
 }
 .ped-gene-bar {
   position: relative;
