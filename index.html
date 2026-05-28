@@ -23,6 +23,14 @@
         </p>
 
         <div class="start-row">
+          <span class="start-row-label" data-i18n="panel.language">Language</span>
+          <div class="tools" id="start-langs">
+            <button type="button" data-lang="en" class="active">EN</button>
+            <button type="button" data-lang="ja">日本語</button>
+          </div>
+        </div>
+
+        <div class="start-row">
           <span class="start-row-label" data-i18n="label.biome">Biome</span>
           <div class="tools" id="start-biomes">
             <button type="button" data-biome="temperate" class="active" data-i18n="biome.temperate">Temperate</button>
@@ -154,7 +162,13 @@
               <div id="seed-stock" class="seed-stock"></div>
               <div id="seed-stock-graph" class="panel-graph" hidden></div>
             </details>
-            <p class="reason-label" data-i18n="label.activityLog">Activity log</p>
+            <div class="log-head-row">
+              <p class="reason-label" data-i18n="label.activityLog">Activity log</p>
+              <div class="panel-mode-row log-mode-row" id="log-mode">
+                <button type="button" class="panel-mode-btn active" data-log-mode="detail" data-i18n="label.logDetail">Detail</button>
+                <button type="button" class="panel-mode-btn" data-log-mode="simple" data-i18n="label.logSimple">Simple</button>
+              </div>
+            </div>
             <ul id="event-log" class="task-log"></ul>
           </details>
 

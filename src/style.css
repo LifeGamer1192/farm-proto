@@ -695,7 +695,7 @@ button.primary:hover {
 }
 .pedigree-overlay[hidden] { display: none !important; }
 .pedigree-card {
-  max-width: 880px;
+  max-width: 1100px;
   margin: 0 auto;
   background: #1b2a1f;
   border: 1px solid #2a3f2b;
@@ -711,42 +711,129 @@ button.primary:hover {
   margin: 0 0 12px;
 }
 .pedigree-head h2 { margin: 0; font-size: 1.1rem; flex: 1; }
-.pedigree-body { display: flex; flex-direction: column; gap: 14px; }
+.pedigree-body { display: flex; flex-direction: column; gap: 16px; }
+/* AA3: per-generation card with its own header + 3-cell content row. */
 .pedigree-gen {
-  display: grid;
-  grid-template-columns: 1fr 24px 1fr 24px 1fr;
-  gap: 10px;
-  align-items: center;
-  padding: 8px;
-  background: rgba(255, 255, 255, 0.03);
-  border-radius: 5px;
+  padding: 12px 14px;
+  background: rgba(255, 255, 255, 0.035);
+  border-radius: 6px;
   border: 1px solid #243025;
 }
-.pedigree-cell { text-align: center; }
+.pedigree-gen-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 0.78rem;
+  letter-spacing: 0.04em;
+  color: #b9c4ad;
+  margin: 0 0 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px dashed #2c3a2c;
+}
+.pedigree-gen-row {
+  display: grid;
+  grid-template-columns: 1fr 28px 1.35fr 28px 1fr;
+  gap: 8px;
+  align-items: start;
+}
+.ped-legendary {
+  margin-left: auto;
+  font-size: 0.72rem;
+  color: #f0d260;
+  background: rgba(160, 120, 30, 0.18);
+  padding: 1px 7px;
+  border-radius: 999px;
+  border: 1px solid #6a5320;
+}
+.pedigree-cell {
+  text-align: center;
+  cursor: help;
+  padding: 6px 4px;
+  border-radius: 4px;
+  min-width: 0;
+}
+.pedigree-cell:hover { background: rgba(255, 255, 255, 0.04); }
+.pedigree-cell-child {
+  background: rgba(120, 180, 130, 0.07);
+  border: 1px solid #2f4632;
+}
 .pedigree-cell .label {
-  font-size: 0.7rem;
+  font-size: 0.72rem;
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--muted);
-  margin: 0 0 3px;
+  margin: 0 0 4px;
 }
+.pedigree-cell-child .label { color: #b6d7a8; }
 .pedigree-cell canvas {
   display: block;
   margin: 0 auto;
   background: rgba(0, 0, 0, 0.25);
   border-radius: 3px;
 }
-.pedigree-cell .rank { font-size: 0.78rem; margin-top: 3px; color: #d8c98a; }
-.pedigree-glyph {
-  text-align: center;
-  font-size: 1.3rem;
+.pedigree-cell .rank {
+  font-size: 0.82rem;
+  margin: 4px 0 6px;
+  color: #d8c98a;
+  display: flex;
+  justify-content: center;
+  align-items: baseline;
+  gap: 6px;
+}
+.pedigree-cell .ped-q {
+  font-size: 0.7rem;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+/* AA4: per-gene mini bars per cell so the differences between parents
+   and child are visible at a glance. Full numeric detail is in the
+   cell `title` attribute. */
+.ped-genes {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 6px;
+  text-align: left;
+}
+.ped-gene {
+  display: grid;
+  grid-template-columns: 54px 1fr 32px;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.68rem;
+  color: #c4cebd;
+}
+.ped-gene-name {
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ped-gene-bar {
+  position: relative;
+  height: 7px;
+  background: rgba(0, 0, 0, 0.35);
+  border-radius: 3px;
+  overflow: hidden;
+}
+.ped-gene-bar i {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, #6b9b5a, #b4d27a);
+  border-radius: 3px;
+}
+.ped-gene-pct {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
   color: var(--muted);
 }
-.pedigree-meta {
-  font-size: 0.72rem;
+.pedigree-glyph {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.2rem;
   color: var(--muted);
-  text-align: center;
-  margin: 6px 0 0;
+  padding-top: 36px;
 }
 .pedigree-empty {
   text-align: center;
@@ -777,6 +864,17 @@ button.primary:hover {
   border-color: var(--accent);
   font-weight: 600;
 }
+/* AA7: detail / simple toggle sits to the right of the "Activity log"
+   label, keeping the panel header on a single tight row. */
+.log-head-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 4px 0 2px;
+}
+.log-head-row .reason-label { margin: 0; }
+.log-mode-row { margin: 0; }
 .panel-graph {
   margin: 4px 0 0;
 }

@@ -796,6 +796,10 @@ export class Game {
       text: `${where} — ${this._outcomeText(task)}`,
       cls: task.status === 'done' ? 'log-ok' : 'log-fail',
       groupId,
+      // AA7: tag the entry as routine "work" so the Activity log's
+      // Simple view can hide successful work entries (failures stay
+      // visible regardless of mode).
+      kind: 'work',
     });
   }
 

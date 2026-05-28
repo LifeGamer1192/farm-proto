@@ -27,6 +27,7 @@ import {
   QUALITY_GENES,
   partIndex,
   survivalGeneBonus,
+  genomeQuality,
 } from './genetics.js';
 import { tempGrowthFactor, sunGrowthFactor } from './season.js';
 import { t, setLang, getLang } from './i18n.js';
@@ -54,6 +55,10 @@ const colonyStatsEl = $('colony-stats');
 const seedStockEl = $('seed-stock');
 const foodBreakdownEl = $('food-breakdown');
 const codexEl = $('codex');
+// AA2: codex panel HTML cache — re-rendering on every 150 ms poll
+// destroyed the pedigree link mid-click. Now we only innerHTML-assign
+// when the composed markup actually changed.
+let lastCodexHtml = null;
 const logEl = $('event-log');
 const legendEl = $('legend');
 const gameoverEl = $('gameover');
@@ -263,13 +268,16 @@ function renderGroupTabs() {
   if (!game.groups || game.groups.length <= 1) {
     html = '';
   } else {
+    // AA6: title attribute spells out the single-click vs double-click
+    // behaviour so the player discovers the camera-pan shortcut.
+    const tabHint = t('hint.groupTab');
     const tabs = [
-      `<button type="button" class="group-tab${selectedGroupId == null ? ' active' : ''}" data-group="all">${t('group.tabAll')}</button>`,
+      `<button type="button" class="group-tab${selectedGroupId == null ? ' active' : ''}" data-group="all" title="${tabHint}">${t('group.tabAll')}</button>`,
     ];
     for (const g of game.groups) {
       const sel = selectedGroupId === g.id ? ' active' : '';
       tabs.push(
-        `<button type="button" class="group-tab${sel}" data-group="${g.id}">` +
+        `<button type="button" class="group-tab${sel}" data-group="${g.id}" title="${tabHint}">` +
         `<span class="group-chip" style="background:${g.color.fill}"></span>` +
         `${t('group.label', { letter: String.fromCharCode(65 + g.id) })}` +
         `</button>`,
@@ -299,6 +307,34 @@ function setupGroupTabsHandler() {
     renderGroupTabs();
     refreshPanels();
   });
+  // AA6: double-click on a group tab pans the camera to that group's
+  // centroid (mean position of its living colonists). The single click
+  // still fires twice and lands on the right tab, so dblclick on top
+  // of that simply adds a "find them" shortcut.
+  el.addEventListener('dblclick', (ev) => {
+    const btn = ev.target.closest('button.group-tab[data-group]');
+    if (!btn) return;
+    const val = btn.dataset.group;
+    if (val === 'all') {
+      // All colonies — pan to the overall centroid of every colonist.
+      panCameraToColonists(game.colonists);
+    } else {
+      const gid = Number(val);
+      const grp = game.groups?.[gid];
+      if (grp) panCameraToColonists(grp.colonists || []);
+    }
+  });
+}
+
+// Pan the camera to the mean position of a colonist list. Falls back
+// to no-op when the list is empty (e.g. a group whose last colonist
+// just died).
+function panCameraToColonists(list) {
+  if (!list || list.length === 0) return;
+  let sx = 0;
+  let sy = 0;
+  for (const c of list) { sx += c.x; sy += c.y; }
+  game.camera.centerOn(sx / list.length + 0.5, sy / list.length + 0.5);
 }
 
 // One colonist row used by both the per-group sections and the legacy
@@ -688,7 +724,16 @@ function updateCodexPanel() {
       `</div>`
     );
   }).join('');
-  codexEl.innerHTML = `<p class="codex-legend">${legend}</p>${sections}`;
+  // AA2: cache the composed HTML and only assign when it changed. The
+  // 150 ms refresh used to rebuild the codex on every tick, which made
+  // the "pedigree" link tag disappear between mousedown and mouseup —
+  // the click event never fired. Reusing the existing nodes when
+  // unchanged keeps single-click open reliable.
+  const html = `<p class="codex-legend">${legend}</p>${sections}`;
+  if (html !== lastCodexHtml) {
+    lastCodexHtml = html;
+    codexEl.innerHTML = html;
+  }
   // Paint each preview canvas with its group's best genome.
   for (const section of codexEl.querySelectorAll('.group-section')) {
     const gid = Number(section.dataset.group);
@@ -711,25 +756,35 @@ function updateCodexPanel() {
 // trader visit, pest outbreak) carry no groupId and always show.
 let lastLogRev = -1;
 let lastLogGroup = null;
+let lastLogMode = null;
+// AA7: 'detail' shows everything (current behaviour); 'simple' drops
+// the routine successful work entries so only the important lines —
+// failures, warnings, and event-style entries — remain.
+let logMode = 'detail';
 const logEntryHtml = (e) => `<li class="${e.cls}">${e.icon} ${e.text}</li>`;
 // H1: a group tab is now a STRICT filter — colony-wide entries (no
 // groupId attached) stay in the "All" view only. This stops the
 // per-colony log from being polluted by the season banner / cold snap
 // / pest events of the colony as a whole.
+// AA7: in simple mode, also drop kind:'work' successes — failures and
+// non-work events (births, cold snaps, season banners, etc.) stay.
 function logEntryMatches(e) {
-  if (selectedGroupId == null) return true;
-  return e.groupId === selectedGroupId;
+  if (selectedGroupId != null && e.groupId !== selectedGroupId) return false;
+  if (logMode === 'simple' && e.kind === 'work' && e.cls === 'log-ok') return false;
+  return true;
 }
 function updateLog() {
-  // Group-tab change forces a rebuild even if no new entries arrived.
-  if (game.logRev === lastLogRev && selectedGroupId === lastLogGroup) return;
+  // Group-tab or mode change forces a rebuild even if no new entries arrived.
+  if (game.logRev === lastLogRev && selectedGroupId === lastLogGroup && logMode === lastLogMode) return;
   const groupChanged = selectedGroupId !== lastLogGroup;
+  const modeChanged = logMode !== lastLogMode;
   const added = game.logRev - lastLogRev;
   lastLogRev = game.logRev;
   lastLogGroup = selectedGroupId;
-  // Full rebuild on group switch, on reset, or when more entries arrived
-  // than the log now holds (older ones evicted).
-  if (groupChanged || added < 0 || added >= game.log.length) {
+  lastLogMode = logMode;
+  // Full rebuild on group switch, on mode switch, on reset, or when
+  // more entries arrived than the log now holds (older ones evicted).
+  if (groupChanged || modeChanged || added < 0 || added >= game.log.length) {
     logEl.innerHTML = game.log.filter(logEntryMatches).map(logEntryHtml).join('');
     return;
   }
@@ -1007,6 +1062,13 @@ function applyI18n() {
   for (const el of document.querySelectorAll('[data-i18n]')) {
     el.textContent = t(el.dataset.i18n);
   }
+  // AA7: simple-mode button gets a tooltip explaining what gets hidden.
+  const simpleBtn = document.querySelector('button[data-log-mode="simple"]');
+  if (simpleBtn) simpleBtn.title = t('hint.logSimple');
+  // AA2: language switch changes every translated cell, so the codex
+  // HTML cache must be invalidated or the new strings won't paint.
+  lastCodexHtml = null;
+  lastTabsHtml = null;
   // Hover hints on the tool / crop / structure buttons.
   for (const b of toolsEl.querySelectorAll('button[data-tool]')) {
     b.title = t('hint.task.' + b.dataset.tool);
@@ -1058,6 +1120,7 @@ const startGroupCountEl = $('start-group-count');
 const startGroupCountLabelEl = $('start-group-count-label');
 const startGroupListEl = $('start-group-list');
 const startGenerateBtn = $('start-generate');
+const startLangsEl = $('start-langs');
 
 let startBiomeId = 'temperate';
 const NO_CROP = '__random'; // marker value for "pick randomly"
@@ -1186,6 +1249,27 @@ if (startGroupCountEl) {
 if (startSeedRandomBtn) {
   startSeedRandomBtn.addEventListener('click', () => {
     startSeedInputEl.value = String(randomSeed());
+  });
+}
+if (startLangsEl) {
+  // AA1: language picker on the start screen. Switching here also
+  // updates the in-sim Language tab and re-renders the per-group
+  // dropdowns (script names + crop names follow the picked language).
+  startLangsEl.addEventListener('click', (ev) => {
+    const btn = ev.target.closest('button[data-lang]');
+    if (!btn) return;
+    setLang(selectIn(startLangsEl, btn, 'lang'));
+    // Keep the in-sim Language tab visually in sync.
+    if (langsEl) {
+      for (const b of langsEl.querySelectorAll('button[data-lang]')) {
+        b.classList.toggle('active', b.dataset.lang === btn.dataset.lang);
+      }
+    }
+    applyI18n();
+    // The group dropdowns contain translated option text, so rebuild
+    // the rows so the new labels appear immediately.
+    const n = parseInt(startGroupCountEl?.value || '1', 10) || 1;
+    renderStartGroupRows(n);
   });
 }
 if (startGenerateBtn) {
@@ -1719,8 +1803,33 @@ langsEl.addEventListener('click', (ev) => {
   const btn = ev.target.closest('button[data-lang]');
   if (!btn) return;
   setLang(selectIn(langsEl, btn, 'lang'));
+  // Keep the start-screen language picker visually in sync too.
+  if (startLangsEl) {
+    for (const b of startLangsEl.querySelectorAll('button[data-lang]')) {
+      b.classList.toggle('active', b.dataset.lang === btn.dataset.lang);
+    }
+  }
   applyI18n();
 });
+
+// AA7: detail / simple toggle for the activity log. The handler lives
+// on the row container so the buttons themselves can re-render without
+// re-binding (consistent with the panel-mode-row pattern elsewhere).
+const logModeRowEl = $('log-mode');
+if (logModeRowEl) {
+  logModeRowEl.addEventListener('click', (ev) => {
+    const btn = ev.target.closest('button[data-log-mode]');
+    if (!btn) return;
+    const mode = btn.dataset.logMode;
+    if (mode !== 'detail' && mode !== 'simple') return;
+    if (logMode === mode) return;
+    logMode = mode;
+    for (const b of logModeRowEl.querySelectorAll('button[data-log-mode]')) {
+      b.classList.toggle('active', b === btn);
+    }
+    updateLog();
+  });
+}
 
 // α28 followup Z1: Regenerate now reloads back to the start screen
 // (same flow as a browser refresh). The post-launch World panel no
@@ -1916,6 +2025,44 @@ const pedigreeTitleEl = $('pedigree-title');
 const pedigreeBodyEl = $('pedigree-body');
 const pedigreeCloseBtn = $('pedigree-close');
 
+// AA3/AA4: helpers for the richer pedigree cell. The 4 quality-gene
+// mini-bars give an at-a-glance read of WHAT changed between parents
+// and child; the cell `title` attribute carries the full per-gene
+// detail (phenotype% + both alleles) for hover.
+function _pedigreeGeneBarsHtml(genome) {
+  return QUALITY_GENES.map((gid) => {
+    const v = Math.round(phenotype(genome, gid) * 100);
+    return (
+      `<div class="ped-gene"><span class="ped-gene-name">${t('gene.' + gid)}</span>` +
+      `<span class="ped-gene-bar"><i style="width:${v}%"></i></span>` +
+      `<span class="ped-gene-pct">${v}%</span></div>`
+    );
+  }).join('');
+}
+
+function _pedigreeCellTitle(genome) {
+  const lines = QUALITY_GENES.map((gid) => {
+    const v = Math.round(phenotype(genome, gid) * 100);
+    const a = genome[gid][0];
+    const b = genome[gid][1];
+    return `${t('gene.' + gid)} ${v}% (${a.toFixed(2)} / ${b.toFixed(2)})`;
+  });
+  return lines.join('\n');
+}
+
+function _pedigreeCellHtml(cropId, tag, kind, genome, headLabel) {
+  const q = Math.round(genomeQuality(genome) * 100);
+  return (
+    `<div class="pedigree-cell pedigree-cell-${kind}" title="${_pedigreeCellTitle(genome)}">` +
+    `<div class="label">${headLabel}</div>` +
+    `<canvas data-pedigree="${tag}" data-crop="${cropId}" ` +
+    `width="${kind === 'child' ? 88 : 64}" height="${kind === 'child' ? 88 : 64}"></canvas>` +
+    `<div class="rank">${'★'.repeat(qualityRank(genome))} <span class="ped-q">Q ${q}%</span></div>` +
+    `<div class="ped-genes">${_pedigreeGeneBarsHtml(genome)}</div>` +
+    `</div>`
+  );
+}
+
 function openPedigree(cropId, groupId) {
   const grp = game.groups?.[groupId];
   const codex = grp?.codex?.[cropId];
@@ -1925,31 +2072,23 @@ function openPedigree(cropId, groupId) {
   if (lineage.length === 0) {
     pedigreeBodyEl.innerHTML = `<div class="pedigree-empty">${t('pedigree.empty')}</div>`;
   } else {
-    // Render each entry as a generation row: parent A | × | child | ← | parent B
+    // Render each entry as a generation block with header + 3 cells.
     pedigreeBodyEl.innerHTML = lineage.map((entry, i) => {
       const tag = `g${i}`;
       const seasonStr = (entry.year != null && entry.season)
         ? t('pedigree.season', { year: entry.year, season: t('season.' + entry.season) })
         : '';
+      const legendaryChip = entry.legendary ? `<span class="ped-legendary">✨ ${t('pedigree.legendary')}</span>` : '';
+      const genHead = `${t('pedigree.gen', { n: i + 1 })}${seasonStr ? ' · ' + seasonStr : ''}`;
       return (
         `<div class="pedigree-gen">` +
-        `<div class="pedigree-cell">` +
-        `<div class="label">${t('pedigree.parents')}</div>` +
-        `<canvas data-pedigree="${tag}-pa" data-crop="${cropId}" width="56" height="56"></canvas>` +
-        `<div class="rank">${'★'.repeat(qualityRank(entry.parents[0]))}</div>` +
-        `</div>` +
+        `<div class="pedigree-gen-head">${genHead}${legendaryChip}</div>` +
+        `<div class="pedigree-gen-row">` +
+        _pedigreeCellHtml(cropId, `${tag}-pa`, 'parent', entry.parents[0], t('pedigree.parentA')) +
         `<div class="pedigree-glyph">×</div>` +
-        `<div class="pedigree-cell">` +
-        `<div class="label">${t('pedigree.child')} ${t('pedigree.gen', { n: i + 1 })}${entry.legendary ? ' ✨' : ''}</div>` +
-        `<canvas data-pedigree="${tag}-c" data-crop="${cropId}" width="72" height="72"></canvas>` +
-        `<div class="rank">${'★'.repeat(qualityRank(entry.child))}</div>` +
-        `<div class="pedigree-meta">${seasonStr}</div>` +
-        `</div>` +
+        _pedigreeCellHtml(cropId, `${tag}-c`, 'child', entry.child, t('pedigree.child')) +
         `<div class="pedigree-glyph">×</div>` +
-        `<div class="pedigree-cell">` +
-        `<div class="label">${t('pedigree.parents')}</div>` +
-        `<canvas data-pedigree="${tag}-pb" data-crop="${cropId}" width="56" height="56"></canvas>` +
-        `<div class="rank">${'★'.repeat(qualityRank(entry.parents[1]))}</div>` +
+        _pedigreeCellHtml(cropId, `${tag}-pb`, 'parent', entry.parents[1], t('pedigree.parentB')) +
         `</div>` +
         `</div>`
       );
