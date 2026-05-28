@@ -49,7 +49,9 @@ export function onSeasonChange(game, season) {
   // α26: groups running the Farmer (Selective breeding) script cull
   // their lowest-quality stock once per season change. The hook lives
   // on `game` so eventSystem doesn't depend on autonomy.js directly.
-  if (game._runSelectiveBreedingCulls) game._runSelectiveBreedingCulls();
+  // C7: the cull is autonomous work — skip it while Auto-work is off so
+  // a fully order-driven colony doesn't queue weed tasks on its own.
+  if (game.autoMode && game._runSelectiveBreedingCulls) game._runSelectiveBreedingCulls();
   // α28 followup Z3: top up wild animals once per year (at the spring
   // change). Without this a scout / forager colony eventually empties
   // the map and starves. Restock only fires when the population has
