@@ -127,11 +127,21 @@
             <dl id="colony-stats" class="stats"></dl>
             <details class="sub-group">
               <summary class="sub-label" data-i18n="label.foodBreakdown">Food on hand · breakdown</summary>
+              <div class="panel-mode-row">
+                <button type="button" class="panel-mode-btn active" data-target="food-breakdown" data-mode="current" data-i18n="label.modeCurrent">Now</button>
+                <button type="button" class="panel-mode-btn" data-target="food-breakdown" data-mode="graph" data-i18n="label.modeGraph">Graph</button>
+              </div>
               <dl id="food-breakdown" class="stats"></dl>
+              <div id="food-breakdown-graph" class="panel-graph" hidden></div>
             </details>
             <details class="sub-group">
               <summary class="sub-label" data-i18n="label.seeds">Seed stock</summary>
+              <div class="panel-mode-row">
+                <button type="button" class="panel-mode-btn active" data-target="seed-stock" data-mode="current" data-i18n="label.modeCurrent">Now</button>
+                <button type="button" class="panel-mode-btn" data-target="seed-stock" data-mode="graph" data-i18n="label.modeGraph">Graph</button>
+              </div>
               <div id="seed-stock" class="seed-stock"></div>
+              <div id="seed-stock-graph" class="panel-graph" hidden></div>
             </details>
             <p class="reason-label" data-i18n="label.activityLog">Activity log</p>
             <ul id="event-log" class="task-log"></ul>

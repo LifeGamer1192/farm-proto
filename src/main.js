@@ -446,6 +446,11 @@ function updateColonyStats() {
     if (n > 0) breakdown.push([labelIcon('🌾', t('crop.' + id)), n]);
   }
   renderRows(foodBreakdownEl, breakdown);
+  // T5: render the food-breakdown sparkline if the panel is in graph
+  // mode (cheap when hidden; the SVG is just a string write).
+  if (panelModes['food-breakdown'] === 'graph') {
+    renderPanelGraph('food-breakdown', 'food', 'totalFood', '#e6b25a');
+  }
 }
 
 // Show the crop / structure picker only for the tool that uses it.
@@ -530,7 +535,72 @@ function seedPanelCrops() {
   return CROP_IDS.filter((id) => set.has(id));
 }
 
+// T5: each sub-panel ("food-breakdown" / "seed-stock") has a Now-vs-Graph
+// toggle. State + click handler lives here; the panel update functions
+// check the mode and show either the numbers DL or the SVG sparkline.
+const panelModes = { 'food-breakdown': 'current', 'seed-stock': 'current' };
+function setPanelMode(target, mode) {
+  panelModes[target] = mode;
+  document.querySelectorAll(`.panel-mode-btn[data-target="${target}"]`).forEach((b) => {
+    b.classList.toggle('active', b.dataset.mode === mode);
+  });
+  // Show/hide table vs graph nodes.
+  const table = document.getElementById(target);
+  const graph = document.getElementById(`${target}-graph`);
+  if (table) table.hidden = mode === 'graph';
+  if (graph) graph.hidden = mode !== 'graph';
+}
+document.addEventListener('click', (ev) => {
+  const btn = ev.target.closest('.panel-mode-btn[data-target]');
+  if (!btn) return;
+  setPanelMode(btn.dataset.target, btn.dataset.mode);
+  refreshPanels();
+});
+
+function drawSparkline(samples, pickValue, color) {
+  if (!samples || samples.length === 0) {
+    return `<svg viewBox="0 0 220 60" preserveAspectRatio="none"><text x="110" y="33" text-anchor="middle" class="hist-empty">—</text></svg>`;
+  }
+  let min = Infinity, max = -Infinity;
+  const vals = samples.map(pickValue);
+  for (const v of vals) { if (v < min) min = v; if (v > max) max = v; }
+  if (samples.length < 2 || max === min) {
+    const last = vals[vals.length - 1] || 0;
+    return `<svg viewBox="0 0 220 60" preserveAspectRatio="none">` +
+      `<line x1="2" y1="30" x2="218" y2="30" stroke="${color}" stroke-width="1.4" />` +
+      `</svg>` +
+      `<div class="graph-caption"><span>min ${min}</span><span>now ${last}</span><span>max ${max}</span></div>`;
+  }
+  const range = max - min;
+  const n = samples.length;
+  const pts = vals.map((v, i) => {
+    const x = 2 + (i / (n - 1)) * 216;
+    const y = 58 - ((v - min) / range) * 56;
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  }).join(' ');
+  return `<svg viewBox="0 0 220 60" preserveAspectRatio="none">` +
+    `<polyline points="${pts}" fill="none" stroke="${color}" stroke-width="1.4" />` +
+    `</svg>` +
+    `<div class="graph-caption"><span>min ${min}</span><span>now ${vals[vals.length - 1]}</span><span>max ${max}</span></div>`;
+}
+
+function renderPanelGraph(targetId, sampleKey, colonyKey, color) {
+  const el = document.getElementById(`${targetId}-graph`);
+  if (!el) return;
+  const samples = game.history?.samples || [];
+  const pick = selectedGroupId == null
+    ? (s) => s[colonyKey] || 0
+    : (s) => s.perGroup?.[selectedGroupId]?.[sampleKey] || 0;
+  el.innerHTML = drawSparkline(samples, pick, color);
+}
+
 function updateSeedPanel() {
+  // T5: when the panel is in graph mode, draw the sparkline and skip
+  // the rows render. Total label on the summary still reflects the
+  // current pool so the closed disclosure shows "Seed stock · N".
+  if (panelModes['seed-stock'] === 'graph') {
+    renderPanelGraph('seed-stock', 'seeds', 'seedTotal', '#9ab85a');
+  }
   const g = selectedGroupId == null ? null : game.groups[selectedGroupId];
   const src = g ? g.seeds : game.seeds;
   seedStockEl.innerHTML = seedPanelCrops().map((id) => {

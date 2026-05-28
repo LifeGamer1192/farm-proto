@@ -54,6 +54,7 @@ import { TileType } from './map/tile.js';
 import { Camera } from './render/camera.js';
 import { Renderer } from './render/renderer.js';
 import { Colonist } from './entities/colonist.js';
+import { pickStarterName, formatColonistName } from './names/index.js';
 import { TaskType, WORK_TYPES, createTask } from './tasks.js';
 import { scatterPlants, PlantKind } from './world.js';
 import { PathCache } from './core/pathfinder.js';
@@ -254,7 +255,8 @@ export class Game {
     this._birthEvent = null; // name of a newborn, or null
     this._traderEvent = null; // gift summary, or null
     this._traderYear = 0; // the last year the winter trader visited
-    this._birthCounter = 0; // index into BIRTH_NAMES for the next newborn
+    this._birthCounter = 0; // index into the per-language births pool
+    this._nameSeq = 0;      // T4: starter-name counter (per-language pool)
 
     this._loop = this._loop.bind(this);
     this._lastTime = 0;
@@ -382,17 +384,16 @@ export class Game {
       group.spawnAnchor = { x: center.x, y: center.y };
       const want = group.colonistCount;
       const spawns = this._findSpawnsNear(center.x, center.y, want);
-      // Names: first group uses the hand-picked roster (Ada/Bo/Cy/Dot)
-      // for back-compat; later groups always use a unique per-group
-      // letter prefix so names never collide across groups (the second
-      // colonist of group 2 is "C2-2", not the same "C2" as group 1).
-      const letter = String.fromCharCode(65 + gid);
+      // T4 (α27 followup): names are pulled from a per-language pool
+      // (src/names/<lang>.js) and decorated with the group letter so a
+      // glance at the colonist roster or log instantly tells you which
+      // colony they belong to. `_nameSeq` is the colony-wide counter
+      // shared with births so no two colonists share a base name until
+      // the pool wraps.
       for (let i = 0; i < spawns.length; i++) {
         const s = spawns[i];
-        const fallback = gid === 0 ? `A${i + 1}` : `${letter}${i + 1}`;
-        const name = gid === 0
-          ? (COLONIST_NAMES[i] || fallback)
-          : fallback;
+        const base = pickStarterName(this._nameSeq++);
+        const name = formatColonistName(base, gid);
         const c = new Colonist(s.x, s.y, name, gid);
         this.colonists.push(c);
         group.colonists.push(c);
@@ -444,6 +445,7 @@ export class Game {
     this._traderEvent = null;
     this._traderYear = 0;
     this._birthCounter = 0;
+    this._nameSeq = 0;
     this.over = false;
     this.won = false;
     this._winEvent = false;
@@ -769,7 +771,18 @@ export class Game {
   _logWorkTask(task, colonist) {
     if (!WORK_TYPES.includes(task.type)) return;
     if (task.type === TaskType.STORE || task.type === TaskType.FETCH) return;
-    let where = `${t('task.' + task.type)} (${task.x}, ${task.y})`;
+    // T7 (α27 followup): give BUILD / SOW a target label in the title
+    // so the activity log reads e.g. "Build hut (10,20) · unreachable"
+    // instead of the older "Build (10,20) · unreachable". For other
+    // work types the outcome line already names the crop / animal, so
+    // the title stays short.
+    let where = t('task.' + task.type);
+    if (task.type === TaskType.BUILD && task.structure) {
+      where += ` ${t('structure.' + task.structure)}`;
+    } else if (task.type === TaskType.SOW && task.cropId) {
+      where += ` ${t('crop.' + task.cropId)}`;
+    }
+    where += ` (${task.x}, ${task.y})`;
     let groupId;
     if (task.assignee) {
       where += ` · ${task.assignee}`;
@@ -1497,7 +1510,15 @@ export class Game {
       for (const grp of this.groups) {
         grp.colonists = grp.colonists.filter((c) => !c.dead);
       }
-      if (this.colonists.length === 0) this.over = true;
+      if (this.colonists.length === 0) {
+        // T9 (α27 followup): once every colonist has fallen, freeze
+        // the simulation so the player can read the final stats /
+        // graphs without season tints, animals and crops continuing
+        // to mutate the snapshot under them. The game-over overlay
+        // already shows on top.
+        this.over = true;
+        this.paused = true;
+      }
     }
     if (this.taskQueue.length === 0 && this.busyColonists === 0) {
       this.lastAssignReason = t('reason.idle');
@@ -1608,6 +1629,20 @@ export class Game {
     this.history.timer = 0;
     let seedTotal = 0;
     for (const id of Object.keys(this.seeds)) seedTotal += this.seeds[id]?.length || 0;
+    // T5 (α27 followup): also record per-group food and per-group seed
+    // totals so the breakdown panels can flip between "current numbers"
+    // and a per-group sparkline. perGroup[gid] = { food, seeds }.
+    const perGroup = {};
+    if (this.groups) {
+      for (const grp of this.groups) {
+        let gSeed = 0;
+        for (const id of Object.keys(grp.seeds || {})) gSeed += grp.seeds[id]?.length || 0;
+        perGroup[grp.id] = {
+          food: this._totalFoodFor ? this._totalFoodFor(grp.id) : 0,
+          seeds: gSeed,
+        };
+      }
+    }
     const sample = {
       t: this.clock,
       population: this.colonists.length,
@@ -1618,6 +1653,7 @@ export class Game {
       mealsMissed: this.meals.missed,
       cropsLost: this.cropsLost,
       animals: this.animals.length,
+      perGroup,
     };
     this.history.samples.push(sample);
     if (this.history.samples.length > HISTORY_SIZE) this.history.samples.shift();

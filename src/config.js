@@ -78,10 +78,20 @@ export const SKILL_START_RANGE = [0.0, 0.35];
 
 // Sleep stat (1 = well-rested, 0 = exhausted). Drains over time during
 // activity; sleeping fully restores it.
-export const SLEEP_DRAIN_RATE = 1 / (60 * 6); // ~6 sim-minutes from full to empty
-export const SLEEP_RECOVER_RATE = 1 / 4;     // ~4 sim-seconds of SLEEP refills it
+// T3 (α27 followup): drain rate doubled so colonists need to actually
+// come back to a hut on a daily cycle, not weekly. Penalty multipliers
+// in colonist.update() are tightened separately to make sleep deficit
+// a meaningful drag rather than a soft nudge.
+export const SLEEP_DRAIN_RATE = 1 / (60 * 3); // ~3 sim-minutes from full to empty (was 6)
+export const SLEEP_RECOVER_RATE = 1 / 4;      // ~4 sim-seconds of SLEEP refills it
 // Below this the colonist is considered sleep-deprived (icon + mood hit).
 export const SLEEP_DEFICIT_THRESHOLD = 0.3;
+// T3: how much the work-rate and mood penalties are scaled by sleep
+// deficit. 1.0 means linear, larger = harsher. Was effectively 0.6/0.8
+// inline; lifted to 1.2 for work, 1.6 for mood so a sleep-deprived
+// colonist is noticeably slower and unhappier.
+export const SLEEP_WORK_PENALTY = 1.2;
+export const SLEEP_MOOD_PENALTY = 1.6;
 // Below this the colonist is considered injured (icon + prefer REST).
 export const INJURY_THRESHOLD = 0.5;
 

@@ -32,19 +32,29 @@ import {
   SLEEP_DRAIN_RATE,
   SLEEP_RECOVER_RATE,
   SLEEP_DEFICIT_THRESHOLD,
+  SLEEP_WORK_PENALTY,
+  SLEEP_MOOD_PENALTY,
 } from '../config.js';
 
 const clamp01 = (v) => (v < 0 ? 0 : v > 1 ? 1 : v);
 
-// How long an unreachable-tile memo stays valid (sim-seconds). After this
-// the cache forgets and the colonist may retry — covers the case where a
-// fence got knocked down or new land was tilled.
-const UNREACHABLE_TTL = 30;
+// How long an unreachable-tile memo stays valid (sim-seconds). After
+// this the cache forgets and the colonist may retry — covers the case
+// where a fence got knocked down or new land was tilled.
+// T6 (α27 followup): bumped 30 → 120 so a colonist who can't reach a
+// pocket of land doesn't keep retrying every 30 s with the same answer.
+// Two in-game minutes is long enough that "I tried that, it's blocked"
+// stays remembered through a build / chop cycle, short enough that a
+// real geographic change still re-opens the area.
+const UNREACHABLE_TTL = 120;
 // L1: when a tile fails as unreachable, also cache the Chebyshev-distance
 // ≤ this many tiles around it. A boar on the far side of a river makes
 // every nearby till spot equally unreachable; one failure should disable
 // the whole pocket instead of having the autonomy reprobe each tile.
-const UNREACHABLE_RADIUS = 3;
+// T6: bumped 3 → 5 so a failed till-spot kills off a wider patch of
+// candidates and the autonomy stops cycling through near-identical
+// targets behind the same barrier.
+const UNREACHABLE_RADIUS = 5;
 
 // Seconds of "work" each task type spends once the colonist has arrived.
 const WORK_PHASE = {
@@ -307,8 +317,11 @@ export class Colonist {
       this.sleep = Math.max(0, this.sleep - SLEEP_DRAIN_RATE * dt);
     }
     const sleepDeficit = this.sleep < SLEEP_DEFICIT_THRESHOLD ? (SLEEP_DEFICIT_THRESHOLD - this.sleep) : 0;
+    // T3: heavier mood penalty for sleep deficit (was 0.8, now scaled
+    // by SLEEP_MOOD_PENALTY ≈ 1.6). Combined with the 2× faster drain
+    // this makes "go home and sleep" a real loop in the daily cycle.
     const moodTarget = clamp01(
-      1 - this.hunger * 0.6 - (1 - this.health) * 0.5 - sleepDeficit * 0.8,
+      1 - this.hunger * 0.6 - (1 - this.health) * 0.5 - sleepDeficit * SLEEP_MOOD_PENALTY,
     );
     this.mood = clamp01(this.mood + (moodTarget - this.mood) * MOOD_ADAPT * dt);
     if (this.eatCooldown > 0) this.eatCooldown -= dt;
@@ -337,7 +350,10 @@ export class Colonist {
     // finishes a SOW in ~1/3 the time. Sleep deficit drags work back.
     const skill = TASK_SKILL[task.type];
     const skillMul = skill ? this.skillMult(skill) : 1;
-    const sleepDrag = 1 - sleepDeficit * 0.6;
+    // T3: bigger sleep-deficit drag on work rate (multiplier was 0.6,
+    // now SLEEP_WORK_PENALTY ≈ 1.2). The clamp at 0.3× keeps work from
+    // grinding to a halt entirely.
+    const sleepDrag = 1 - sleepDeficit * SLEEP_WORK_PENALTY;
     const rate = skillMul * Math.max(0.3, sleepDrag);
     this.state = WORK_STATE[task.type] || 'working';
     this.workTimer += dt * rate;

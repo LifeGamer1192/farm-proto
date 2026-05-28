@@ -23,6 +23,7 @@ import { freshGenome } from '../genetics.js';
 import { PlantKind } from '../world.js';
 import { Colonist } from '../entities/colonist.js';
 import { t } from '../i18n.js';
+import { pickBirthName, formatColonistName } from '../names/index.js';
 import {
   FOOD_TYPES,
   rawFood,
@@ -115,9 +116,13 @@ function spawnBabyInto(game, parentGroup) {
       pos = { x: c.tileX, y: c.tileY };
     } else return;
   }
-  const letter = parentGroup ? String.fromCharCode(65 + parentGroup.id) : 'X';
-  const baseName = BIRTH_NAMES[game._birthCounter % BIRTH_NAMES.length];
-  const name = parentGroup ? `${baseName}·${letter}` : baseName;
+  // T4 (α27 followup): pull names from the per-language births pool and
+  // format as "Name[GroupLetter]" so the colony tag is obvious in the
+  // log and the colonist roster. Ungrouped (legacy) births get a "?".
+  const baseName = pickBirthName(game._birthCounter);
+  const name = parentGroup
+    ? formatColonistName(baseName, parentGroup.id)
+    : baseName;
   game._birthCounter += 1;
   const baby = new Colonist(pos.x, pos.y, name, gid);
   game.colonists.push(baby);
