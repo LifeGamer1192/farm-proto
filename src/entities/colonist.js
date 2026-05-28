@@ -250,7 +250,16 @@ export class Colonist {
       const p = tile.plant;
       if (!p || p.kind !== 'crop') return this._fail(task, 'noWeed');
     } else if (task.type === TaskType.STORE || task.type === TaskType.FETCH) {
-      if (tile.structure !== 'stockpile') return this._fail(task, 'noStockpile');
+      // B3 fix: medium / large warehouses store `tile.structure` as
+      // 'stockpile_med' / 'stockpile_large'. The old check only accepted
+      // the base 'stockpile', so every haul to a bigger warehouse failed
+      // instantly with noStockpile — on-hand stayed pinned above the cap,
+      // colonists thrashed on failing STORE tasks and never cooked.
+      if (tile.structure !== 'stockpile'
+        && tile.structure !== 'stockpile_med'
+        && tile.structure !== 'stockpile_large') {
+        return this._fail(task, 'noStockpile');
+      }
     } else if (task.type === TaskType.BUILD) {
       if (tile.type === TileType.WATER) return this._fail(task, 'onWater');
       if (tile.plant || tile.structure) return this._fail(task, 'occupied');
