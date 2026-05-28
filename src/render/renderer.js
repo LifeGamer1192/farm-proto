@@ -53,6 +53,16 @@ function tintColor(hex, hueDeg, satMul) {
   return `rgb(${to(rr)},${to(gg)},${to(bb)})`;
 }
 
+// α29: scale an `rgb(r,g,b)` string toward lighter (mul>1) or darker
+// (mul<1) — used to build crop fruit gradients for a rounder, more
+// realistic look.
+function shadeRGB(str, mul) {
+  const m = String(str).match(/\d+/g);
+  if (!m || m.length < 3) return str;
+  const c = m.slice(0, 3).map((n) => Math.max(0, Math.min(255, Math.round(+n * mul))));
+  return `rgb(${c[0]},${c[1]},${c[2]})`;
+}
+
 function mix(c1, c2, t) {
   const r = Math.round(lerp(c1[0], c2[0], t));
   const g = Math.round(lerp(c1[1], c2[1], t));
@@ -1325,18 +1335,25 @@ export class Renderer {
     }
   }
 
-  // One leaf, on the given side (-1 / +1) of the stem.
+  // One leaf, on the given side (-1 / +1) of the stem. α29: a vertical
+  // gradient (brighter top, deeper green underside) plus a central vein
+  // make the foliage read as a real leaf rather than a flat blob.
   _drawLeaf(ctx, cx, leafY, ts, idx, side) {
-    ctx.fillStyle = '#5ba23c';
     const lr = ts * 0.15;
+    const grad = ctx.createLinearGradient(cx, leafY - lr, cx, leafY + lr);
+    grad.addColorStop(0, '#7cc257');
+    grad.addColorStop(1, '#3f7a2b');
+    ctx.fillStyle = grad;
     if (idx === 0) {
       ctx.beginPath(); // broad
       ctx.ellipse(cx + side * lr, leafY, lr, lr * 0.62, side * 0.5, 0, Math.PI * 2);
       ctx.fill();
+      this._leafVein(ctx, cx, leafY, cx + side * lr * 1.8, leafY - side * lr * 0.9);
     } else if (idx === 1) {
       ctx.beginPath(); // narrow
       ctx.ellipse(cx + side * lr * 1.05, leafY, lr * 1.2, lr * 0.32, side * 0.85, 0, Math.PI * 2);
       ctx.fill();
+      this._leafVein(ctx, cx, leafY, cx + side * lr * 2.0, leafY - side * lr * 1.4);
     } else {
       // serrated — a small jagged blade
       const tipX = cx + side * lr * 1.9;
@@ -1350,7 +1367,18 @@ export class Renderer {
       }
       ctx.closePath();
       ctx.fill();
+      this._leafVein(ctx, cx, leafY, tipX, leafY);
     }
+  }
+
+  // A faint midrib vein from the leaf base to its tip.
+  _leafVein(ctx, x0, y0, x1, y1) {
+    ctx.strokeStyle = 'rgba(40,90,30,0.45)';
+    ctx.lineWidth = Math.max(0.5, this.ts * 0.012);
+    ctx.beginPath();
+    ctx.moveTo(x0, y0);
+    ctx.lineTo(x1, y1);
+    ctx.stroke();
   }
 
   // Trace one of four fruit silhouettes (does not fill or stroke).
@@ -1371,8 +1399,29 @@ export class Renderer {
 
   _drawFruit(ctx, cx, cy, r, shapeIdx, fill, ripe, surfIdx, spotsP) {
     this._fruitPath(ctx, cx, cy, r, shapeIdx);
-    ctx.fillStyle = fill;
+    // α29: a radial gradient (lit top-left → shaded bottom-right) gives
+    // the fruit a rounded, more realistic body instead of a flat disc.
+    const grad = ctx.createRadialGradient(
+      cx - r * 0.4, cy - r * 0.45, r * 0.1,
+      cx, cy, r * 1.35,
+    );
+    grad.addColorStop(0, shadeRGB(fill, 1.28));
+    grad.addColorStop(0.55, fill);
+    grad.addColorStop(1, shadeRGB(fill, 0.66));
+    ctx.fillStyle = grad;
     ctx.fill();
+
+    // α29: a soft specular highlight near the top-left sells the gloss.
+    {
+      ctx.save();
+      this._fruitPath(ctx, cx, cy, r, shapeIdx);
+      ctx.clip();
+      ctx.fillStyle = ripe ? 'rgba(255,255,255,0.42)' : 'rgba(255,255,255,0.22)';
+      ctx.beginPath();
+      ctx.ellipse(cx - r * 0.38, cy - r * 0.42, r * 0.3, r * 0.18, -0.6, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
 
     if (ripe && (surfIdx > 0 || spotsP > 0.35)) {
       ctx.save();
@@ -1465,14 +1514,18 @@ export class Renderer {
       }
     }
 
+    // Perpendicular (sideways) unit vector for placing limbs / feet.
+    const px = -fy;
+    const py = fx;
+
     ctx.fillStyle = 'rgba(0,0,0,0.28)';
     ctx.beginPath();
-    ctx.ellipse(cx, cy + r * 0.8, r * 0.95, r * 0.4, 0, 0, Math.PI * 2);
+    ctx.ellipse(cx, cy + r * 0.92, r * 0.95, r * 0.38, 0, 0, Math.PI * 2);
     ctx.fill();
 
     if (selected) {
       ctx.beginPath();
-      ctx.arc(cx, cy, r * 1.4, 0, Math.PI * 2);
+      ctx.arc(cx, cy, r * 1.5, 0, Math.PI * 2);
       ctx.strokeStyle = '#7fd4ff';
       ctx.lineWidth = 2.5;
       ctx.setLineDash([4, 3]);
@@ -1480,45 +1533,111 @@ export class Renderer {
       ctx.setLineDash([]);
     }
 
-    // Feet — two dots set across the facing direction.
-    ctx.fillStyle = '#3a2606';
+    // α29: an adorable little character — a round body in the group's
+    // colour, stubby feet & arms, and a big friendly head with two eyes,
+    // rosy cheeks and a small smile facing the way it walks.
+    const skin = '#f7d6a0';
+    const skinShade = '#e0b87e';
+
+    // Feet — two stubby ovals poking out below, set across the facing dir.
+    ctx.fillStyle = bodyDark;
     for (const s of [-1, 1]) {
       ctx.beginPath();
-      ctx.arc(
-        cx + fx * r * 0.5 - fy * s * r * 0.42,
-        cy + fy * r * 0.5 + fx * s * r * 0.42,
-        r * 0.2,
-        0,
-        Math.PI * 2,
+      ctx.ellipse(
+        cx + fx * r * 0.18 + px * s * r * 0.34,
+        cy + fy * r * 0.18 + r * 0.78,
+        r * 0.22, r * 0.16, 0, 0, Math.PI * 2,
       );
       ctx.fill();
     }
 
-    // Body — a rounded torso with a soft top-down highlight.
-    const grad = ctx.createRadialGradient(cx - r * 0.3, cy - r * 0.3, r * 0.2, cx, cy, r);
+    // Body — a rounded, slightly tall torso with a soft highlight.
+    const bodyR = r * 0.92;
+    const grad = ctx.createRadialGradient(cx - r * 0.32, cy - r * 0.1, r * 0.2, cx, cy + r * 0.1, bodyR * 1.2);
     grad.addColorStop(0, bodyLight);
     grad.addColorStop(1, bodyDark);
     ctx.beginPath();
-    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.ellipse(cx, cy + r * 0.14, bodyR, r, 0, 0, Math.PI * 2);
     ctx.fillStyle = grad;
     ctx.fill();
-    ctx.lineWidth = 1.6;
+    ctx.lineWidth = 1.5;
     ctx.strokeStyle = outline;
     ctx.stroke();
 
-    // Head — offset toward the facing direction.
-    const hx = cx + fx * r * 0.36;
-    const hy = cy + fy * r * 0.36;
+    // Little arms — small round nubs on each side of the body.
+    ctx.fillStyle = bodyLight;
+    for (const s of [-1, 1]) {
+      ctx.beginPath();
+      ctx.arc(cx + px * s * bodyR * 0.92, cy + r * 0.18, r * 0.2, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.lineWidth = 1.1;
+      ctx.strokeStyle = outline;
+      ctx.stroke();
+    }
+
+    // Head — large and round, offset slightly up & toward the facing dir.
+    const hr = r * 0.66;
+    const hx = cx + fx * r * 0.22;
+    const hy = cy - r * 0.62 + fy * r * 0.1;
+    const hgrad = ctx.createRadialGradient(hx - hr * 0.3, hy - hr * 0.35, hr * 0.15, hx, hy, hr);
+    hgrad.addColorStop(0, skin);
+    hgrad.addColorStop(1, skinShade);
     ctx.beginPath();
-    ctx.arc(hx, hy, r * 0.52, 0, Math.PI * 2);
-    ctx.fillStyle = '#f7d6a0';
+    ctx.arc(hx, hy, hr, 0, Math.PI * 2);
+    ctx.fillStyle = hgrad;
     ctx.fill();
+    ctx.lineWidth = 1.4;
+    ctx.strokeStyle = outline;
     ctx.stroke();
+
+    // Hair — a soft cap in the group's dark colour over the top of the head.
+    ctx.beginPath();
+    ctx.arc(hx, hy, hr * 1.02, Math.PI * 1.08, Math.PI * 1.92);
+    ctx.lineTo(hx + Math.cos(-Math.PI * 0.08) * hr, hy + Math.sin(-Math.PI * 0.08) * hr);
+    ctx.arc(hx, hy - hr * 0.12, hr * 0.96, Math.PI * 1.92, Math.PI * 1.08, true);
+    ctx.closePath();
+    ctx.fillStyle = bodyDark;
+    ctx.fill();
+
+    // Face — two eyes, rosy cheeks and a small smile, offset by facing so
+    // the colonist "looks" the way it moves.
+    const faceX = hx + fx * hr * 0.18;
+    const faceY = hy + fy * hr * 0.22 + hr * 0.12;
+    const eyeDX = px * hr * 0.34;
+    const eyeDY = py * hr * 0.34;
+    // eyes
+    ctx.fillStyle = '#2a1c0c';
+    for (const s of [-1, 1]) {
+      ctx.beginPath();
+      ctx.arc(faceX + eyeDX * s, faceY - hr * 0.05, hr * 0.15, 0, Math.PI * 2);
+      ctx.fill();
+      // tiny catch-light
+      ctx.fillStyle = 'rgba(255,255,255,0.85)';
+      ctx.beginPath();
+      ctx.arc(faceX + eyeDX * s - hr * 0.05, faceY - hr * 0.1, hr * 0.05, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#2a1c0c';
+    }
+    // rosy cheeks
+    ctx.fillStyle = 'rgba(232,120,120,0.5)';
+    for (const s of [-1, 1]) {
+      ctx.beginPath();
+      ctx.arc(faceX + eyeDX * s * 1.5, faceY + hr * 0.24, hr * 0.13, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    // smile
+    ctx.strokeStyle = '#7a3b22';
+    ctx.lineWidth = Math.max(1, hr * 0.1);
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.arc(faceX, faceY + hr * 0.08, hr * 0.26, Math.PI * 0.15, Math.PI * 0.85);
+    ctx.stroke();
+    ctx.lineCap = 'butt';
 
     if (colonist.workProgress > 0) {
       const start = -Math.PI / 2;
       ctx.beginPath();
-      ctx.arc(cx, cy, r * 1.5, start, start + colonist.workProgress * Math.PI * 2);
+      ctx.arc(cx, cy, r * 1.6, start, start + colonist.workProgress * Math.PI * 2);
       ctx.strokeStyle = '#ffe178';
       ctx.lineWidth = 3;
       ctx.stroke();
@@ -1542,7 +1661,7 @@ export class Renderer {
       ctx.fillStyle = '#bfe4ff';
       for (const ox of [-0.52, 0, 0.52]) {
         ctx.beginPath();
-        ctx.arc(cx + ox * r, cy - r * 1.28, r * 0.17, 0, Math.PI * 2);
+        ctx.arc(cx + ox * r, cy - r * 2.0, r * 0.16, 0, Math.PI * 2);
         ctx.fill();
       }
     }

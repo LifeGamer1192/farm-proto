@@ -800,7 +800,7 @@ export class Game {
     if (groupId == null && task.groupId != null) groupId = task.groupId;
     if (groupId == null && colonist) groupId = colonist.groupId;
     this._pushLog({
-      icon: task.status === 'done' ? '✓' : '✗',
+      icon: task.status === 'done' ? 'check' : 'cross',
       text: `${where} — ${this._outcomeText(task)}`,
       cls: task.status === 'done' ? 'log-ok' : 'log-fail',
       groupId,
@@ -1520,7 +1520,7 @@ export class Game {
     // Announce a cold snap once, on the edge it starts to bite.
     if (anyCold && !this._coldActive) {
       this._coldEvent = true;
-      this._pushLog({ icon: '🥶', text: t('log.cold'), cls: 'log-warn' });
+      this._pushLog({ icon: 'cold', text: t('log.cold'), cls: 'log-warn' });
     }
     this._coldActive = anyCold;
     // Carry off the fallen.
@@ -1531,7 +1531,7 @@ export class Game {
           const dbg = this.stats.deathsByGroup;
           if (dbg) dbg[c.groupId] = (dbg[c.groupId] || 0) + 1;
           this._pushLog({
-            icon: '☠',
+            icon: 'skull',
             text: t('log.died', { name: c.name }),
             cls: 'log-fail',
             groupId: c.groupId,
@@ -1590,7 +1590,7 @@ export class Game {
         if (!tile.witherStreak) tile.witherStreak = {};
         tile.witherStreak[crop.cropId] = (tile.witherStreak[crop.cropId] || 0) + 1;
         this._pushLog({
-          icon: '✗',
+          icon: 'wilt',
           text: t('log.withered', {
             crop: t('crop.' + crop.cropId),
             x: crop.x,

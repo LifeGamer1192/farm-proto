@@ -31,6 +31,7 @@ import {
 } from './genetics.js';
 import { tempGrowthFactor, sunGrowthFactor } from './season.js';
 import { t, setLang, getLang } from './i18n.js';
+import { icon } from './icons.js';
 import { Game, STOCKPILE_ITEMS } from './game.js';
 import { GROUP_COLORS } from './groups.js';
 import { TIPS, randomTipIndex } from './tips.js';
@@ -180,10 +181,10 @@ function statBar(key, value) {
 function colonistConditionIcons(c) {
   const ico = [];
   if (c.health !== undefined && c.health < 0.5) {
-    ico.push(`<span class="cond-ico" title="${t('cond.injured')}">🤕</span>`);
+    ico.push(`<span class="cond-ico" title="${t('cond.injured')}">${icon('injured')}</span>`);
   }
   if (c.sleep !== undefined && c.sleep < 0.3) {
-    ico.push(`<span class="cond-ico" title="${t('cond.sleepy')}">😴</span>`);
+    ico.push(`<span class="cond-ico" title="${t('cond.sleepy')}">${icon('sleep')}</span>`);
   }
   // Skill highlight: any skill above 0.7 gets a star tooltip.
   if (c.skills) {
@@ -191,7 +192,7 @@ function colonistConditionIcons(c) {
     if (top[0] && top[1] >= 0.7) {
       const pct = Math.round(top[1] * 100);
       ico.push(
-        `<span class="cond-ico" title="${t('cond.skilled', { skill: t('skill.' + top[0]), pct })}">⭐</span>`,
+        `<span class="cond-ico" title="${t('cond.skilled', { skill: t('skill.' + top[0]), pct })}">${icon('star')}</span>`,
       );
     }
   }
@@ -396,21 +397,22 @@ function updateTaskPanel() {
   taskReasonEl.textContent = game.lastAssignReason;
 }
 
-// Mini icons that give each stat row a quick visual handle.
+// Mini icons that give each stat row a quick visual handle (icon names
+// resolved against the α29 SVG icon set).
 const STAT_ICON = {
-  population: '👥',
-  food: '🥖',
-  meal: '🍲',
-  wood: '🪵',
-  warehouse: '📦',
-  beds: '🛏',
-  seeds: '🌱',
-  cropsLost: '🥀',
-  spoiled: '🐛',
-  meals: '🍴',
-  missed: '⚠',
+  population: 'people',
+  food: 'food',
+  meal: 'meal',
+  wood: 'wood',
+  warehouse: 'warehouse',
+  beds: 'bed',
+  seeds: 'sprout',
+  cropsLost: 'wilt',
+  spoiled: 'pest',
+  meals: 'fork',
+  missed: 'warn',
 };
-const labelIcon = (icon, text) => `<span class="stat-ico">${icon}</span>${text}`;
+const labelIcon = (name, text) => `<span class="stat-ico">${icon(name)}</span>${text}`;
 
 function updateColonyStats() {
   // When a specific group tab is active, show that group's identity-tracked
@@ -477,14 +479,14 @@ function updateColonyStats() {
   // Breakdown sub-panel: per-food on-hand counts (combined raw on-hand and
   // any cooked meals). Hidden until the user expands the disclosure.
   const breakdown = [
-    [labelIcon('🍲', t('stat.cooked')), ti('meal')],
-    [labelIcon('🥩', t('stat.meat')), ti('meat')],
-    [labelIcon('🌿', t('stat.forage')), ti('forage')],
+    [labelIcon('meal', t('stat.cooked')), ti('meal')],
+    [labelIcon('meat', t('stat.meat')), ti('meat')],
+    [labelIcon('herb', t('stat.forage')), ti('forage')],
   ];
   // Per-crop, but only crops the colony has any of.
   for (const id of CROP_IDS) {
     const n = ti(id);
-    if (n > 0) breakdown.push([labelIcon('🌾', t('crop.' + id)), n]);
+    if (n > 0) breakdown.push([labelIcon('grain', t('crop.' + id)), n]);
   }
   renderRows(foodBreakdownEl, breakdown);
   // T5: render the food-breakdown sparkline if the panel is in graph
@@ -761,7 +763,7 @@ let lastLogMode = null;
 // the routine successful work entries so only the important lines —
 // failures, warnings, and event-style entries — remain.
 let logMode = 'detail';
-const logEntryHtml = (e) => `<li class="${e.cls}">${e.icon} ${e.text}</li>`;
+const logEntryHtml = (e) => `<li class="${e.cls}"><span class="log-ico">${icon(e.icon)}</span> ${e.text}</li>`;
 // H1: a group tab is now a STRICT filter — colony-wide entries (no
 // groupId attached) stay in the "All" view only. This stops the
 // per-colony log from being polluted by the season banner / cold snap
@@ -1711,7 +1713,8 @@ let gestureErrorShown = false;
 
 function showOrderError(key) {
   const params = key === 'err.noSeed' ? { crop: t('crop.' + cropId) } : undefined;
-  showToast(`⚠ ${t(key, params)}`, true);
+  // The error toast is already styled red; no emoji prefix needed.
+  showToast(t(key, params), true);
 }
 
 function placeTask(pos) {
@@ -2190,9 +2193,9 @@ function openPedigree(cropId, groupId) {
   // C6: when the crop itself is a wild species, badge the whole pedigree
   // prominently — these are foraged ancestors, not cultivated varieties.
   const isWild = WILD_SET.has(cropId);
-  pedigreeTitleEl.textContent = (isWild ? '🌿 ' : '') + t('pedigree.title', { crop: t('crop.' + cropId), group: groupLabel });
+  pedigreeTitleEl.innerHTML = (isWild ? icon('herb') + ' ' : '') + t('pedigree.title', { crop: t('crop.' + cropId), group: groupLabel });
   const wildBanner = isWild
-    ? `<div class="pedigree-wild-banner">🌿 ${t('pedigree.wild')}</div>`
+    ? `<div class="pedigree-wild-banner">${icon('herb')} ${t('pedigree.wild')}</div>`
     : '';
   if (lineage.length === 0) {
     pedigreeBodyEl.innerHTML = wildBanner + `<div class="pedigree-empty">${t('pedigree.empty')}</div>`;
@@ -2207,7 +2210,7 @@ function openPedigree(cropId, groupId) {
       const seasonStr = (entry.year != null && entry.season)
         ? t('pedigree.season', { year: entry.year, season: t('season.' + entry.season) })
         : '';
-      const legendaryChip = entry.legendary ? `<span class="ped-legendary">✨ ${t('pedigree.legendary')}</span>` : '';
+      const legendaryChip = entry.legendary ? `<span class="ped-legendary">${icon('sparkle')} ${t('pedigree.legendary')}</span>` : '';
       const genHead = `${t('pedigree.gen', { n: i + 1 })}${seasonStr ? ' · ' + seasonStr : ''}`;
       const childQ = Math.round(genomeQuality(entry.child) * 100);
       const genBlock =
@@ -2340,7 +2343,7 @@ function showMutationPopup(mut) {
     return '·';
   };
   const topHtml = topChanges.length
-    ? `<div class="mut-top"><div class="mut-section-head">🏆 ${t('popup.mutation.topChanges')}</div>` +
+    ? `<div class="mut-top"><div class="mut-section-head">${icon('trophy')} ${t('popup.mutation.topChanges')}</div>` +
       topChanges.map((r) => {
         const cls = r.delta > 0 ? 'mut-up' : 'mut-down';
         return `<div class="mut-top-row ${cls}"><span class="mut-top-name">${t('gene.' + r.gid)}</span>` +

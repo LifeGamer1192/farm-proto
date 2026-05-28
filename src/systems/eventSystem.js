@@ -76,7 +76,7 @@ function maybeRestockAnimals(game) {
     game.animals.push(a);
   }
   game._pushLog({
-    icon: '🦌',
+    icon: 'deer',
     text: t('log.animalsReturn', { n: tiles.length }),
     cls: 'log-meal',
   });
@@ -168,7 +168,7 @@ function spawnBabyInto(game, parentGroup) {
   }
   game._birthEvent = { name, groupId: gid };
   game._pushLog({
-    icon: '👶',
+    icon: 'baby',
     text: t('log.birth', { name }),
     cls: 'log-meal',
     groupId: gid,
@@ -232,7 +232,7 @@ export function runWinterTrader(game) {
     };
   }
   game._pushLog({
-    icon: '🛒',
+    icon: 'cart',
     text: t('log.trader', {
       wood: TRADER_WOOD_GIFT,
       crops: gifts.map((id) => t('crop.' + id)).join(', '),
@@ -272,7 +272,7 @@ export function pestStrike(game) {
   // many units were spoiled. Older code only checked truthiness, so an
   // object value remains back-compat.
   game._pestEvent = { n: spoiled };
-  game._pushLog({ icon: '🐛', text: t('log.pests', { n: spoiled }), cls: 'log-fail' });
+  game._pushLog({ icon: 'pest', text: t('log.pests', { n: spoiled }), cls: 'log-fail' });
 }
 
 /**

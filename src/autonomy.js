@@ -59,7 +59,7 @@ function _maybeWarn(game, c, reason, textKey, params) {
   _warnedAt.set(key, game.clock);
   if (game._pushLog) {
     game._pushLog({
-      icon: '⚠',
+      icon: 'warn',
       text: t(textKey, params),
       cls: 'log-warn',
       groupId: c?.groupId,
@@ -765,7 +765,7 @@ export function runSelectiveBreedingCulls(game) {
       // and quote the threshold so they know how close we were.
       const need = (BIRTH_FOOD_PER_HEAD * CULL_FOOD_SAFETY_MULT).toFixed(1);
       game._pushLog({
-        icon: '⏭',
+        icon: 'skip',
         text: t('log.cullSkipped', {
           have: foodPerHead.toFixed(1),
           need,
@@ -804,7 +804,7 @@ export function runSelectiveBreedingCulls(game) {
       }
       if (queued > 0) {
         game._pushLog({
-          icon: '🌱',
+          icon: 'sprout',
           text: t('log.cull', { crop: t('crop.' + cropId), n: queued }),
           cls: 'log-ok',
           groupId: grp.id,

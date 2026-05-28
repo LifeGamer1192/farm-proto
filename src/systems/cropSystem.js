@@ -288,7 +288,7 @@ export function gatherSeeds(game, plant, groupId) {
       const mbg = game.stats?.mutationsByGroup;
       const seq = mbg ? (mbg[groupId] = (mbg[groupId] || 0) + 1) : null;
       game._pushLog({
-        icon: '✨',
+        icon: 'sparkle',
         text: t('log.mutation', { crop: t('crop.' + plant.cropId) }),
         cls: 'log-meal',
         groupId,

@@ -351,7 +351,7 @@ export function feed(game, colonist) {
     colonist.hunger = 0;
     colonist.mood = Math.min(1, colonist.mood + moodFromEating(pick, quality));
     bumpEaten();
-    game._pushLog({ icon: '🍲', text: t('log.ate', { name }), cls: 'log-meal', groupId });
+    game._pushLog({ icon: 'meal', text: t('log.ate', { name }), cls: 'log-meal', groupId });
     return;
   }
   // Raw on-hand — same allowed-group filter. largestEdibleRaw normally
@@ -371,7 +371,7 @@ export function feed(game, colonist) {
     colonist.mood = Math.min(1, colonist.mood + moodFromEating(onHand, quality));
     bumpEaten();
     maybeDropSeedAfterEating(game, onHand, groupId);
-    game._pushLog({ icon: '🍴', text: t('log.ate', { name }), cls: 'log-meal', groupId });
+    game._pushLog({ icon: 'fork', text: t('log.ate', { name }), cls: 'log-meal', groupId });
     return;
   }
   // Fall back to stockpiles — prefer own-group piles, then any others
@@ -394,7 +394,7 @@ export function feed(game, colonist) {
       bumpEaten();
       maybeDropSeedAfterEating(game, pick, groupId);
       game._pushLog({
-        icon: pick === 'meal' || isDish(pick) ? '🍲' : '🍴',
+        icon: pick === 'meal' || isDish(pick) ? 'meal' : 'fork',
         text: t('log.ate', { name }),
         cls: 'log-meal',
         groupId,
@@ -403,7 +403,7 @@ export function feed(game, colonist) {
     }
   }
   bumpMissed();
-  game._pushLog({ icon: '⚠', text: t('log.hungry', { name }), cls: 'log-warn', groupId });
+  game._pushLog({ icon: 'warn', text: t('log.hungry', { name }), cls: 'log-warn', groupId });
 }
 
 /**

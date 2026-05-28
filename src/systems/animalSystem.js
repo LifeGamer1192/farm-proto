@@ -157,7 +157,7 @@ export function updateAnimals(game, dt) {
       victim.hurt(ANIMAL_DAMAGE);
       a.attackCooldown = ANIMAL_ATTACK_INTERVAL;
       game._pushLog({
-        icon: '⚔',
+        icon: 'swords',
         text: t('log.attacked', { animal: t('animal.' + a.species), name: victim.name }),
         cls: 'log-warn',
       });
