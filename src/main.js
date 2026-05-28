@@ -1805,6 +1805,7 @@ setInterval(() => {
   updateLog();
   updateEnvPanel();
   updateMapStats();
+  updateHistoryGraphs();
   if (gameoverEl.hidden === game.over) gameoverEl.hidden = !game.over;
   const season = game.consumeSeasonChange();
   if (season) showToast(t('note.' + season));
