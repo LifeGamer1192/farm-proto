@@ -708,13 +708,24 @@ button.primary:hover {
   display: flex;
   align-items: center;
   gap: 16px;
-  margin: 0 0 12px;
+  margin: 0 0 14px;
 }
-.pedigree-head h2 { margin: 0; font-size: 1.1rem; flex: 1; }
-.pedigree-body { display: flex; flex-direction: column; gap: 16px; }
-/* AA3: per-generation card with its own header + 3-cell content row. */
+.pedigree-head h2 { margin: 0; font-size: 1.1rem; flex: 1 1 auto; min-width: 0; }
+/* A1: the Close button inherits .primary which sets width:100% — that
+   stretched it across the whole header and squashed the title. Pin it
+   to its content width. */
+.pedigree-head .primary {
+  flex: 0 0 auto;
+  width: auto;
+  align-self: flex-start;
+}
+.pedigree-body { display: flex; flex-direction: column; gap: 0; align-items: center; }
+/* A1: per-generation card laid out as a small descent tree —
+   parents row → merge connector → child. */
 .pedigree-gen {
-  padding: 12px 14px;
+  width: 100%;
+  max-width: 720px;
+  padding: 12px 16px 16px;
   background: rgba(255, 255, 255, 0.035);
   border-radius: 6px;
   border: 1px solid #243025;
@@ -725,19 +736,78 @@ button.primary:hover {
   gap: 10px;
   font-size: 0.78rem;
   letter-spacing: 0.04em;
-  color: #b9c4ad;
+  color: #cdd7c1;
   margin: 0 0 10px;
   padding-bottom: 8px;
   border-bottom: 1px dashed #2c3a2c;
 }
-.pedigree-gen-row {
-  display: grid;
-  grid-template-columns: 1fr 28px 1.35fr 28px 1fr;
-  gap: 8px;
-  align-items: start;
+.ped-gen-q {
+  margin-left: auto;
+  font-size: 0.74rem;
+  color: #9ab85a;
+  font-variant-numeric: tabular-nums;
+}
+.ped-gen-q + .ped-legendary,
+.ped-legendary { margin-left: 0; }
+/* parents sit side by side; the × sits between them. */
+.ped-parents {
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 0;
+}
+.ped-parents .pedigree-cell { width: 280px; }
+.ped-cross {
+  align-self: center;
+  font-size: 1.25rem;
+  color: #8aa07e;
+  padding: 0 12px;
+  margin-top: 18px;
+}
+/* merge connector: an inverted-T linking the two parents down to the
+   child centred below. */
+.ped-merge {
+  position: relative;
+  height: 24px;
+  margin: 0 auto;
+}
+.ped-merge::before {
+  /* horizontal bar spanning the two parent centres */
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 25%;
+  right: 25%;
+  border-top: 2px solid #3f6042;
+}
+.ped-merge::after {
+  /* vertical drop from the bar's centre to the child */
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-1px);
+  border-left: 2px solid #3f6042;
+}
+.ped-child-row { display: flex; justify-content: center; }
+.ped-child-row .pedigree-cell { width: 300px; }
+/* descent arrow between generations */
+.ped-descend {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0;
+  padding: 6px 0;
+  color: #8aa07e;
+}
+.ped-arrow { font-size: 1.5rem; line-height: 1; color: #5e8a52; }
+.ped-descend-label {
+  font-size: 0.68rem;
+  letter-spacing: 0.04em;
+  color: #93a886;
 }
 .ped-legendary {
-  margin-left: auto;
   font-size: 0.72rem;
   color: #f0d260;
   background: rgba(160, 120, 30, 0.18);
@@ -748,23 +818,23 @@ button.primary:hover {
 .pedigree-cell {
   text-align: center;
   cursor: help;
-  padding: 6px 4px;
+  padding: 6px 8px;
   border-radius: 4px;
   min-width: 0;
 }
 .pedigree-cell:hover { background: rgba(255, 255, 255, 0.04); }
 .pedigree-cell-child {
-  background: rgba(120, 180, 130, 0.07);
-  border: 1px solid #2f4632;
+  background: rgba(120, 180, 130, 0.09);
+  border: 1px solid #38543b;
 }
 .pedigree-cell .label {
   font-size: 0.72rem;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: var(--muted);
+  color: #aeb9a4;
   margin: 0 0 4px;
 }
-.pedigree-cell-child .label { color: #b6d7a8; }
+.pedigree-cell-child .label { color: #bfe0b0; font-weight: 600; }
 .pedigree-cell canvas {
   display: block;
   margin: 0 auto;
@@ -781,8 +851,8 @@ button.primary:hover {
   gap: 6px;
 }
 .pedigree-cell .ped-q {
-  font-size: 0.7rem;
-  color: var(--muted);
+  font-size: 0.72rem;
+  color: #c0cab4;
   font-variant-numeric: tabular-nums;
 }
 /* AA4: per-gene mini bars per cell so the differences between parents
@@ -791,28 +861,30 @@ button.primary:hover {
 .ped-genes {
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  margin-top: 6px;
+  gap: 3px;
+  margin: 8px auto 0;
+  max-width: 230px;
   text-align: left;
 }
 .ped-gene {
   display: grid;
-  grid-template-columns: 54px 1fr 32px;
+  grid-template-columns: 74px 1fr 34px;
   align-items: center;
-  gap: 5px;
-  font-size: 0.68rem;
+  gap: 6px;
+  font-size: 0.7rem;
   color: #c4cebd;
 }
 .ped-gene-name {
-  color: var(--muted);
+  color: #b3bfa6;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 .ped-gene-bar {
   position: relative;
-  height: 7px;
-  background: rgba(0, 0, 0, 0.35);
+  height: 8px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid #2c3a2c;
   border-radius: 3px;
   overflow: hidden;
 }
@@ -820,20 +892,12 @@ button.primary:hover {
   display: block;
   height: 100%;
   background: linear-gradient(90deg, #6b9b5a, #b4d27a);
-  border-radius: 3px;
+  border-radius: 2px;
 }
 .ped-gene-pct {
   text-align: right;
   font-variant-numeric: tabular-nums;
-  color: var(--muted);
-}
-.pedigree-glyph {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 1.2rem;
-  color: var(--muted);
-  padding-top: 36px;
+  color: #c0cab4;
 }
 .pedigree-empty {
   text-align: center;

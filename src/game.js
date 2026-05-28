@@ -661,13 +661,17 @@ export class Game {
     const tile = this.map.tiles[y] && this.map.tiles[y][x];
     if (!tile) return 'err.offMap';
     const assignee = opts.assignee || null;
+    // A2: an order may be scoped to a colony group when a group tab is
+    // active but no single colonist is selected. scopeGid is that group
+    // (null = colony-wide, any colonist may act).
+    const scopeGid = opts.groupId != null ? opts.groupId : null;
     // N2: every queued task carries the assignee's groupId (null for
     // "all colonists" orders, which any colonist may pick up). The
     // pick-up logic in _assignColonist filters by groupId so the queue
     // effectively partitions per group without us juggling N arrays.
     const push = (task) => {
       const c = assignee ? this.colonists.find((cc) => cc.name === assignee) : null;
-      task.groupId = c ? c.groupId : null;
+      task.groupId = c ? c.groupId : scopeGid;
       this.taskQueue.push(task);
     };
     if (type === TaskType.MOVE) {
@@ -675,9 +679,13 @@ export class Game {
       if (assignee) {
         push(createTask(TaskType.MOVE, x, y, { assignee }));
       } else {
-        // "All colonists" + Move: send every colonist to the tile.
-        if (this.colonists.length === 0) return 'err.noColonist';
-        for (const c of this.colonists) {
+        // "All colonists" + Move sends every colonist to the tile; when
+        // a group is selected (scopeGid) only that group's colonists go.
+        const movers = scopeGid != null
+          ? this.colonists.filter((c) => c.groupId === scopeGid)
+          : this.colonists;
+        if (movers.length === 0) return 'err.noColonist';
+        for (const c of movers) {
           const t = createTask(TaskType.MOVE, x, y, { assignee: c.name });
           t.groupId = c.groupId;
           this.taskQueue.push(t);

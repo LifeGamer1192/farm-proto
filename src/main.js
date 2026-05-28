@@ -1135,6 +1135,7 @@ const startLangsEl = $('start-langs');
 
 let startBiomeId = 'temperate';
 const NO_CROP = '__random'; // marker value for "pick randomly"
+const NONE_CROP = '__none'; // B1: marker for "no seed in this slot"
 const SEED_SLOTS = 4;
 const SEED_DEFAULT_QTY = 12;
 
@@ -1150,16 +1151,19 @@ function readStartGroupSetup() {
   const rows = [...startGroupListEl.querySelectorAll('.group-row')];
   return rows.map((row, i) => {
     // Collect seed slots: each slot is a {id, count} pair. NO_CROP →
-    // pick a random non-duplicate crop at generate time.
+    // pick a random non-duplicate crop at generate time; NONE_CROP →
+    // leave the slot empty (B1).
     const slots = [...row.querySelectorAll('.group-seed-slot')].map((slot) => ({
       id: slot.querySelector('select')?.value || NO_CROP,
       count: Math.max(0, Math.min(99, parseInt(slot.querySelector('input')?.value, 10) || 0)),
     }));
     // Resolve random slots; dedup so we don't gift the same crop twice.
+    // NONE_CROP slots contribute nothing.
     const used = new Set();
     const initialSeeds = [];
     for (const slot of slots) {
       let id = slot.id;
+      if (id === NONE_CROP) continue;
       if (id === NO_CROP || !id) id = pickRandomSeed(used);
       if (!id || used.has(id)) continue;
       used.add(id);
@@ -1173,6 +1177,9 @@ function readStartGroupSetup() {
       startingWood: Math.max(0, Math.min(999,
         parseInt(row.querySelector('input.group-wood')?.value, 10) || 30)),
       initialSeeds,
+      // Raw per-slot selections (incl. sentinels) so re-rendering the
+      // rows preserves a "None"/"Random" pick instead of collapsing it.
+      slots,
     };
   });
 }
@@ -1188,7 +1195,10 @@ function renderStartGroupRows(n) {
   // ancestor — those are discovery items, not starter choices.
   const cropChoices = CROP_IDS.filter((id) => !WILD_SET.has(id));
   const cropOptHTML = (selected) => {
-    const opts = [`<option value="${NO_CROP}"${selected === NO_CROP || !selected ? ' selected' : ''}>${t('start.random')}</option>`];
+    const opts = [
+      `<option value="${NO_CROP}"${selected === NO_CROP || !selected ? ' selected' : ''}>${t('start.random')}</option>`,
+      `<option value="${NONE_CROP}"${selected === NONE_CROP ? ' selected' : ''}>${t('start.none')}</option>`,
+    ];
     for (const id of cropChoices) {
       opts.push(`<option value="${id}"${id === selected ? ' selected' : ''}>${t('crop.' + id)}</option>`);
     }
@@ -1200,10 +1210,12 @@ function renderStartGroupRows(n) {
     const scriptOpts = AUTONOMY_OPTIONS.map(
       (id) => `<option value="${id}"${id === s.scriptId ? ' selected' : ''}>${t('script.' + id)}</option>`,
     ).join('');
-    // Seed slot HTML — 4 dropdowns per group.
+    // Seed slot HTML — 4 dropdowns per group. Prefer the raw slot
+    // selection (so "None"/"Random" survive a re-render); fall back to
+    // the resolved initialSeeds for older state shapes.
     const slots = [];
     for (let k = 0; k < SEED_SLOTS; k++) {
-      const slot = s.initialSeeds[k] || { id: NO_CROP, count: SEED_DEFAULT_QTY };
+      const slot = s.slots?.[k] || s.initialSeeds[k] || { id: NO_CROP, count: SEED_DEFAULT_QTY };
       slots.push(
         `<span class="group-seed-slot">` +
         `<select>${cropOptHTML(slot.id || NO_CROP)}</select>` +
@@ -1620,6 +1632,10 @@ function placeTask(pos) {
     cropId,
     structure,
     assignee: game.selectedColonist,
+    // A2: when a colony tab is active (and no single colonist is
+    // picked), scope the order to that group so only its colonists act
+    // on it — otherwise the task is colony-wide and every group reacts.
+    groupId: game.selectedColonist == null ? selectedGroupId : null,
   });
   if (err && !gestureErrorShown) {
     gestureErrorShown = true;
@@ -2083,7 +2099,11 @@ function openPedigree(cropId, groupId) {
   if (lineage.length === 0) {
     pedigreeBodyEl.innerHTML = `<div class="pedigree-empty">${t('pedigree.empty')}</div>`;
   } else {
-    // Render each entry as a generation block with header + 3 cells.
+    // A1: render the lineage as a vertical descent tree. Within each
+    // generation the two parents merge (connector lines) into the child;
+    // between generations a downward arrow shows the breeding programme
+    // advancing to the next record, so the multi-generation (grandparent)
+    // chain is readable top-to-bottom.
     pedigreeBodyEl.innerHTML = lineage.map((entry, i) => {
       const tag = `g${i}`;
       const seasonStr = (entry.year != null && entry.season)
@@ -2091,18 +2111,27 @@ function openPedigree(cropId, groupId) {
         : '';
       const legendaryChip = entry.legendary ? `<span class="ped-legendary">✨ ${t('pedigree.legendary')}</span>` : '';
       const genHead = `${t('pedigree.gen', { n: i + 1 })}${seasonStr ? ' · ' + seasonStr : ''}`;
-      return (
+      const childQ = Math.round(genomeQuality(entry.child) * 100);
+      const genBlock =
         `<div class="pedigree-gen">` +
-        `<div class="pedigree-gen-head">${genHead}${legendaryChip}</div>` +
-        `<div class="pedigree-gen-row">` +
+        `<div class="pedigree-gen-head">${genHead}${legendaryChip}` +
+        `<span class="ped-gen-q">Q ${childQ}%</span></div>` +
+        `<div class="ped-parents">` +
         _pedigreeCellHtml(cropId, `${tag}-pa`, 'parent', entry.parents[0], t('pedigree.parentA')) +
-        `<div class="pedigree-glyph">×</div>` +
-        _pedigreeCellHtml(cropId, `${tag}-c`, 'child', entry.child, t('pedigree.child')) +
-        `<div class="pedigree-glyph">×</div>` +
+        `<div class="ped-cross">×</div>` +
         _pedigreeCellHtml(cropId, `${tag}-pb`, 'parent', entry.parents[1], t('pedigree.parentB')) +
         `</div>` +
-        `</div>`
-      );
+        `<div class="ped-merge"></div>` +
+        `<div class="ped-child-row">` +
+        _pedigreeCellHtml(cropId, `${tag}-c`, 'child', entry.child, t('pedigree.child')) +
+        `</div>` +
+        `</div>`;
+      // Descent connector between generations (not after the last one).
+      const descend = i < lineage.length - 1
+        ? `<div class="ped-descend"><span class="ped-arrow">↓</span>` +
+          `<span class="ped-descend-label">${t('pedigree.descend')}</span></div>`
+        : '';
+      return genBlock + descend;
     }).join('');
     // Paint each canvas with the appropriate genome.
     for (let i = 0; i < lineage.length; i++) {
