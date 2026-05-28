@@ -1629,17 +1629,26 @@ export class Game {
     this.history.timer = 0;
     let seedTotal = 0;
     for (const id of Object.keys(this.seeds)) seedTotal += this.seeds[id]?.length || 0;
-    // T5 (α27 followup): also record per-group food and per-group seed
-    // totals so the breakdown panels can flip between "current numbers"
-    // and a per-group sparkline. perGroup[gid] = { food, seeds }.
+    // T5 / α28-R1: per-group sample for the history graphs. Each entry
+    // is a small bag of all the metrics the Run-history panel can
+    // sparkline; updateHistoryGraphs reads either colony aggregates
+    // (selectedGroupId == null) or perGroup[gid][key].
     const perGroup = {};
     if (this.groups) {
       for (const grp of this.groups) {
         let gSeed = 0;
         for (const id of Object.keys(grp.seeds || {})) gSeed += grp.seeds[id]?.length || 0;
         perGroup[grp.id] = {
+          population: grp.colonists.length,
+          totalFood: this._totalFoodFor ? this._totalFoodFor(grp.id) : 0,
+          wood: Math.floor(grp.storage?.wood || 0),
+          seedTotal: gSeed,
+          // back-compat for older callers that read .food / .seeds
           food: this._totalFoodFor ? this._totalFoodFor(grp.id) : 0,
           seeds: gSeed,
+          mealsEaten: grp.meals?.eaten || 0,
+          mealsMissed: grp.meals?.missed || 0,
+          cropsLost: grp.cropsLost || 0,
         };
       }
     }

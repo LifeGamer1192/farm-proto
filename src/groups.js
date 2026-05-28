@@ -43,7 +43,7 @@ export const GROUP_COLORS = [
  * boot, so this module stays independent of autonomy.js (avoids a
  * circular import). The id list below is the menu the start UI shows.
  */
-export const AUTONOMY_SCRIPTS = ['balanced', 'farmer', 'farmer_breed', 'scout'];
+export const AUTONOMY_SCRIPTS = ['balanced', 'farmer', 'farmer_breed', 'scout', 'temperate', 'builder'];
 
 const _scriptRegistry = new Map();
 

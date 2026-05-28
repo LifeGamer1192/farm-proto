@@ -11,6 +11,11 @@ import {
   genomeQuality,
 } from '../genetics.js';
 import { SEED_START_COUNT, SEEDS_PER_HARVEST, AUTO_SEARCH_RANGE } from '../config.js';
+
+// α28-P1: cap the per-(group, crop) pedigree chain so memory stays
+// bounded on long-running colonies. 40 entries covers a healthy
+// breeding programme; older record-breakers fall off the front.
+const PEDIGREE_MAX = 40;
 import { TileType } from '../map/tile.js';
 import { TaskType } from '../tasks.js';
 import { PlantKind } from '../world.js';
@@ -256,6 +261,26 @@ export function gatherSeeds(game, plant, groupId) {
     const prevBestGenome = grp?.codex?.[plant.cropId]?.best;
     const prevBestScore = prevBestGenome ? genomeQuality(prevBestGenome) : -Infinity;
     addSeed(game, plant.cropId, child.genome, groupId);
+    // α28-P1: pedigree storage. When this child becomes the new best
+    // for the group, record the cross that produced it so the codex
+    // "系統樹" link can replay the breeding chain. Capped per crop
+    // (PEDIGREE_MAX) so memory stays bounded across a long run.
+    const childScore0 = genomeQuality(child.genome);
+    if (childScore0 > prevBestScore) {
+      const cdx = grp?.codex?.[plant.cropId];
+      if (cdx) {
+        if (!Array.isArray(cdx.lineage)) cdx.lineage = [];
+        cdx.lineage.push({
+          child: child.genome,
+          parents: [plant.genome, otherGenome],
+          t: game.clock,
+          year: game.environment?.year ?? null,
+          season: game.environment?.season ?? null,
+          legendary: !!child.legendary,
+        });
+        if (cdx.lineage.length > PEDIGREE_MAX) cdx.lineage.shift();
+      }
+    }
     if (child.legendary) {
       // BUG-4 fix: persistent per-group mutation counter — survives
       // the activity log's ring-buffer rotation. Also lets the popup

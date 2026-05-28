@@ -13,7 +13,7 @@
 // that delegates here, so existing call sites and tests still work.
 
 import { TaskType, createTask } from './tasks.js';
-import { isRipe } from './crops.js';
+import { isRipe, CROP_IDS, cropSuitability, getCrop } from './crops.js';
 import { tileBlocksCrop } from './systems/cropSystem.js';
 import {
   ON_HAND_LOW,
@@ -801,8 +801,116 @@ export function runSelectiveBreedingCulls(game) {
   }
 }
 
+// --- α28 new scripts ----------------------------------------------------
+//
+// Two new autonomy variants:
+//
+// `temperate` — Temperate specialist.
+//   At sow time, only picks crops that score well on a "good temperate
+//   land" template (mid-fertility, moderate moisture, full sun). The
+//   set is precomputed at module load — wheat / barley / cabbage rank
+//   high; tropical or drought-specific crops drop out.
+//
+// `builder` — Infrastructure-first.
+//   After the standard hut → hearth → warehouse ladder, this script
+//   keeps building: extra hearths above hut-count parity, a second /
+//   third warehouse as soon as own utilisation passes 50 %. Falls back
+//   to the balanced script once the build queue empties.
+
+// Precompute the "temperate-friendly" crop set at module load. We score
+// every catalogue entry against a synthetic mid-temperate tile and keep
+// the top half by cropSuitability.
+const _TEMPERATE_SYNTHETIC_TILE = { type: TileType.LAND, fertility: 0.65, moisture: 0.55, sunlight: 0.85 };
+const _TEMPERATE_CROPS = (() => {
+  const scored = [];
+  for (const id of CROP_IDS) {
+    if (id === 'wildgreens') continue;
+    scored.push([id, cropSuitability(getCrop(id), _TEMPERATE_SYNTHETIC_TILE)]);
+  }
+  scored.sort((a, b) => b[1] - a[1]);
+  return new Set(scored.slice(0, Math.ceil(scored.length / 2)).map(([id]) => id));
+})();
+
+/** "Temperate specialist" — only auto-sows crops that fit temperate land. */
+export function temperateScript(game, colonist) {
+  const gid = colonist.groupId;
+  // Same early steps as farmer.
+  for (const crop of game.crops) {
+    if (!game._canUseFrom(gid, crop.ownerId)) continue;
+    if (colonist.isUnreachable?.(crop.x, crop.y, game.clock)) continue;
+    if (isRipe(crop) && !crop.withered && !game._tileClaimed(crop.x, crop.y)) {
+      return createTask(TaskType.HARVEST, crop.x, crop.y);
+    }
+  }
+  for (const crop of game.crops) {
+    if (!game._canUseFrom(gid, crop.ownerId)) continue;
+    if (colonist.isUnreachable?.(crop.x, crop.y, game.clock)) continue;
+    if (crop.withered && !game._tileClaimed(crop.x, crop.y)) {
+      return createTask(TaskType.WEED, crop.x, crop.y);
+    }
+  }
+  const infra = urgentInfraBuild(game, colonist);
+  if (infra) return infra;
+  // Sow / till — but only crops that survive a temperate climate well.
+  if (game.autoMode) {
+    // Pick the most-stocked crop ONLY from the temperate-friendly set.
+    let sowCrop = null;
+    let bestN = 0;
+    for (const id of _TEMPERATE_CROPS) {
+      const n = game.seedCount(id, gid);
+      if (n > bestN) { bestN = n; sowCrop = id; }
+    }
+    if (sowCrop) {
+      const sowSpot = game._pickAutoSowSpot(colonist);
+      if (sowSpot) return createTask(TaskType.SOW, sowSpot.x, sowSpot.y, { cropId: sowCrop });
+      const tillSpot = game._pickTillSpot(colonist, sowCrop);
+      if (tillSpot) return createTask(TaskType.TILL, tillSpot.x, tillSpot.y);
+    }
+  }
+  return pickAutonomousTask(game, colonist);
+}
+
+/** "Builder" — pushes infrastructure ahead of, and upgrades, as it can. */
+export function builderScript(game, colonist) {
+  const gid = colonist.groupId;
+  // Critical care work first.
+  for (const crop of game.crops) {
+    if (!game._canUseFrom(gid, crop.ownerId)) continue;
+    if (colonist.isUnreachable?.(crop.x, crop.y, game.clock)) continue;
+    if (isRipe(crop) && !crop.withered && !game._tileClaimed(crop.x, crop.y)) {
+      return createTask(TaskType.HARVEST, crop.x, crop.y);
+    }
+  }
+  // The signature behaviour: build / expand aggressively.
+  if (game.autoMode) {
+    // First the standard ladder (hut → hearth → warehouse).
+    const infra = urgentInfraBuild(game, colonist);
+    if (infra) return infra;
+    // Then proactive upgrades: a second warehouse when own utilisation
+    // > 50%; a hut upgrade when bed slack < 2; an extra hearth above
+    // the bare hut-count parity.
+    const ownStockpiles = game._stockpileCountFor(gid);
+    if (ownStockpiles > 0 && game._warehouseUtilizationFor(gid) > 0.5) {
+      const wh = wantsWarehouse(game, colonist, { utilThreshold: 0.5 });
+      if (wh && wh.build) {
+        return createTask(TaskType.BUILD, wh.spot.x, wh.spot.y, { structure: wh.build });
+      }
+    }
+    const ownHuts = game._hutCountFor(gid);
+    const ownHearths = game._hearthCountFor(gid);
+    if (ownHearths < ownHuts + 1 && game._canAffordBuild('hearth')) {
+      const spot = game._findFreeLandNear(colonist);
+      if (spot) return createTask(TaskType.BUILD, spot.x, spot.y, { structure: 'hearth' });
+    }
+  }
+  // Fallthrough — balanced handles farming / hunting / hauling.
+  return pickAutonomousTask(game, colonist);
+}
+
 // Register every script so groups can look them up by id.
 registerScript('balanced', pickAutonomousTask);
 registerScript('farmer', farmerScript);
 registerScript('farmer_breed', farmerBreedScript);
 registerScript('scout', scoutScript);
+registerScript('temperate', temperateScript);
+registerScript('builder', builderScript);

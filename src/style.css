@@ -669,6 +669,91 @@ button.primary:hover {
 }
 .mut-all summary:hover { color: var(--accent); }
 
+/* α28-P2: codex "pedigree" link + the full-screen tree overlay. */
+.codex-pedigree {
+  margin-left: auto;
+  font-size: 0.72rem;
+  color: var(--accent);
+  text-decoration: underline;
+  cursor: pointer;
+  padding: 0 4px;
+}
+.codex-pedigree.disabled {
+  color: var(--muted);
+  text-decoration: none;
+  cursor: default;
+  opacity: 0.55;
+  pointer-events: none;
+}
+.pedigree-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  background: rgba(8, 14, 10, 0.94);
+  overflow: auto;
+  padding: 24px;
+}
+.pedigree-overlay[hidden] { display: none !important; }
+.pedigree-card {
+  max-width: 880px;
+  margin: 0 auto;
+  background: #1b2a1f;
+  border: 1px solid #2a3f2b;
+  border-radius: 8px;
+  padding: 18px 22px;
+  color: var(--text);
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.6);
+}
+.pedigree-head {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin: 0 0 12px;
+}
+.pedigree-head h2 { margin: 0; font-size: 1.1rem; flex: 1; }
+.pedigree-body { display: flex; flex-direction: column; gap: 14px; }
+.pedigree-gen {
+  display: grid;
+  grid-template-columns: 1fr 24px 1fr 24px 1fr;
+  gap: 10px;
+  align-items: center;
+  padding: 8px;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 5px;
+  border: 1px solid #243025;
+}
+.pedigree-cell { text-align: center; }
+.pedigree-cell .label {
+  font-size: 0.7rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin: 0 0 3px;
+}
+.pedigree-cell canvas {
+  display: block;
+  margin: 0 auto;
+  background: rgba(0, 0, 0, 0.25);
+  border-radius: 3px;
+}
+.pedigree-cell .rank { font-size: 0.78rem; margin-top: 3px; color: #d8c98a; }
+.pedigree-glyph {
+  text-align: center;
+  font-size: 1.3rem;
+  color: var(--muted);
+}
+.pedigree-meta {
+  font-size: 0.72rem;
+  color: var(--muted);
+  text-align: center;
+  margin: 6px 0 0;
+}
+.pedigree-empty {
+  text-align: center;
+  color: var(--muted);
+  padding: 24px;
+}
+
 /* T5: small toggle row that flips a panel between "current numbers"
    and "stats graph" views. Sits between the disclosure summary and the
    panel body. */

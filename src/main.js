@@ -367,6 +367,7 @@ const STAT_ICON = {
   meal: '🍲',
   wood: '🪵',
   warehouse: '📦',
+  beds: '🛏',
   seeds: '🌱',
   cropsLost: '🥀',
   spoiled: '🐛',
@@ -422,8 +423,12 @@ function updateColonyStats() {
   } else {
     foodStored = game.totalFood;
   }
+  // α28 D3: mirror the Warehouses "used / cap" pattern with a Beds
+  // row — pop / total hut capacity. Per-group when a tab is active.
+  const bedCap = g ? game._hutCapacityFor(g.id) : game._hutCapacity();
   renderRows(colonyStatsEl, [
     [labelIcon(STAT_ICON.population, t('stat.population')), popCount],
+    [labelIcon(STAT_ICON.beds, t('stat.beds')), `${popCount} / ${bedCap}`],
     [labelIcon(STAT_ICON.food, t('stat.foodStored')), foodStored],
     [labelIcon(STAT_ICON.wood, t('stat.wood')), Math.ceil(s.wood || 0)],
     [labelIcon(STAT_ICON.seeds, t('stat.seedTotal')), seedTotal],
@@ -628,7 +633,7 @@ function updateSeedPanel() {
 
 // One codex entry row — extracted so the per-group section render can
 // reuse it. `crop` is the codex record { origin, best } for `id`.
-function codexRowHtml(id, c) {
+function codexRowHtml(id, c, groupId) {
   const genes = QUALITY_GENES.map((gid) => {
     const cur = Math.round(phenotype(c.best, gid) * 100);
     const org = Math.round(phenotype(c.origin, gid) * 100);
@@ -637,12 +642,21 @@ function codexRowHtml(id, c) {
       `<i style="width:${cur}%"></i><u style="left:${org}%"></u></span>`
     );
   }).join('');
+  // α28-P2: each crop row gets a "Pedigree" link. Disabled (no click)
+  // when the lineage is empty (= original strain only).
+  const lineageCount = (c.lineage?.length) || 0;
+  const pedigreeAttr = lineageCount > 0
+    ? ` data-pedigree-crop="${id}" data-pedigree-group="${groupId}"`
+    : '';
+  const pedigreeClass = lineageCount > 0 ? 'codex-pedigree' : 'codex-pedigree disabled';
   return (
     `<div class="codex-row">` +
     `<canvas class="codex-preview" data-crop="${id}" data-best="1" width="48" height="48"></canvas>` +
     `<div class="codex-info"><div class="codex-head">` +
     `<span class="codex-crop">${t('crop.' + id)}</span>` +
-    `<span class="codex-rank">${'★'.repeat(qualityRank(c.best))}</span></div>` +
+    `<span class="codex-rank">${'★'.repeat(qualityRank(c.best))}</span>` +
+    `<a class="${pedigreeClass}"${pedigreeAttr} title="${t('label.pedigreeHint')}">${t('label.pedigree')}</a>` +
+    `</div>` +
     `<div class="codex-genes">${genes}</div></div></div>`
   );
 }
@@ -661,7 +675,7 @@ function updateCodexPanel() {
     const label = g.name || t('group.label', { letter: String.fromCharCode(65 + g.id) });
     const codex = g.codex || {};
     const ids = CROP_IDS.filter((id) => codex[id]);
-    const rows = ids.map((id) => codexRowHtml(id, codex[id])).join('')
+    const rows = ids.map((id) => codexRowHtml(id, codex[id], g.id)).join('')
       || `<div class="muted small">${t('val.none')}</div>`;
     return (
       `<div class="group-section" data-group="${g.id}">` +
@@ -763,20 +777,36 @@ const HISTORY_METRICS = [
   { key: 'animals',     label: 'hist.animals',     color: '#7ea670' },
 ];
 
+// α28-R1/R2: which group's history is the panel showing, and an
+// invalidate token so a tab switch forces a redraw even when sample
+// count hasn't changed.
 let lastHistoryRender = -1;
+let lastHistoryGroup = '__init__';
 function updateHistoryGraphs() {
   if (!historyGraphsEl) return;
   // Skip the SVG build entirely while the panel is closed.
   if (historyPanelEl && !historyPanelEl.open) return;
   const samples = game.history?.samples || [];
-  if (samples.length === lastHistoryRender) return;
+  const sigGroup = selectedGroupId == null ? 'all' : `g${selectedGroupId}`;
+  if (samples.length === lastHistoryRender && sigGroup === lastHistoryGroup) return;
   lastHistoryRender = samples.length;
+  lastHistoryGroup = sigGroup;
   const w = 220;
   const h = 36;
   const pad = 2;
+  // α28-R1: pick the right per-sample reader based on selectedGroupId.
+  const pickValue = (s, key) => {
+    if (selectedGroupId == null) return s[key] || 0;
+    return s.perGroup?.[selectedGroupId]?.[key] || 0;
+  };
+  // α28-R2: animals are a map-wide entity, not owned by any colony.
+  // Hide that row entirely when a specific group tab is active.
+  const metrics = selectedGroupId == null
+    ? HISTORY_METRICS
+    : HISTORY_METRICS.filter((m) => m.key !== 'animals');
   const out = [];
-  for (const m of HISTORY_METRICS) {
-    const last = samples.length > 0 ? samples[samples.length - 1][m.key] : 0;
+  for (const m of metrics) {
+    const last = samples.length > 0 ? pickValue(samples[samples.length - 1], m.key) : 0;
     let body = '';
     if (samples.length < 2) {
       body = `<text x="${w / 2}" y="${h / 2 + 4}" text-anchor="middle" class="hist-empty">—</text>`;
@@ -784,7 +814,7 @@ function updateHistoryGraphs() {
       let min = Infinity;
       let max = -Infinity;
       for (const s of samples) {
-        const v = s[m.key];
+        const v = pickValue(s, m.key);
         if (v < min) min = v;
         if (v > max) max = v;
       }
@@ -797,7 +827,7 @@ function updateHistoryGraphs() {
         const n = samples.length;
         const pts = samples.map((s, i) => {
           const x = pad + (i / (n - 1)) * (w - pad * 2);
-          const y = h - pad - ((s[m.key] - min) / range) * (h - pad * 2);
+          const y = h - pad - ((pickValue(s, m.key) - min) / range) * (h - pad * 2);
           return `${x.toFixed(1)},${y.toFixed(1)}`;
         }).join(' ');
         body = `<polyline points="${pts}" fill="none" stroke="${m.color}" stroke-width="1.4" />`;
@@ -1051,7 +1081,7 @@ if (startGenerateBtn) {
 const groupCountEl = $('group-count');
 const groupCountLabelEl = $('group-count-label');
 const groupListEl = $('group-list');
-const AUTONOMY_OPTIONS = ['balanced', 'farmer', 'farmer_breed', 'scout'];
+const AUTONOMY_OPTIONS = ['balanced', 'farmer', 'farmer_breed', 'scout', 'temperate', 'builder'];
 
 function readGroupSetup() {
   // Pull current values from the DOM into a setup array.
@@ -1222,7 +1252,9 @@ function structureHint(pos) {
   const tl = game.map.tiles[pos.y][pos.x];
   if (!tl.structure) return '';
   let s = `<br><strong>${t('structure.' + tl.structure)}</strong>`;
-  if (tl.structure === 'stockpile') {
+  // α28 D1: unify warehouse hover across all three tiers — show
+  // stored / cap and the per-item breakdown for stockpile_med / large too.
+  if (tl.structure === 'stockpile' || tl.structure === 'stockpile_med' || tl.structure === 'stockpile_large') {
     const sp = game.stockpileAt(pos.x, pos.y);
     if (sp) {
       s += ` · ${t('tip.stored', { n: game.stockpileFood(sp), cap: sp.cap || STOCKPILE_CAP })}`;
@@ -1231,6 +1263,12 @@ function structureHint(pos) {
       );
       if (parts.length) s += `<br>${parts.join(' · ')}`;
     }
+  } else if (tl.structure === 'hut' || tl.structure === 'hut_med' || tl.structure === 'hut_large') {
+    // α28 D2: every hut tier reports its bed-cap (1 / 4 / 8) so the
+    // player can read "Large hut · 8 beds" without poking at the config.
+    const hut = (game.huts || []).find((h) => h.x === pos.x && h.y === pos.y);
+    const cap = hut?.cap || 1;
+    s += ` · ${t('tip.beds', { n: cap })}`;
   } else if (tl.structure === 'hearth') {
     s += ` · ${t(game.hearthsLit ? 'tip.hearthLit' : 'tip.hearthUnlit')}`;
   }
@@ -1709,6 +1747,88 @@ bigPopupCloseBtn.addEventListener('click', closeBigPopup);
 // A click anywhere on the dimmed backdrop closes too.
 bigPopupEl.addEventListener('click', (ev) => {
   if (ev.target === bigPopupEl) closeBigPopup();
+});
+
+// --- α28-P2: pedigree overlay -------------------------------------------
+const pedigreeOverlayEl = $('pedigree-overlay');
+const pedigreeTitleEl = $('pedigree-title');
+const pedigreeBodyEl = $('pedigree-body');
+const pedigreeCloseBtn = $('pedigree-close');
+
+function openPedigree(cropId, groupId) {
+  const grp = game.groups?.[groupId];
+  const codex = grp?.codex?.[cropId];
+  const lineage = codex?.lineage || [];
+  const groupLabel = grp?.name || t('group.label', { letter: String.fromCharCode(65 + groupId) });
+  pedigreeTitleEl.textContent = t('pedigree.title', { crop: t('crop.' + cropId), group: groupLabel });
+  if (lineage.length === 0) {
+    pedigreeBodyEl.innerHTML = `<div class="pedigree-empty">${t('pedigree.empty')}</div>`;
+  } else {
+    // Render each entry as a generation row: parent A | × | child | ← | parent B
+    pedigreeBodyEl.innerHTML = lineage.map((entry, i) => {
+      const tag = `g${i}`;
+      const seasonStr = (entry.year != null && entry.season)
+        ? t('pedigree.season', { year: entry.year, season: t('season.' + entry.season) })
+        : '';
+      return (
+        `<div class="pedigree-gen">` +
+        `<div class="pedigree-cell">` +
+        `<div class="label">${t('pedigree.parents')}</div>` +
+        `<canvas data-pedigree="${tag}-pa" data-crop="${cropId}" width="56" height="56"></canvas>` +
+        `<div class="rank">${'★'.repeat(qualityRank(entry.parents[0]))}</div>` +
+        `</div>` +
+        `<div class="pedigree-glyph">×</div>` +
+        `<div class="pedigree-cell">` +
+        `<div class="label">${t('pedigree.child')} ${t('pedigree.gen', { n: i + 1 })}${entry.legendary ? ' ✨' : ''}</div>` +
+        `<canvas data-pedigree="${tag}-c" data-crop="${cropId}" width="72" height="72"></canvas>` +
+        `<div class="rank">${'★'.repeat(qualityRank(entry.child))}</div>` +
+        `<div class="pedigree-meta">${seasonStr}</div>` +
+        `</div>` +
+        `<div class="pedigree-glyph">×</div>` +
+        `<div class="pedigree-cell">` +
+        `<div class="label">${t('pedigree.parents')}</div>` +
+        `<canvas data-pedigree="${tag}-pb" data-crop="${cropId}" width="56" height="56"></canvas>` +
+        `<div class="rank">${'★'.repeat(qualityRank(entry.parents[1]))}</div>` +
+        `</div>` +
+        `</div>`
+      );
+    }).join('');
+    // Paint each canvas with the appropriate genome.
+    for (let i = 0; i < lineage.length; i++) {
+      const entry = lineage[i];
+      const tag = `g${i}`;
+      const draws = [
+        { sel: `[data-pedigree="${tag}-pa"]`, genome: entry.parents[0] },
+        { sel: `[data-pedigree="${tag}-c"]`, genome: entry.child },
+        { sel: `[data-pedigree="${tag}-pb"]`, genome: entry.parents[1] },
+      ];
+      for (const d of draws) {
+        const cv = pedigreeBodyEl.querySelector(d.sel);
+        if (cv) {
+          game.renderer.drawCropPreview(cv.getContext('2d'), cv.width, cv.height, cropId, d.genome);
+        }
+      }
+    }
+  }
+  pedigreeOverlayEl.hidden = false;
+}
+
+function closePedigree() {
+  pedigreeOverlayEl.hidden = true;
+}
+pedigreeCloseBtn.addEventListener('click', closePedigree);
+pedigreeOverlayEl.addEventListener('click', (ev) => {
+  if (ev.target === pedigreeOverlayEl) closePedigree();
+});
+// Codex link click → open pedigree. Event delegation on document so
+// re-rendered codex rows pick up the handler automatically.
+document.addEventListener('click', (ev) => {
+  const link = ev.target.closest('[data-pedigree-crop]');
+  if (!link) return;
+  const cropId = link.dataset.pedigreeCrop;
+  const groupId = Number(link.dataset.pedigreeGroup);
+  if (Number.isNaN(groupId)) return;
+  openPedigree(cropId, groupId);
 });
 
 // F4: pest popups fire only on the first strike per run; subsequent
