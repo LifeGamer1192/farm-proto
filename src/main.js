@@ -782,34 +782,66 @@ const HISTORY_METRICS = [
 // count hasn't changed.
 let lastHistoryRender = -1;
 let lastHistoryGroup = '__init__';
+
+// α28 followup Z2: polished sparkline — gradient fill under the line +
+// a horizontal grid + a single mouse-tracking tooltip shared by every
+// chart. Population in "All" view is rendered as a stacked area chart
+// instead of a single line so the per-colony contribution is visible.
+const HIST_W = 260;
+const HIST_H = 56;
+const HIST_PAD = 3;
+
+let histTooltipEl = null;
+function ensureHistTooltip() {
+  if (histTooltipEl) return histTooltipEl;
+  histTooltipEl = document.createElement('div');
+  histTooltipEl.id = 'hist-tooltip';
+  histTooltipEl.className = 'hist-tooltip';
+  histTooltipEl.style.cssText = 'position:fixed;pointer-events:none;z-index:50;background:#0c1610;border:1px solid #2a3f2b;padding:5px 7px;border-radius:4px;font-size:0.72rem;color:#dbe5d4;display:none;line-height:1.45;font-variant-numeric:tabular-nums;white-space:nowrap;';
+  document.body.appendChild(histTooltipEl);
+  return histTooltipEl;
+}
+
+function fmtSampleTime(sample) {
+  // Pre-α28 samples may lack year/season — fall back to clock seconds.
+  if (sample?.year != null && sample?.season) {
+    return t('pedigree.season', { year: sample.year, season: t('season.' + sample.season) });
+  }
+  return `t=${Math.round(sample?.t || 0)}s`;
+}
+
 function updateHistoryGraphs() {
   if (!historyGraphsEl) return;
-  // Skip the SVG build entirely while the panel is closed.
   if (historyPanelEl && !historyPanelEl.open) return;
   const samples = game.history?.samples || [];
   const sigGroup = selectedGroupId == null ? 'all' : `g${selectedGroupId}`;
   if (samples.length === lastHistoryRender && sigGroup === lastHistoryGroup) return;
   lastHistoryRender = samples.length;
   lastHistoryGroup = sigGroup;
-  const w = 220;
-  const h = 36;
-  const pad = 2;
-  // α28-R1: pick the right per-sample reader based on selectedGroupId.
+  ensureHistTooltip();
+
+  const w = HIST_W;
+  const h = HIST_H;
+  const pad = HIST_PAD;
+  // Pick the right per-sample reader for the current tab.
   const pickValue = (s, key) => {
     if (selectedGroupId == null) return s[key] || 0;
     return s.perGroup?.[selectedGroupId]?.[key] || 0;
   };
-  // α28-R2: animals are a map-wide entity, not owned by any colony.
-  // Hide that row entirely when a specific group tab is active.
+  // R2: animals are map-wide; hide on per-group tabs.
   const metrics = selectedGroupId == null
     ? HISTORY_METRICS
     : HISTORY_METRICS.filter((m) => m.key !== 'animals');
   const out = [];
   for (const m of metrics) {
     const last = samples.length > 0 ? pickValue(samples[samples.length - 1], m.key) : 0;
+    // Special case for "All view + population" — stacked area chart.
+    const stacked = selectedGroupId == null && m.key === 'population';
     let body = '';
     if (samples.length < 2) {
       body = `<text x="${w / 2}" y="${h / 2 + 4}" text-anchor="middle" class="hist-empty">—</text>`;
+    } else if (stacked) {
+      body = renderStackedPopulation(samples, w, h, pad);
     } else {
       let min = Infinity;
       let max = -Infinity;
@@ -818,30 +850,130 @@ function updateHistoryGraphs() {
         if (v < min) min = v;
         if (v > max) max = v;
       }
+      // Anchor the y-axis at 0 when the metric is non-negative; this
+      // makes "approaching zero" visually obvious instead of magnified.
+      if (min >= 0) min = 0;
       if (max === min) {
-        // Flat line in the middle — still shows the metric is being tracked.
         const y = h / 2;
-        body = `<line x1="${pad}" y1="${y}" x2="${w - pad}" y2="${y}" stroke="${m.color}" stroke-width="1.4" />`;
+        body = `<line x1="${pad}" y1="${y}" x2="${w - pad}" y2="${y}" stroke="${m.color}" stroke-width="1.6" />`;
       } else {
         const range = max - min;
         const n = samples.length;
-        const pts = samples.map((s, i) => {
+        const linePts = [];
+        const areaPts = [];
+        for (let i = 0; i < n; i++) {
+          const v = pickValue(samples[i], m.key);
           const x = pad + (i / (n - 1)) * (w - pad * 2);
-          const y = h - pad - ((pickValue(s, m.key) - min) / range) * (h - pad * 2);
-          return `${x.toFixed(1)},${y.toFixed(1)}`;
-        }).join(' ');
-        body = `<polyline points="${pts}" fill="none" stroke="${m.color}" stroke-width="1.4" />`;
+          const y = h - pad - ((v - min) / range) * (h - pad * 2);
+          linePts.push(`${x.toFixed(1)},${y.toFixed(1)}`);
+          areaPts.push(`${x.toFixed(1)},${y.toFixed(1)}`);
+        }
+        // Close the area polygon to the baseline.
+        areaPts.unshift(`${pad},${h - pad}`);
+        areaPts.push(`${w - pad},${h - pad}`);
+        const gradId = `grad-${m.key}`;
+        const grid =
+          `<line x1="${pad}" y1="${h - pad}" x2="${w - pad}" y2="${h - pad}" stroke="#2a3f2b" stroke-width="0.5" />` +
+          `<line x1="${pad}" y1="${h / 2}" x2="${w - pad}" y2="${h / 2}" stroke="#2a3f2b" stroke-width="0.3" stroke-dasharray="2 3" />`;
+        body =
+          `<defs><linearGradient id="${gradId}" x1="0" y1="0" x2="0" y2="1">` +
+          `<stop offset="0%" stop-color="${m.color}" stop-opacity="0.55"/>` +
+          `<stop offset="100%" stop-color="${m.color}" stop-opacity="0"/>` +
+          `</linearGradient></defs>` +
+          grid +
+          `<polygon points="${areaPts.join(' ')}" fill="url(#${gradId})" />` +
+          `<polyline points="${linePts.join(' ')}" fill="none" stroke="${m.color}" stroke-width="1.6" />`;
       }
     }
     out.push(
       `<div class="hist-row">` +
       `<span class="hist-label">${t(m.label)}</span>` +
-      `<svg class="hist-svg" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" width="${w}" height="${h}">${body}</svg>` +
+      `<svg class="hist-svg" data-metric="${m.key}" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" width="${w}" height="${h}">${body}</svg>` +
       `<span class="hist-value">${last}</span>` +
       `</div>`
     );
   }
   historyGraphsEl.innerHTML = out.join('');
+
+  // α28 followup Z2 hover tooltip — one move-listener that figures out
+  // which sample the cursor is closest to and displays metric details.
+  for (const svg of historyGraphsEl.querySelectorAll('svg.hist-svg')) {
+    svg.addEventListener('mousemove', (ev) => {
+      const rect = svg.getBoundingClientRect();
+      const fraction = (ev.clientX - rect.left) / rect.width;
+      const idx = Math.max(0, Math.min(samples.length - 1, Math.round(fraction * (samples.length - 1))));
+      const sample = samples[idx];
+      if (!sample) { histTooltipEl.style.display = 'none'; return; }
+      const key = svg.dataset.metric;
+      const value = selectedGroupId == null ? (sample[key] || 0) : (sample.perGroup?.[selectedGroupId]?.[key] || 0);
+      const label = t(HISTORY_METRICS.find((m) => m.key === key)?.label || key);
+      let html = `<div><strong>${fmtSampleTime(sample)}</strong></div><div>${label}: ${value}</div>`;
+      // For stacked-pop, also show per-group breakdown.
+      if (selectedGroupId == null && key === 'population' && sample.perGroup) {
+        const lines = (game.groups || []).map((grp) => {
+          const v = sample.perGroup[grp.id]?.population || 0;
+          if (v === 0) return null;
+          const letter = String.fromCharCode(65 + grp.id);
+          return `<div style="color:${grp.color?.fill || '#999'}">· ${letter}: ${v}</div>`;
+        }).filter(Boolean).join('');
+        if (lines) html += lines;
+      }
+      histTooltipEl.innerHTML = html;
+      histTooltipEl.style.display = 'block';
+      histTooltipEl.style.left = `${ev.clientX + 12}px`;
+      histTooltipEl.style.top = `${ev.clientY + 14}px`;
+    });
+    svg.addEventListener('mouseleave', () => { histTooltipEl.style.display = 'none'; });
+  }
+}
+
+/**
+ * Z2: stacked area chart for "All view → Population" — each colony
+ * contributes a colored band so the player can read both the total
+ * trend AND the per-colony share at a glance.
+ */
+function renderStackedPopulation(samples, w, h, pad) {
+  // Figure out the max total over the window so the y-axis is stable.
+  const groups = game.groups || [];
+  let max = 0;
+  for (const s of samples) {
+    let total = 0;
+    for (const grp of groups) total += s.perGroup?.[grp.id]?.population || 0;
+    if (total > max) max = total;
+  }
+  if (max <= 0) {
+    return `<line x1="${pad}" y1="${h - pad}" x2="${w - pad}" y2="${h - pad}" stroke="#2a3f2b" />`;
+  }
+  const n = samples.length;
+  // Build a stacked polygon per group from bottom up.
+  // For each sample, accumulate y for each group.
+  const layers = [];
+  // Bottom baseline for each x.
+  const baseline = new Array(n).fill(h - pad);
+  for (const grp of groups) {
+    const top = [];
+    for (let i = 0; i < n; i++) {
+      const v = samples[i].perGroup?.[grp.id]?.population || 0;
+      const fracHeight = (v / max) * (h - pad * 2);
+      top.push(baseline[i] - fracHeight);
+    }
+    // Polygon points: along `top` left→right, then back along `baseline` right→left.
+    const pts = [];
+    for (let i = 0; i < n; i++) {
+      const x = pad + (i / (n - 1)) * (w - pad * 2);
+      pts.push(`${x.toFixed(1)},${top[i].toFixed(1)}`);
+    }
+    for (let i = n - 1; i >= 0; i--) {
+      const x = pad + (i / (n - 1)) * (w - pad * 2);
+      pts.push(`${x.toFixed(1)},${baseline[i].toFixed(1)}`);
+    }
+    layers.push(`<polygon points="${pts.join(' ')}" fill="${grp.color?.fill || '#6fb1e0'}" fill-opacity="0.75" stroke="${grp.color?.stroke || '#1e4a7a'}" stroke-width="0.6" />`);
+    // Advance baseline for the next group on top.
+    for (let i = 0; i < n; i++) baseline[i] = top[i];
+  }
+  const grid =
+    `<line x1="${pad}" y1="${h - pad}" x2="${w - pad}" y2="${h - pad}" stroke="#2a3f2b" stroke-width="0.5" />`;
+  return grid + layers.join('');
 }
 
 // When the user opens / closes the panel, force a redraw so the chart
@@ -903,7 +1035,7 @@ function applyI18n() {
 
 function newMap(seed, biomeId, groupSetup) {
   game.newMap(seed, biomeId, groupSetup);
-  seedInput.value = String(game.seed);
+  if (seedInput) seedInput.value = String(game.seed);
   rebuildCropPicker();
   updateBiomePicker();
   updateGroupSetup();
@@ -1183,6 +1315,7 @@ if (biomePickerEl) {
 }
 
 function applySeed() {
+  if (!seedInput) { newMap(randomSeed()); return; }
   const raw = seedInput.value.trim();
   if (raw === '') {
     newMap(randomSeed());
@@ -1589,11 +1722,18 @@ langsEl.addEventListener('click', (ev) => {
   applyI18n();
 });
 
-$('regenerate').addEventListener('click', () => newMap(randomSeed()));
-$('apply-seed').addEventListener('click', applySeed);
-seedInput.addEventListener('keydown', (ev) => {
-  if (ev.key === 'Enter') applySeed();
-});
+// α28 followup Z1: Regenerate now reloads back to the start screen
+// (same flow as a browser refresh). The post-launch World panel no
+// longer carries biome / groups / seed inputs since mid-run setting
+// changes were flaky; the player picks them again on the start screen.
+$('regenerate').addEventListener('click', () => location.reload());
+// `apply-seed` and `seed` were removed in the World-panel simplification.
+// Skip the listeners if their elements are gone.
+const _applySeedBtn = document.getElementById('apply-seed');
+if (_applySeedBtn) _applySeedBtn.addEventListener('click', applySeed);
+if (seedInput) {
+  seedInput.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') applySeed(); });
+}
 $('center-colonist').addEventListener('click', () => game.centerOnColonist());
 $('clear-tasks').addEventListener('click', () => {
   game.clearTasks();
@@ -1718,6 +1858,16 @@ function groupLabel(gid) {
 // F2: shortened auto-close window — 5 s feels less interruptive while
 // staying long enough to skim the title + detail.
 const BIG_POPUP_AUTO_CLOSE_MS = 5000;
+let bigPopupHovered = false;
+function armBigPopupTimer() {
+  if (bigPopupTimer) clearTimeout(bigPopupTimer);
+  bigPopupTimer = setTimeout(() => {
+    // α28 followup Z6: if the player is hovering the popup right now,
+    // they're reading it — re-arm the timer instead of closing.
+    if (bigPopupHovered) { armBigPopupTimer(); return; }
+    closeBigPopup();
+  }, BIG_POPUP_AUTO_CLOSE_MS);
+}
 function showBigPopup(titleKey, bodyKey, params = {}, options = {}) {
   // F1: when the player has turned popups off, fall through silently.
   if (!popupsEnabled) return;
@@ -1733,8 +1883,8 @@ function showBigPopup(titleKey, bodyKey, params = {}, options = {}) {
     bigPopupDetailEl.textContent = t(bodyKey, params);
   }
   bigPopupEl.hidden = false;
-  if (bigPopupTimer) clearTimeout(bigPopupTimer);
-  bigPopupTimer = setTimeout(closeBigPopup, BIG_POPUP_AUTO_CLOSE_MS);
+  bigPopupHovered = false;
+  armBigPopupTimer();
 }
 function closeBigPopup() {
   bigPopupEl.hidden = true;
@@ -1748,6 +1898,17 @@ bigPopupCloseBtn.addEventListener('click', closeBigPopup);
 bigPopupEl.addEventListener('click', (ev) => {
   if (ev.target === bigPopupEl) closeBigPopup();
 });
+// α28 followup Z6: track hover so the auto-close defers while the
+// player is reading. mouseenter/leave on the box (not the dim
+// backdrop) so moving the cursor onto the card pauses the timer.
+const bigPopupBoxEl = bigPopupEl?.querySelector('.gameover-box');
+if (bigPopupBoxEl) {
+  bigPopupBoxEl.addEventListener('mouseenter', () => { bigPopupHovered = true; });
+  bigPopupBoxEl.addEventListener('mouseleave', () => {
+    bigPopupHovered = false;
+    armBigPopupTimer(); // restart the countdown when the player leaves
+  });
+}
 
 // --- α28-P2: pedigree overlay -------------------------------------------
 const pedigreeOverlayEl = $('pedigree-overlay');
@@ -1834,6 +1995,9 @@ document.addEventListener('click', (ev) => {
 // F4: pest popups fire only on the first strike per run; subsequent
 // strikes keep their log line but no longer interrupt the player.
 let pestPopupShown = false;
+// α28 followup Z5: track which colony groups have already had their
+// first-birth popup. Subsequent births in the same group log only.
+const birthPopupShown = new Set();
 
 /**
  * F3 / α26 polish: detailed mutation popup. Now renders:
@@ -2017,7 +2181,15 @@ setInterval(() => {
   if (baby) {
     const name = typeof baby === 'string' ? baby : baby.name;
     const gid = typeof baby === 'object' ? baby.groupId : null;
-    showBigPopup('popup.birth.title', 'popup.birth.body', { name, group: groupLabel(gid) });
+    // α28 followup Z5: birth popup fires only on the FIRST newborn per
+    // colony group. After that the activity log carries the news
+    // (still logged in eventSystem) but no more big-popup interrupts.
+    if (gid != null && !birthPopupShown.has(gid)) {
+      birthPopupShown.add(gid);
+      showBigPopup('popup.birth.title', 'popup.birth.body', { name, group: groupLabel(gid) });
+    } else if (gid == null) {
+      showBigPopup('popup.birth.title', 'popup.birth.body', { name, group: groupLabel(gid) });
+    }
   }
   const trader = game.consumeTraderEvent();
   if (trader) {

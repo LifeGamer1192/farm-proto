@@ -215,9 +215,11 @@
             <button id="pause-btn" type="button" class="pause-btn">Pause</button>
             <p class="reason-label" data-i18n="label.mapZoom">Map zoom</p>
             <div class="tools" id="zooms">
-              <button type="button" data-zoom="0" data-i18n="zoom.small">Small</button>
-              <button type="button" data-zoom="1" data-i18n="zoom.medium" class="active">Medium</button>
-              <button type="button" data-zoom="2" data-i18n="zoom.large">Large</button>
+              <button type="button" data-zoom="0" data-i18n="zoom.xxs">XXS</button>
+              <button type="button" data-zoom="1" data-i18n="zoom.xs">XS</button>
+              <button type="button" data-zoom="2" data-i18n="zoom.small">Small</button>
+              <button type="button" data-zoom="3" data-i18n="zoom.medium" class="active">Medium</button>
+              <button type="button" data-zoom="4" data-i18n="zoom.large">Large</button>
             </div>
           </details>
 
@@ -284,28 +286,11 @@
               <button type="button" data-lang="en" class="active">EN</button>
               <button type="button" data-lang="ja">日本語</button>
             </div>
-            <p class="reason-label" data-i18n="label.biome">Biome</p>
-            <div class="tools" id="biomes">
-              <button type="button" data-biome="temperate" class="active" data-i18n="biome.temperate">Temperate</button>
-              <button type="button" data-biome="arid" data-i18n="biome.arid">Arid</button>
-              <button type="button" data-biome="cold" data-i18n="biome.cold">Cold</button>
-              <button type="button" data-biome="wetlands" data-i18n="biome.wetlands">Wetlands</button>
-            </div>
-            <p class="reason-label" data-i18n="label.groups">Colony groups</p>
-            <label class="group-slider">
-              <span data-i18n="label.groupCount">Groups</span>
-              <input id="group-count" type="range" min="1" max="8" value="1">
-              <span id="group-count-label">1</span>
-            </label>
-            <div id="group-list" class="group-list"></div>
-            <button id="apply-groups" type="button" data-i18n="btn.applyGroups">
-              Apply group setup
-            </button>
-            <p class="reason-label" data-i18n="label.seed">Seed</p>
-            <div class="row">
-              <input id="seed" type="text" inputmode="numeric" autocomplete="off" />
-              <button id="apply-seed" type="button" data-i18n="btn.apply">Apply</button>
-            </div>
+            <!-- α28 followup: the post-launch World panel only exposes
+                 Language + Regenerate. Biome / Groups / Seed / Apply
+                 setup all live on the start screen now; trying to
+                 change them mid-run was unreliable, so the panel now
+                 simply reloads back to the start screen. -->
             <button id="regenerate" type="button" class="primary" data-i18n="btn.regenerate">
               Regenerate (random)
             </button>

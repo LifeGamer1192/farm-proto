@@ -11,12 +11,18 @@ export const CANVAS_H = 600;
 
 // Map zoom levels — the on-screen size of one tile, in pixels.
 // Smaller tiles show more of the map; larger tiles show less. Default: medium.
+// α28 followup Z4: two extra tiers below the original Small (15 px)
+// so the player can fit a much larger area on the screen — XXS at 7 px
+// per tile shows the full 100×100 map in one frame. Default stays on
+// Medium (now index 3 after the two prepended levels).
 export const ZOOM_LEVELS = [
+  { label: 'XXS', tile: 7 },
+  { label: 'XS', tile: 11 },
   { label: 'Small', tile: 15 },
   { label: 'Medium', tile: 20 },
   { label: 'Large', tile: 30 },
 ];
-export const DEFAULT_ZOOM = 1;
+export const DEFAULT_ZOOM = 3;
 
 // Game-speed multipliers applied to the simulation (not to camera panning).
 // Default is the second-slowest — normal, 1×.
@@ -50,9 +56,10 @@ export const DRAG_THRESHOLD = 6;
 export const WORK_DURATION = 0.7;
 
 // Fraction of land tiles that start with a wild (harvestable) plant.
-// Lowered in alpha 20 (was 0.05) — the colony has to actually hunt and
-// farm now rather than living off the easy early-game forage carpet.
-export const WILD_PLANT_CHANCE = 0.012;
+// α28 followup Z3: bumped 0.012 → 0.05 so a scout / forager colony has
+// real wild food to draw on instead of starving as soon as the local
+// boar herd wanders off.
+export const WILD_PLANT_CHANCE = 0.05;
 // Fraction of land tiles that start with a tree (chopped for wood, alpha 18).
 export const TREE_CHANCE = 0.08;
 // Chance a forage harvest also drops a wild-greens seed (alpha 20).
@@ -137,19 +144,29 @@ export const MOOD_ADAPT = 0.15; // how fast mood drifts toward its target
 
 // α27 raised this from 8 to 11 when bear / sheep / fowl joined the
 // roster, so every species still has a comfortable presence on the map.
-export const ANIMAL_COUNT = 11;
-// Mix of wild-animal species spawned at map start (alpha 20 / 27).
+// α28 followup Z3: roughly doubled to 22 — a scout colony was starving
+// the moment the nearby boar wandered off; a thicker animal population
+// gives them a fair shot at survival without obscuring the map.
+export const ANIMAL_COUNT = 22;
+// Mix of wild-animal species spawned at map start (alpha 20 / 27 / 28).
 // Totals should match ANIMAL_COUNT — first matches use up the budget
 // in order; spawnAnimals falls back to 'boar' for any shortfall.
 export const ANIMAL_SPAWN_MIX = [
-  { species: 'boar',   n: 1 },
-  { species: 'wolf',   n: 1 },
-  { species: 'bear',   n: 1 },
-  { species: 'deer',   n: 2 },
-  { species: 'rabbit', n: 2 },
-  { species: 'sheep',  n: 2 },
-  { species: 'fowl',   n: 2 },
+  { species: 'boar',   n: 2 },
+  { species: 'wolf',   n: 2 },
+  { species: 'bear',   n: 2 },
+  { species: 'deer',   n: 4 },
+  { species: 'rabbit', n: 4 },
+  { species: 'sheep',  n: 4 },
+  { species: 'fowl',   n: 4 },
 ];
+// α28 followup Z3: wild-animal restock once a year (at season change).
+// When the population drops below `ANIMAL_RESTOCK_THRESHOLD * ANIMAL_COUNT`
+// the event system seeds `ANIMAL_RESTOCK_AMOUNT` fresh animals using the
+// same spawn mix. Keeps long-running scout colonies from running the map
+// dry through hunting.
+export const ANIMAL_RESTOCK_THRESHOLD = 0.7;
+export const ANIMAL_RESTOCK_AMOUNT = 6;
 export const ANIMAL_SPEED = 1.6; // tiles per second (slow)
 export const ANIMAL_DAMAGE = 0.07; // colonist health lost per attack
 export const ANIMAL_ATTACK_INTERVAL = 9; // sim-seconds between an animal's attacks

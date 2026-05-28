@@ -73,6 +73,8 @@ const STRINGS = {
     'crop.potato': 'Potato',
     'crop.bean': 'Bean',
 
+    'zoom.xxs': 'XXS',
+    'zoom.xs': 'XS',
     'zoom.small': 'Small',
     'zoom.medium': 'Medium',
     'zoom.large': 'Large',
@@ -365,6 +367,7 @@ const STRINGS = {
     'pedigree.child': 'child',
     'pedigree.close': 'Close',
     'pedigree.season': 'Y{year} {season}',
+    'log.animalsReturn': 'Wild animals returned to the area (+{n})',
     'stat.bestSeed': 'Best seed',
     'out.weeded': 'cleared a dead crop',
     'out.noWeed': 'nothing to clear',
@@ -584,6 +587,8 @@ const STRINGS = {
     'crop.potato': 'じゃがいも',
     'crop.bean': '豆（まめ）',
 
+    'zoom.xxs': '極小',
+    'zoom.xs': '微小',
     'zoom.small': '小',
     'zoom.medium': '中',
     'zoom.large': '大',
@@ -875,6 +880,7 @@ const STRINGS = {
     'pedigree.child': '子株',
     'pedigree.close': '閉じる',
     'pedigree.season': '{year}年 {season}',
+    'log.animalsReturn': '野生動物が周辺に戻ってきた（+{n}）',
     'stat.bestSeed': '最良の種',
     'out.weeded': '枯死株を除草した',
     'out.noWeed': '撤去するものがない',

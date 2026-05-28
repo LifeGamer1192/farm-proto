@@ -17,11 +17,16 @@ import {
   TRADER_SEED_COUNT,
   STUMP_REGROW_TIME,
   VICTORY_YEAR,
+  ANIMAL_COUNT,
+  ANIMAL_SPAWN_MIX,
+  ANIMAL_RESTOCK_THRESHOLD,
+  ANIMAL_RESTOCK_AMOUNT,
 } from '../config.js';
 import { CROP_IDS } from '../crops.js';
 import { freshGenome } from '../genetics.js';
 import { PlantKind } from '../world.js';
 import { Colonist } from '../entities/colonist.js';
+import { Animal } from '../entities/animal.js';
 import { t } from '../i18n.js';
 import { pickBirthName, formatColonistName } from '../names/index.js';
 import {
@@ -45,6 +50,34 @@ export function onSeasonChange(game, season) {
   // their lowest-quality stock once per season change. The hook lives
   // on `game` so eventSystem doesn't depend on autonomy.js directly.
   if (game._runSelectiveBreedingCulls) game._runSelectiveBreedingCulls();
+  // α28 followup Z3: top up wild animals once per year (at the spring
+  // change). Without this a scout / forager colony eventually empties
+  // the map and starves. Restock only fires when the population has
+  // dropped below the threshold, so a healthy map isn't over-stuffed.
+  if (season === 'spring') maybeRestockAnimals(game);
+}
+
+function maybeRestockAnimals(game) {
+  const target = ANIMAL_COUNT * ANIMAL_RESTOCK_THRESHOLD;
+  if ((game.animals?.length || 0) >= target) return;
+  const tiles = game._randomLandTiles?.(ANIMAL_RESTOCK_AMOUNT) || [];
+  if (tiles.length === 0) return;
+  // Re-use the spawnAnimals helper indirectly: pull in a small mix and
+  // build Animal instances using the existing wiring.
+  const mix = game.biome?.animalSpawnMix || ANIMAL_SPAWN_MIX;
+  const specList = [];
+  for (const { species, n } of mix) for (let i = 0; i < n; i++) specList.push(species);
+  while (specList.length < ANIMAL_RESTOCK_AMOUNT) specList.push('boar');
+  const id0 = (game.animals?.length || 0) + 1;
+  for (let i = 0; i < tiles.length; i++) {
+    const a = new Animal(tiles[i].x, tiles[i].y, id0 + i, specList[i % specList.length]);
+    game.animals.push(a);
+  }
+  game._pushLog({
+    icon: '🦌',
+    text: t('log.animalsReturn', { n: tiles.length }),
+    cls: 'log-meal',
+  });
 }
 
 /**
