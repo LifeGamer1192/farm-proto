@@ -28,6 +28,7 @@ import {
   HUT_CAPACITY_BY_TYPE,
   BIRTH_FOOD_PER_HEAD,
   BUILD_COSTS,
+  SEED_VARIETY_TARGET,
 } from './config.js';
 import { registerScript } from './groups.js';
 import { t } from './i18n.js';
@@ -380,6 +381,18 @@ export function pickAutonomousTask(game, colonist) {
     if (!ownsCrop(crop)) continue;
     if (crop.withered && !game._tileClaimed(crop.x, crop.y) && reachable(crop.x, crop.y)) {
       return createTask(TaskType.WEED, crop.x, crop.y);
+    }
+  }
+  // C9: chase seed variety. When this colony holds fewer than
+  // SEED_VARIETY_TARGET distinct seed types, go forage a wild plant for
+  // new stock even if the pantry is full — wild harvests drop ancestor
+  // seeds, which is the only way a low-variety colony broadens its
+  // breeding base. Deliberately NOT gated by onHandFull (variety beats
+  // another bushel of food).
+  if (game.autoMode && game._seedVarietyFor(gid) < SEED_VARIETY_TARGET) {
+    const wild = game._nearestWildPlant(colonist, AUTO_SEARCH_RANGE);
+    if (wild && !game._tileClaimed(wild.x, wild.y) && reachable(wild.x, wild.y)) {
+      return createTask(TaskType.HARVEST, wild.x, wild.y);
     }
   }
   // 4b. Balanced-only emergency farming: when this colony has no food in

@@ -325,9 +325,20 @@ button.primary:hover {
   grid-template-columns: repeat(5, 1fr);
 }
 
-.tools.speed5 button {
-  padding: 5px 2px;
-  font-size: 0.8rem;
+/* C4/C5: speed (5) and zoom (5) button rows must each fit on a single
+   line. Force a 5-column grid, shrink the padding/font, and never wrap
+   a label inside its button. */
+.tools.speed5 button,
+#zooms button {
+  padding: 5px 1px;
+  font-size: 0.74rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+#zooms {
+  grid-template-columns: repeat(5, 1fr);
 }
 
 .tools button.active {
@@ -911,6 +922,20 @@ button.primary:hover {
   color: var(--muted);
   padding: 24px;
 }
+/* C6: prominent banner shown when the pedigree is for a wild species. */
+.pedigree-wild-banner {
+  margin: 0 auto 14px;
+  max-width: 720px;
+  text-align: center;
+  font-size: 0.92rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  color: #cde6b0;
+  background: linear-gradient(90deg, rgba(70,120,60,0.18), rgba(120,170,80,0.30), rgba(70,120,60,0.18));
+  border: 1px solid #4d7a3f;
+  border-radius: 6px;
+  padding: 8px 12px;
+}
 
 /* T5: small toggle row that flips a panel between "current numbers"
    and "stats graph" views. Sits between the disclosure summary and the
@@ -989,6 +1014,7 @@ button.primary:hover {
 }
 .group-row {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 6px;
   font-size: 0.78rem;
@@ -997,6 +1023,20 @@ button.primary:hover {
   border-radius: 4px;
   background: rgba(255, 255, 255, 0.02);
 }
+/* C2: seed slots always drop to their own line under the controls. */
+.group-row .group-seed-row { flex-basis: 100%; }
+/* C2: copy-Colony-A button. */
+.group-copy-a {
+  font-size: 0.72rem;
+  padding: 2px 8px;
+  border: 1px solid #3f6042;
+  border-radius: 4px;
+  background: rgba(120, 170, 80, 0.16);
+  color: #cde6b0;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.group-copy-a:hover { background: rgba(120, 170, 80, 0.30); }
 .group-chip {
   display: inline-block;
   width: 12px;
@@ -1444,6 +1484,11 @@ button.primary:hover {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.history-graphs .hist-chart {
+  position: relative;
+  width: 100%;
+  line-height: 0;
+}
 .history-graphs .hist-svg {
   width: 100%;
   height: 56px;
@@ -1451,6 +1496,22 @@ button.primary:hover {
   border-radius: 3px;
   cursor: crosshair;
 }
+/* C8: y-axis scale labels pinned to the chart's left edge. */
+.history-graphs .hist-axis-top,
+.history-graphs .hist-axis-bot {
+  position: absolute;
+  left: 2px;
+  font-size: 9px;
+  line-height: 1;
+  color: #9fb191;
+  background: rgba(8, 14, 10, 0.55);
+  padding: 0 2px;
+  border-radius: 2px;
+  pointer-events: none;
+  font-variant-numeric: tabular-nums;
+}
+.history-graphs .hist-axis-top { top: 2px; }
+.history-graphs .hist-axis-bot { bottom: 2px; }
 .history-graphs .hist-svg:hover {
   background: rgba(0, 0, 0, 0.28);
 }

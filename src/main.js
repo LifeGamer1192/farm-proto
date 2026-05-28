@@ -870,6 +870,16 @@ function fmtSampleTime(sample) {
   return `t=${Math.round(sample?.t || 0)}s`;
 }
 
+// C8: compact y-axis label — whole numbers, with a k suffix past 1000
+// so the scale tag stays narrow (e.g. 1.2k).
+function fmtAxis(v) {
+  if (v >= 1000) {
+    const k = v / 1000;
+    return (k >= 10 ? Math.round(k) : k.toFixed(1)) + 'k';
+  }
+  return String(Math.round(v));
+}
+
 function updateHistoryGraphs() {
   if (!historyGraphsEl) return;
   if (historyPanelEl && !historyPanelEl.open) return;
@@ -899,9 +909,19 @@ function updateHistoryGraphs() {
     // charts so each colony's contribution to the total is visible.
     const stacked = selectedGroupId == null && STACKED_KEYS.has(m.key);
     let body = '';
+    // C8: the y-axis top value, shown as a left-edge scale label so the
+    // chart's vertical scale is readable. 0 sits at the bottom.
+    let chartMax = 0;
     if (samples.length < 2) {
       body = `<text x="${w / 2}" y="${h / 2 + 4}" text-anchor="middle" class="hist-empty">—</text>`;
     } else if (stacked) {
+      let peak = 0;
+      for (const s of samples) {
+        let tot = 0;
+        for (const grp of (game.groups || [])) tot += s.perGroup?.[grp.id]?.[m.key] || 0;
+        if (tot > peak) peak = tot;
+      }
+      chartMax = peak;
       body = renderStacked(samples, w, h, pad, m.key);
     } else {
       let min = Infinity;
@@ -914,6 +934,7 @@ function updateHistoryGraphs() {
       // Anchor the y-axis at 0 when the metric is non-negative; this
       // makes "approaching zero" visually obvious instead of magnified.
       if (min >= 0) min = 0;
+      chartMax = max;
       if (max === min) {
         const y = h / 2;
         body = `<line x1="${pad}" y1="${y}" x2="${w - pad}" y2="${y}" stroke="${m.color}" stroke-width="1.6" />`;
@@ -946,10 +967,19 @@ function updateHistoryGraphs() {
           `<polyline points="${linePts.join(' ')}" fill="none" stroke="${m.color}" stroke-width="1.6" />`;
       }
     }
+    // C8: left-edge scale labels (top = max, bottom = 0). Rendered as
+    // absolutely-positioned HTML over the chart so they aren't squished
+    // by the SVG's preserveAspectRatio="none" horizontal stretch.
+    const scale = (samples.length >= 2 && chartMax > 0)
+      ? `<span class="hist-axis-top">${fmtAxis(chartMax)}</span><span class="hist-axis-bot">0</span>`
+      : '';
     out.push(
       `<div class="hist-row">` +
       `<span class="hist-label">${t(m.label)}</span>` +
+      `<div class="hist-chart">` +
       `<svg class="hist-svg" data-metric="${m.key}" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" width="${w}" height="${h}">${body}</svg>` +
+      scale +
+      `</div>` +
       `<span class="hist-value">${last}</span>` +
       `</div>`
     );
@@ -1095,6 +1125,10 @@ function applyI18n() {
     const cost = BUILD_COSTS[id] || 0;
     b.title = `${t('hint.structure.' + id)} ${t('hint.buildCost', { n: cost })}`;
   }
+  // C10/C3: biome buttons get their full description on hover too.
+  for (const b of document.querySelectorAll('#start-biomes button[data-biome]')) {
+    b.title = t('hint.biome.' + b.dataset.biome);
+  }
   showTip();
   document.documentElement.lang = getLang();
   refreshPanels();
@@ -1207,9 +1241,17 @@ function renderStartGroupRows(n) {
   startGroupListEl.innerHTML = setup.map((s, i) => {
     const color = GROUP_COLORS[i] || null;
     const chip = color ? `<span class="group-chip" style="background:${color.fill}"></span>` : '';
+    // C3: each option carries the script's full strategy blurb, and the
+    // select itself shows the currently-selected script's blurb on hover
+    // (updated live by the change handler in setupStartScriptTips).
     const scriptOpts = AUTONOMY_OPTIONS.map(
-      (id) => `<option value="${id}"${id === s.scriptId ? ' selected' : ''}>${t('script.' + id)}</option>`,
+      (id) => `<option value="${id}"${id === s.scriptId ? ' selected' : ''} title="${t('scriptDesc.' + id)}">${t('script.' + id)}</option>`,
     ).join('');
+    // C2: groups after A get a button that copies Colony A's entire row
+    // (script, colonists, wood, all four seed slots) onto this row.
+    const copyBtn = i > 0
+      ? `<button type="button" class="group-copy-a" title="${t('start.copyAHint')}">${t('start.copyA')}</button>`
+      : '';
     // Seed slot HTML — 4 dropdowns per group. Prefer the raw slot
     // selection (so "None"/"Random" survive a re-render); fall back to
     // the resolved initialSeeds for older state shapes.
@@ -1226,11 +1268,12 @@ function renderStartGroupRows(n) {
     return (
       `<div class="group-row" data-group="${i}">` +
       `${chip}<strong>${t('group.label', { letter: String.fromCharCode(65 + i) })}</strong> ` +
-      `<select class="group-script">${scriptOpts}</select>` +
+      `<select class="group-script" title="${t('scriptDesc.' + s.scriptId)}">${scriptOpts}</select>` +
       `<label class="group-colcount">${t('group.colonists')} ` +
       `<input class="group-colonists" type="number" min="1" max="20" value="${s.colonistCount}"></label>` +
       `<label class="group-colcount">${t('group.startingWood')} ` +
       `<input class="group-wood" type="number" min="0" max="999" value="${s.startingWood ?? 30}"></label>` +
+      copyBtn +
       `<div class="group-seed-row">` +
       `<span class="start-row-label" style="margin:0 4px 0 0">${t('group.initialSeeds')}</span>` +
       slots.join('') +
@@ -1240,8 +1283,57 @@ function renderStartGroupRows(n) {
   }).join('');
 }
 
+// C2/C3: wire up the start-screen group rows after each render —
+//  - the "Copy A" button copies Colony A's whole row onto the clicked row
+//  - the script <select> keeps its hover tooltip in sync with the pick
+let startGroupHandlersBound = false;
+function setupStartGroupHandlers() {
+  if (startGroupHandlersBound || !startGroupListEl) return;
+  startGroupHandlersBound = true;
+  startGroupListEl.addEventListener('change', (ev) => {
+    const sel = ev.target.closest('select.group-script');
+    if (!sel) return;
+    sel.title = t('scriptDesc.' + sel.value);
+  });
+  startGroupListEl.addEventListener('click', (ev) => {
+    const btn = ev.target.closest('button.group-copy-a');
+    if (!btn) return;
+    ev.preventDefault();
+    const rows = [...startGroupListEl.querySelectorAll('.group-row')];
+    const src = rows[0];
+    const dst = btn.closest('.group-row');
+    if (!src || !dst || src === dst) return;
+    copyGroupRow(src, dst);
+  });
+}
+
+// Copy every editable control value from one group row to another.
+function copyGroupRow(src, dst) {
+  const setVal = (selSrc, selDst) => {
+    const a = src.querySelector(selSrc);
+    const b = dst.querySelector(selDst);
+    if (a && b) { b.value = a.value; b.dispatchEvent(new Event('change', { bubbles: true })); }
+  };
+  setVal('select.group-script', 'select.group-script');
+  setVal('input.group-colonists', 'input.group-colonists');
+  setVal('input.group-wood', 'input.group-wood');
+  const srcSlots = [...src.querySelectorAll('.group-seed-slot')];
+  const dstSlots = [...dst.querySelectorAll('.group-seed-slot')];
+  srcSlots.forEach((slot, k) => {
+    const ds = dstSlots[k];
+    if (!ds) return;
+    const ssel = slot.querySelector('select');
+    const dsel = ds.querySelector('select');
+    const sinp = slot.querySelector('input');
+    const dinp = ds.querySelector('input');
+    if (ssel && dsel) { dsel.value = ssel.value; dsel.dispatchEvent(new Event('change', { bubbles: true })); }
+    if (sinp && dinp) { dinp.value = sinp.value; }
+  });
+}
+
 function showStartScreen() {
   if (!startScreenEl) return;
+  setupStartGroupHandlers();
   if (startGroupCountEl) {
     const n = parseInt(startGroupCountEl.value, 10) || 1;
     if (startGroupCountLabelEl) startGroupCountLabelEl.textContent = n;
@@ -2095,16 +2187,22 @@ function openPedigree(cropId, groupId) {
   const codex = grp?.codex?.[cropId];
   const lineage = codex?.lineage || [];
   const groupLabel = grp?.name || t('group.label', { letter: String.fromCharCode(65 + groupId) });
-  pedigreeTitleEl.textContent = t('pedigree.title', { crop: t('crop.' + cropId), group: groupLabel });
+  // C6: when the crop itself is a wild species, badge the whole pedigree
+  // prominently — these are foraged ancestors, not cultivated varieties.
+  const isWild = WILD_SET.has(cropId);
+  pedigreeTitleEl.textContent = (isWild ? '🌿 ' : '') + t('pedigree.title', { crop: t('crop.' + cropId), group: groupLabel });
+  const wildBanner = isWild
+    ? `<div class="pedigree-wild-banner">🌿 ${t('pedigree.wild')}</div>`
+    : '';
   if (lineage.length === 0) {
-    pedigreeBodyEl.innerHTML = `<div class="pedigree-empty">${t('pedigree.empty')}</div>`;
+    pedigreeBodyEl.innerHTML = wildBanner + `<div class="pedigree-empty">${t('pedigree.empty')}</div>`;
   } else {
     // A1: render the lineage as a vertical descent tree. Within each
     // generation the two parents merge (connector lines) into the child;
     // between generations a downward arrow shows the breeding programme
     // advancing to the next record, so the multi-generation (grandparent)
     // chain is readable top-to-bottom.
-    pedigreeBodyEl.innerHTML = lineage.map((entry, i) => {
+    const lineageHtml = lineage.map((entry, i) => {
       const tag = `g${i}`;
       const seasonStr = (entry.year != null && entry.season)
         ? t('pedigree.season', { year: entry.year, season: t('season.' + entry.season) })
@@ -2133,6 +2231,7 @@ function openPedigree(cropId, groupId) {
         : '';
       return genBlock + descend;
     }).join('');
+    pedigreeBodyEl.innerHTML = wildBanner + lineageHtml;
     // Paint each canvas with the appropriate genome.
     for (let i = 0; i < lineage.length; i++) {
       const entry = lineage[i];

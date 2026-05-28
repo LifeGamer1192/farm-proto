@@ -1274,6 +1274,22 @@ export class Game {
   }
 
   /**
+   * C9: how many distinct seed varieties a group holds (crop ids with at
+   * least one seed). Drives the "go forage wild plants for variety even
+   * when the pantry is full" rule in the autonomy.
+   */
+  _seedVarietyFor(gid) {
+    const g = gid == null ? null : this.groups?.[gid];
+    const seeds = g ? g.seeds : this.seeds;
+    if (!seeds) return 0;
+    let n = 0;
+    for (const id of Object.keys(seeds)) {
+      if ((seeds[id]?.length || 0) > 0) n++;
+    }
+    return n;
+  }
+
+  /**
    * H2: per-group "hearths lit". A hearth burns own-group wood; with no
    * own-group hearth or no own-group wood there's nothing to cook on,
    * regardless of what the rest of the colony has.
@@ -1342,18 +1358,23 @@ export class Game {
     if (colonist.sleep !== undefined && colonist.sleep < SLEEP_DEFICIT_THRESHOLD) {
       const hut = this._nearestHut(colonist);
       if (hut) return createTask(TaskType.SLEEP, hut.x, hut.y);
-      // No usable hut — escalate. Try BUILD a hut variant the colony
-      // can afford, on land near the colonist's own-group anchor.
-      for (const variant of ['hut', 'hut_med', 'hut_large']) {
-        if (!this._canAffordBuild(variant)) continue;
-        const spot = this._findFreeLandNear(colonist) || this._findFreeLandColonyWide?.(colonist);
-        if (spot) {
-          return createTask(TaskType.BUILD, spot.x, spot.y, { structure: variant });
+      // C7: with Auto-work off, a hutless colonist just sleeps where they
+      // stand rather than building/chopping — the escalation below is
+      // "work" and a fully order-driven colony shouldn't do it unbidden.
+      if (this.autoMode) {
+        // No usable hut — escalate. Try BUILD a hut variant the colony
+        // can afford, on land near the colonist's own-group anchor.
+        for (const variant of ['hut', 'hut_med', 'hut_large']) {
+          if (!this._canAffordBuild(variant)) continue;
+          const spot = this._findFreeLandNear(colonist) || this._findFreeLandColonyWide?.(colonist);
+          if (spot) {
+            return createTask(TaskType.BUILD, spot.x, spot.y, { structure: variant });
+          }
         }
+        // Can't afford any hut variant — chop a tree to unblock the cost.
+        const tree = this._nearestTree(colonist, 12);
+        if (tree) return createTask(TaskType.HARVEST, tree.x, tree.y);
       }
-      // Can't afford any hut variant — chop a tree to unblock the cost.
-      const tree = this._nearestTree(colonist, 12);
-      if (tree) return createTask(TaskType.HARVEST, tree.x, tree.y);
       return createTask(TaskType.SLEEP, colonist.tileX, colonist.tileY);
     }
     // A content colonist works; a miserable one may slack off instead.
@@ -1379,11 +1400,16 @@ export class Game {
         });
         return task;
       }
-      // No orders queued — find useful work to do unprompted.
-      const auto = this._autonomousTask(colonist);
-      if (auto) {
-        this.lastAssignReason = t('reason.auto', { task: t('task.' + auto.type) });
-        return auto;
+      // C7: autonomous chores only run while Auto-work is ON. With it
+      // off the colony is fully order-driven — colonists still satisfy
+      // needs (the eat / injured-rest / sleep branches above always
+      // fire) but otherwise just idle and stroll, waiting for orders.
+      if (this.autoMode) {
+        const auto = this._autonomousTask(colonist);
+        if (auto) {
+          this.lastAssignReason = t('reason.auto', { task: t('task.' + auto.type) });
+          return auto;
+        }
       }
     }
     return this._idleTask(colonist);

@@ -103,6 +103,76 @@ export const BIOMES = {
     daylightOffset: 0,
     mapTint: 'rgba(80,160,180,0.10)',
   },
+  // C10: extreme cold — brutally cold, barely survivable. Sparse life,
+  // little forage, a deep negative temperature offset that keeps crops
+  // from growing for most of the year.
+  frost: {
+    id: 'frost',
+    waterLevel: 0.44,
+    minWaterFraction: 0.10,
+    moistureRange: 7,
+    fertilityBonus: -0.18,
+    treeChance: 0.05,
+    wildPlantChance: 0.004,
+    animalSpawnMix: [
+      { species: 'boar',   n: 0 },
+      { species: 'wolf',   n: 3 },
+      { species: 'bear',   n: 2 },
+      { species: 'deer',   n: 1 },
+      { species: 'rabbit', n: 1 },
+      { species: 'sheep',  n: 0 },
+      { species: 'fowl',   n: 0 },
+    ],
+    tempOffset: -24,
+    daylightOffset: -0.12,
+    mapTint: 'rgba(200,225,245,0.20)',
+  },
+  // C10: desert — roughly 70% parched badland, 30% scrub grassland and
+  // the odd oasis. Very hot and dry; survivable but punishing.
+  desert: {
+    id: 'desert',
+    waterLevel: 0.28,
+    minWaterFraction: 0.06,
+    moistureRange: 2,
+    fertilityBonus: -0.14,
+    treeChance: 0.012,
+    wildPlantChance: 0.006,
+    animalSpawnMix: [
+      { species: 'boar',   n: 0 },
+      { species: 'wolf',   n: 1 },
+      { species: 'bear',   n: 0 },
+      { species: 'deer',   n: 1 },
+      { species: 'rabbit', n: 2 },
+      { species: 'sheep',  n: 2 },
+      { species: 'fowl',   n: 3 },
+    ],
+    tempOffset: +16,
+    daylightOffset: +0.15,
+    mapTint: 'rgba(225,180,90,0.16)',
+  },
+  // C10: forest — dense woodland. Trees everywhere (wood is never a
+  // worry), rich undergrowth of wild plants, temperate climate.
+  forest: {
+    id: 'forest',
+    waterLevel: 0.42,
+    minWaterFraction: 0.10,
+    moistureRange: 8,
+    fertilityBonus: +0.04,
+    treeChance: 0.38,
+    wildPlantChance: 0.03,
+    animalSpawnMix: [
+      { species: 'boar',   n: 2 },
+      { species: 'wolf',   n: 2 },
+      { species: 'bear',   n: 2 },
+      { species: 'deer',   n: 3 },
+      { species: 'rabbit', n: 2 },
+      { species: 'sheep',  n: 1 },
+      { species: 'fowl',   n: 1 },
+    ],
+    tempOffset: -1,
+    daylightOffset: -0.03,
+    mapTint: 'rgba(60,120,60,0.14)',
+  },
 };
 
 /** Ordered list — used by the picker UI. */

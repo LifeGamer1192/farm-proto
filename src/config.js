@@ -208,6 +208,10 @@ export const MEAL_TARGET = 6; // colonists auto-cook until this many meals are s
 
 export const SEED_START_COUNT = 12; // seeds per crop the colony begins with
 export const SEEDS_PER_HARVEST = 2; // seeds bred from one ripe crop
+// C9: when a colony holds fewer than this many distinct seed varieties,
+// idle colonists go forage wild plants for new seed stock even if the
+// pantry is full — variety matters more than another bushel of food.
+export const SEED_VARIETY_TARGET = 4;
 
 // --- stockpiles & hauling (alpha 11) -------------------------------------
 
