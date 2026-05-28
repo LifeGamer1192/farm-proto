@@ -832,6 +832,11 @@ const HISTORY_METRICS = [
   { key: 'animals',     label: 'hist.animals',     color: '#7ea670' },
 ];
 
+// Metrics shown as per-colony stacked area charts in the "All" view.
+// These have a per-group breakdown in each sample, so the total trend
+// AND each colony's share are both readable at a glance.
+const STACKED_KEYS = new Set(['population', 'totalFood']);
+
 // α28-R1/R2: which group's history is the panel showing, and an
 // invalidate token so a tab switch forces a redraw even when sample
 // count hasn't changed.
@@ -890,13 +895,14 @@ function updateHistoryGraphs() {
   const out = [];
   for (const m of metrics) {
     const last = samples.length > 0 ? pickValue(samples[samples.length - 1], m.key) : 0;
-    // Special case for "All view + population" — stacked area chart.
-    const stacked = selectedGroupId == null && m.key === 'population';
+    // In "All" view, population and food are drawn as stacked area
+    // charts so each colony's contribution to the total is visible.
+    const stacked = selectedGroupId == null && STACKED_KEYS.has(m.key);
     let body = '';
     if (samples.length < 2) {
       body = `<text x="${w / 2}" y="${h / 2 + 4}" text-anchor="middle" class="hist-empty">—</text>`;
     } else if (stacked) {
-      body = renderStackedPopulation(samples, w, h, pad);
+      body = renderStacked(samples, w, h, pad, m.key);
     } else {
       let min = Infinity;
       let max = -Infinity;
@@ -963,10 +969,11 @@ function updateHistoryGraphs() {
       const value = selectedGroupId == null ? (sample[key] || 0) : (sample.perGroup?.[selectedGroupId]?.[key] || 0);
       const label = t(HISTORY_METRICS.find((m) => m.key === key)?.label || key);
       let html = `<div><strong>${fmtSampleTime(sample)}</strong></div><div>${label}: ${value}</div>`;
-      // For stacked-pop, also show per-group breakdown.
-      if (selectedGroupId == null && key === 'population' && sample.perGroup) {
+      // For stacked metrics (population / food), also show the per-group
+      // breakdown so the band the cursor is over can be read directly.
+      if (selectedGroupId == null && STACKED_KEYS.has(key) && sample.perGroup) {
         const lines = (game.groups || []).map((grp) => {
-          const v = sample.perGroup[grp.id]?.population || 0;
+          const v = sample.perGroup[grp.id]?.[key] || 0;
           if (v === 0) return null;
           const letter = String.fromCharCode(65 + grp.id);
           return `<div style="color:${grp.color?.fill || '#999'}">· ${letter}: ${v}</div>`;
@@ -983,17 +990,18 @@ function updateHistoryGraphs() {
 }
 
 /**
- * Z2: stacked area chart for "All view → Population" — each colony
- * contributes a colored band so the player can read both the total
- * trend AND the per-colony share at a glance.
+ * Z2 / AA: stacked area chart for "All view" metrics that carry a
+ * per-colony breakdown (population, food). Each colony contributes a
+ * colored band so the player can read both the total trend AND the
+ * per-colony share at a glance.
  */
-function renderStackedPopulation(samples, w, h, pad) {
+function renderStacked(samples, w, h, pad, key) {
   // Figure out the max total over the window so the y-axis is stable.
   const groups = game.groups || [];
   let max = 0;
   for (const s of samples) {
     let total = 0;
-    for (const grp of groups) total += s.perGroup?.[grp.id]?.population || 0;
+    for (const grp of groups) total += s.perGroup?.[grp.id]?.[key] || 0;
     if (total > max) max = total;
   }
   if (max <= 0) {
@@ -1008,7 +1016,7 @@ function renderStackedPopulation(samples, w, h, pad) {
   for (const grp of groups) {
     const top = [];
     for (let i = 0; i < n; i++) {
-      const v = samples[i].perGroup?.[grp.id]?.population || 0;
+      const v = samples[i].perGroup?.[grp.id]?.[key] || 0;
       const fracHeight = (v / max) * (h - pad * 2);
       top.push(baseline[i] - fracHeight);
     }
