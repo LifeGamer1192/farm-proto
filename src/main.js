@@ -1065,10 +1065,13 @@ function applyI18n() {
   // AA7: simple-mode button gets a tooltip explaining what gets hidden.
   const simpleBtn = document.querySelector('button[data-log-mode="simple"]');
   if (simpleBtn) simpleBtn.title = t('hint.logSimple');
-  // AA2: language switch changes every translated cell, so the codex
-  // HTML cache must be invalidated or the new strings won't paint.
+  // AA2: language switch changes every translated cell, so the codex /
+  // tabs / history-graph caches must be invalidated or the new strings
+  // won't paint until the next sample / next group switch.
   lastCodexHtml = null;
   lastTabsHtml = null;
+  lastHistoryRender = -1;
+  lastLogMode = null; // force log rebuild so translated outcome text refreshes
   // Hover hints on the tool / crop / structure buttons.
   for (const b of toolsEl.querySelectorAll('button[data-tool]')) {
     b.title = t('hint.task.' + b.dataset.tool);
