@@ -48,7 +48,7 @@ import { genomeQuality } from './genetics.js';
 // `opts.utilThreshold` lets a script (e.g. selective-breeding farmer)
 // build sooner / later by passing a different fill ratio.
 
-const WAREHOUSE_HARD_CAP = 40;
+const WAREHOUSE_HARD_CAP = Infinity; // no colony-wide cap on warehouse count
 // Diagnostic log: emitted at most once per (groupId, reason) per minute
 // so the activity log doesn't flood with "no land for warehouse".
 const _warnedAt = new Map();

@@ -216,8 +216,8 @@ export const SEED_VARIETY_TARGET = 4;
 // --- stockpiles & hauling (alpha 11) -------------------------------------
 
 export const STOCKPILE_CAP = 25; // food units one stockpile tile can hold
-export const ON_HAND_CAP = 30; // above this, colonists haul on-hand food to a stockpile
-export const ON_HAND_LOW = 12; // below this, colonists fetch food back from a stockpile
+export const ON_HAND_CAP = 4; // above this, colonists haul on-hand food to a stockpile
+export const ON_HAND_LOW = 2; // below this, colonists fetch food back from a stockpile (must stay under ON_HAND_CAP)
 export const HAUL_BATCH = 8; // food units moved per store / fetch task
 export const HAUL_DURATION = 1.2; // work phase (sim-seconds) to store or fetch
 
@@ -226,7 +226,7 @@ export const HAUL_DURATION = 1.2; // work phase (sim-seconds) to store or fetch
 export const AUTO_SEARCH_RANGE = 12; // tile radius an idle colonist scans for auto work
 export const FENCE_TRIGGER_RANGE = 10; // build a fence when a wild animal is this close to any colonist
 export const FENCE_AUTO_CAP = 20; // never auto-place more fence tiles than this colony-wide
-export const FENCE_PLAN_LENGTH = 5; // tiles in one auto-planned wall row
+export const FENCE_PLAN_LENGTH = 10; // tiles in one auto-planned wall row
 export const FENCE_REPLAN_COOLDOWN = 25; // seconds before the colony can plan another wall
 
 // --- wood / trees (alpha 18) ---------------------------------------------
@@ -286,10 +286,9 @@ export const BIRTH_FOOD_PER_HEAD = 8;
 // Probability of a new colonist joining at a season change when the
 // conditions are met.
 export const BIRTH_CHANCE = 0.35;
-// Hard cap on the colony's population (the prototype was built around
-// four colonists; the renderer and overlap math keep working past that,
-// but this keeps the experience tractable).
-export const POPULATION_CAP = 100;
+// Population is uncapped (Infinity). The prototype was built around four
+// colonists; the renderer and overlap math keep working past that.
+export const POPULATION_CAP = Infinity;
 
 // Winter trader: always arrives once per winter, drops a small gift of
 // wood and a few seed packets to help the colony through.

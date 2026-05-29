@@ -187,9 +187,9 @@ export function canAffordBuild(game, structure) {
 
 /**
  * Whether to auto-build another warehouse. Always wants at least one;
- * builds more if existing ones are nearly full, up to a hard cap.
+ * builds more if existing ones are nearly full. No colony-wide count cap.
  */
-const AUTO_WAREHOUSE_CAP = 40;
+const AUTO_WAREHOUSE_CAP = Infinity;
 export function wantsAutoWarehouse(game) {
   const total = game.stockpiles.length + pendingBuilds(game, 'stockpile');
   if (total >= AUTO_WAREHOUSE_CAP) return false;
