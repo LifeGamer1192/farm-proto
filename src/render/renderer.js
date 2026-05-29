@@ -1516,7 +1516,6 @@ export class Renderer {
 
     // Perpendicular (sideways) unit vector for placing limbs / feet.
     const px = -fy;
-    const py = fx;
 
     ctx.fillStyle = 'rgba(0,0,0,0.28)';
     ctx.beginPath();
@@ -1533,31 +1532,34 @@ export class Renderer {
       ctx.setLineDash([]);
     }
 
-    // α29: an adorable little character — a round body in the group's
-    // colour, stubby feet & arms, and a big friendly head with two eyes,
-    // rosy cheeks and a small smile facing the way it walks.
+    // α29 followup: a Sanrio-style mascot — a big round head on a small,
+    // round body, with stubby feet & arms, two simple wide-set eyes, rosy
+    // cheeks and a tiny mouth. The face is billboarded so it stays cute and
+    // natural whether the colonist walks down, left, right or away.
     const skin = '#f7d6a0';
     const skinShade = '#e0b87e';
 
-    // Feet — two stubby ovals poking out below, set across the facing dir.
+    // Feet — two stubby ovals peeking out below the little body.
     ctx.fillStyle = bodyDark;
     for (const s of [-1, 1]) {
       ctx.beginPath();
       ctx.ellipse(
-        cx + fx * r * 0.18 + px * s * r * 0.34,
-        cy + fy * r * 0.18 + r * 0.78,
-        r * 0.22, r * 0.16, 0, 0, Math.PI * 2,
+        cx + fx * r * 0.16 + px * s * r * 0.3,
+        cy + fy * r * 0.12 + r * 0.92,
+        r * 0.2, r * 0.14, 0, 0, Math.PI * 2,
       );
       ctx.fill();
     }
 
-    // Body — a rounded, slightly tall torso with a soft highlight.
-    const bodyR = r * 0.92;
-    const grad = ctx.createRadialGradient(cx - r * 0.32, cy - r * 0.1, r * 0.2, cx, cy + r * 0.1, bodyR * 1.2);
+    // Body — a small, round chibi torso so the head reads big & cute
+    // (Sanrio proportions: head ≈ body).
+    const bodyR = r * 0.74;
+    const bodyCY = cy + r * 0.34;
+    const grad = ctx.createRadialGradient(cx - r * 0.26, bodyCY - r * 0.18, r * 0.15, cx, bodyCY, bodyR * 1.25);
     grad.addColorStop(0, bodyLight);
     grad.addColorStop(1, bodyDark);
     ctx.beginPath();
-    ctx.ellipse(cx, cy + r * 0.14, bodyR, r, 0, 0, Math.PI * 2);
+    ctx.ellipse(cx, bodyCY, bodyR, r * 0.74, 0, 0, Math.PI * 2);
     ctx.fillStyle = grad;
     ctx.fill();
     ctx.lineWidth = 1.5;
@@ -1568,17 +1570,18 @@ export class Renderer {
     ctx.fillStyle = bodyLight;
     for (const s of [-1, 1]) {
       ctx.beginPath();
-      ctx.arc(cx + px * s * bodyR * 0.92, cy + r * 0.18, r * 0.2, 0, Math.PI * 2);
+      ctx.arc(cx + px * s * bodyR * 0.95, bodyCY - r * 0.02, r * 0.18, 0, Math.PI * 2);
       ctx.fill();
       ctx.lineWidth = 1.1;
       ctx.strokeStyle = outline;
       ctx.stroke();
     }
 
-    // Head — large and round, offset slightly up & toward the facing dir.
-    const hr = r * 0.66;
-    const hx = cx + fx * r * 0.22;
-    const hy = cy - r * 0.62 + fy * r * 0.1;
+    // Head — a big round Sanrio-style head sitting high on the body and
+    // leaning slightly toward the way the colonist walks.
+    const hr = r * 0.92;
+    const hx = cx + fx * r * 0.14;
+    const hy = cy - r * 0.5 + Math.max(0, fy) * r * 0.05;
     const hgrad = ctx.createRadialGradient(hx - hr * 0.3, hy - hr * 0.35, hr * 0.15, hx, hy, hr);
     hgrad.addColorStop(0, skin);
     hgrad.addColorStop(1, skinShade);
@@ -1590,61 +1593,74 @@ export class Renderer {
     ctx.strokeStyle = outline;
     ctx.stroke();
 
-    // Hair — a soft cap in the group's dark colour over the top of the head.
-    ctx.beginPath();
-    ctx.arc(hx, hy, hr * 1.02, Math.PI * 1.08, Math.PI * 1.92);
-    ctx.lineTo(hx + Math.cos(-Math.PI * 0.08) * hr, hy + Math.sin(-Math.PI * 0.08) * hr);
-    ctx.arc(hx, hy - hr * 0.12, hr * 0.96, Math.PI * 1.92, Math.PI * 1.08, true);
-    ctx.closePath();
-    ctx.fillStyle = bodyDark;
-    ctx.fill();
-
-    // Face — two eyes, rosy cheeks and a small smile, offset by facing so
-    // the colonist "looks" the way it moves.
-    const faceX = hx + fx * hr * 0.18;
-    const faceY = hy + fy * hr * 0.22 + hr * 0.12;
-    const eyeDX = px * hr * 0.38;
-    const eyeDY = py * hr * 0.38;
-    // D1: big round eyes — ~2× the old size in each dimension — with a
-    // white sclera, dark pupil and a catch-light for an extra-cute look.
-    const eyeR = hr * 0.3;
-    for (const s of [-1, 1]) {
-      const ex = faceX + eyeDX * s;
-      const ey = faceY - hr * 0.04 + eyeDY * s * 0;
-      // white of the eye
+    // Facing — show the face when looking toward the viewer (downward or to
+    // the side); show the back of the head when walking away (upward), so the
+    // eyes never sit on the back of the skull.
+    const facingAway = fy < -0.4;
+    if (facingAway) {
       ctx.beginPath();
-      ctx.ellipse(ex, ey, eyeR * 0.92, eyeR, 0, 0, Math.PI * 2);
-      ctx.fillStyle = '#ffffff';
+      ctx.arc(hx, hy, hr, 0, Math.PI * 2);
+      ctx.fillStyle = bodyDark;
       ctx.fill();
-      ctx.lineWidth = Math.max(0.5, hr * 0.05);
-      ctx.strokeStyle = 'rgba(60,40,20,0.55)';
+      ctx.lineWidth = 1.4;
+      ctx.strokeStyle = outline;
       ctx.stroke();
-      // pupil, nudged toward the facing direction
       ctx.beginPath();
-      ctx.arc(ex + fx * eyeR * 0.28, ey + fy * eyeR * 0.28, eyeR * 0.6, 0, Math.PI * 2);
-      ctx.fillStyle = '#241809';
+      ctx.arc(hx, hy - hr * 0.28, hr * 0.5, Math.PI, 0);
+      ctx.fillStyle = 'rgba(255,255,255,0.08)';
       ctx.fill();
-      // catch-light
+    } else {
+      // Hair — a soft cap in the group's dark colour over the top of the head.
       ctx.beginPath();
-      ctx.arc(ex + fx * eyeR * 0.28 - eyeR * 0.22, ey + fy * eyeR * 0.28 - eyeR * 0.28, eyeR * 0.22, 0, Math.PI * 2);
-      ctx.fillStyle = 'rgba(255,255,255,0.92)';
+      ctx.arc(hx, hy, hr * 1.02, Math.PI * 1.06, Math.PI * 1.94);
+      ctx.lineTo(hx + Math.cos(-Math.PI * 0.06) * hr, hy + Math.sin(-Math.PI * 0.06) * hr);
+      ctx.arc(hx, hy - hr * 0.1, hr * 0.95, Math.PI * 1.94, Math.PI * 1.06, true);
+      ctx.closePath();
+      ctx.fillStyle = bodyDark;
       ctx.fill();
+
+      // Face — Sanrio balance: two simple, wide-set dark eyes low on the big
+      // head, rosy cheeks and a tiny mouth. The eyes are billboarded (always a
+      // horizontal pair) and the whole face slides toward the facing
+      // direction, so the colonist looks natural in every walk direction.
+      // Walking sideways shrinks the trailing eye for a gentle 3/4 turn.
+      const turn = Math.max(-1, Math.min(1, fx));
+      const faceX = hx + turn * hr * 0.16;
+      const faceY = hy + hr * 0.2 + Math.max(0, fy) * hr * 0.12;
+      const eyeSpace = hr * 0.44 * (1 - Math.abs(turn) * 0.2);
+      const eyeR = hr * 0.18;
+      for (const s of [-1, 1]) {
+        const lead = turn === 0 ? true : Math.sign(turn) === s;
+        const sc = lead ? 1 : 0.72;
+        const ex = faceX + eyeSpace * s;
+        const ey = faceY;
+        // a solid dark "bean" eye — the iconic simple Sanrio eye
+        ctx.beginPath();
+        ctx.ellipse(ex, ey, eyeR * sc, eyeR * 1.4 * sc, 0, 0, Math.PI * 2);
+        ctx.fillStyle = '#33240f';
+        ctx.fill();
+        // a tiny catch-light keeps the eye glossy and alive
+        ctx.beginPath();
+        ctx.arc(ex - eyeR * 0.22, ey - eyeR * 0.55, eyeR * 0.3 * sc, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(255,255,255,0.92)';
+        ctx.fill();
+      }
+      // rosy cheeks just outside & below the eyes
+      ctx.fillStyle = 'rgba(244,150,150,0.5)';
+      for (const s of [-1, 1]) {
+        ctx.beginPath();
+        ctx.arc(faceX + eyeSpace * 1.55 * s, faceY + hr * 0.14, hr * 0.12, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      // tiny mouth — a small soft curve centred under the eyes
+      ctx.strokeStyle = 'rgba(120,70,50,0.85)';
+      ctx.lineWidth = Math.max(1, hr * 0.07);
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.arc(faceX, faceY + hr * 0.18, hr * 0.1, Math.PI * 0.12, Math.PI * 0.88);
+      ctx.stroke();
+      ctx.lineCap = 'butt';
     }
-    // rosy cheeks
-    ctx.fillStyle = 'rgba(232,120,120,0.5)';
-    for (const s of [-1, 1]) {
-      ctx.beginPath();
-      ctx.arc(faceX + eyeDX * s * 1.5, faceY + hr * 0.24, hr * 0.13, 0, Math.PI * 2);
-      ctx.fill();
-    }
-    // smile
-    ctx.strokeStyle = '#7a3b22';
-    ctx.lineWidth = Math.max(1, hr * 0.1);
-    ctx.lineCap = 'round';
-    ctx.beginPath();
-    ctx.arc(faceX, faceY + hr * 0.08, hr * 0.26, Math.PI * 0.15, Math.PI * 0.85);
-    ctx.stroke();
-    ctx.lineCap = 'butt';
 
     if (colonist.workProgress > 0) {
       const start = -Math.PI / 2;
