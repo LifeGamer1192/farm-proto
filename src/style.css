@@ -227,10 +227,10 @@ summary.label::-webkit-details-marker {
 }
 
 summary.label::before {
-  content: '▸';
+  content: '▶';
   display: inline-block;
-  margin-right: 5px;
-  font-size: 0.7em;
+  margin-right: 6px;
+  font-size: 0.82em;
   color: var(--accent);
   transition: transform 0.12s ease;
 }
@@ -376,21 +376,35 @@ button.primary:hover {
   color: var(--muted);
   cursor: pointer;
   user-select: none;
+  -webkit-user-select: none;
   letter-spacing: 0.04em;
+  list-style: none;
+}
+/* D2: give sub-groups the same ▶ expand affordance as the main panels. */
+.sub-group > .sub-label::-webkit-details-marker { display: none; }
+.sub-group > .sub-label::before {
+  content: '▶';
+  display: inline-block;
+  margin-right: 5px;
+  font-size: 0.72em;
+  color: var(--accent);
+  transition: transform 0.12s ease;
 }
 .sub-group[open] > .sub-label {
   margin-bottom: 4px;
   color: var(--text);
 }
+.sub-group[open] > .sub-label::before { transform: rotate(90deg); }
 /* Mini icon prefix on a stat row label. */
 .stat-ico {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 1.25em;
-  margin-right: 0.3em;
+  width: 1.7em;
+  margin-right: 0.35em;
   text-align: center;
-  vertical-align: -0.16em;
+  vertical-align: -0.3em;
+  color: var(--accent);
 }
 
 /* Condition icon next to a colonist's name (alpha 21). */
@@ -401,22 +415,24 @@ button.primary:hover {
   cursor: help;
 }
 
-/* α29: inline custom mini-icons (replace the old emoji glyphs). Sized
-   to the surrounding text; colours baked into each SVG. */
+/* α29 (D7): inline custom line-art mini-icons. Monochrome (currentColor)
+   so they read as a UI icon set, not colour emoji. ~1.5× the original
+   size for legibility. */
 .mi {
-  width: 1.05em;
-  height: 1.05em;
+  width: 1.5em;
+  height: 1.5em;
   display: inline-block;
-  vertical-align: -0.16em;
+  vertical-align: -0.32em;
   flex: 0 0 auto;
 }
 .log-ico {
   display: inline-flex;
   align-items: center;
-  width: 1.2em;
+  width: 1.7em;
   justify-content: center;
 }
-.log-ico .mi { width: 1.1em; height: 1.1em; vertical-align: -0.16em; }
+.log-ico .mi { width: 1.5em; height: 1.5em; vertical-align: -0.32em; }
+.cond-ico .mi { width: 1.35em; height: 1.35em; }
 
 /* Start screen overlay (alpha 25). T1 (α27 followup): switched the
    container from flex-center to plain block + scroll so a tall card
@@ -941,6 +957,41 @@ button.primary:hover {
   text-align: center;
   color: var(--muted);
   padding: 24px;
+}
+/* D4: note shown under a single current-strain node when a crop has not
+   bred a new record yet. */
+.pedigree-note {
+  max-width: 640px;
+  margin: 12px auto 0;
+  text-align: center;
+  font-size: 0.8rem;
+  color: var(--muted);
+  line-height: 1.5;
+}
+/* D3: per-group autonomy-script row in the Colony panel. */
+.group-script-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px 10px;
+  margin: 4px 0 6px;
+}
+.gscript {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.74rem;
+  color: var(--muted);
+}
+.gscript .group-chip { width: 10px; height: 10px; }
+.gscript-letter { font-weight: 600; color: var(--text); }
+.gscript-sel {
+  font-size: 0.74rem;
+  padding: 1px 3px;
+  background: var(--panel-2);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  max-width: 11em;
 }
 /* C6: prominent banner shown when the pedigree is for a wild species. */
 .pedigree-wild-banner {

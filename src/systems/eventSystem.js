@@ -22,8 +22,7 @@ import {
   ANIMAL_RESTOCK_THRESHOLD,
   ANIMAL_RESTOCK_AMOUNT,
 } from '../config.js';
-import { CROP_IDS } from '../crops.js';
-import { freshGenome } from '../genetics.js';
+import { CROP_IDS, seedGenome } from '../crops.js';
 import { PlantKind } from '../world.js';
 import { Colonist } from '../entities/colonist.js';
 import { Animal } from '../entities/animal.js';
@@ -216,7 +215,7 @@ export function runWinterTrader(game) {
     const id = pool.splice(idx, 1)[0];
     for (let i = 0; i < TRADER_SEED_COUNT; i++) {
       // addSeed handles colony aggregate + per-group pool + codex.
-      if (game._addSeed) game._addSeed(id, freshGenome(), recipientId);
+      if (game._addSeed) game._addSeed(id, seedGenome(id), recipientId);
     }
     gifts.push(id);
   }

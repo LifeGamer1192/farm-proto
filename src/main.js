@@ -390,11 +390,14 @@ function updateColonistsPanel() {
 }
 
 function updateTaskPanel() {
+  // D8: the Tasks panel was removed. Guard so the leftover calls are no-ops
+  // when the elements are absent.
+  if (!taskStatsEl) return;
   renderRows(taskStatsEl, [
     [t('stat.queued'), game.taskQueue.length],
     [t('stat.busy'), `${game.busyColonists} / ${game.colonists.length}`],
   ]);
-  taskReasonEl.textContent = game.lastAssignReason;
+  if (taskReasonEl) taskReasonEl.textContent = game.lastAssignReason;
 }
 
 // Mini icons that give each stat row a quick visual handle (icon names
@@ -494,6 +497,50 @@ function updateColonyStats() {
   if (panelModes['food-breakdown'] === 'graph') {
     renderPanelGraph('food-breakdown', 'food', 'totalFood', '#e6b25a');
   }
+}
+
+// D3: per-group autonomy-script row in the Colony panel. Shows which
+// script each visible colony is running and lets the player switch it
+// live (the autonomy reads grp.scriptId fresh each tick, so a change
+// takes effect immediately). Cached so an open <select> isn't blown
+// away by the 150 ms poll while the player is choosing.
+const groupScriptRowEl = $('group-script-row');
+let lastGroupScriptSig = null;
+function updateGroupScriptRow() {
+  if (!groupScriptRowEl) return;
+  const groups = game.groups || [];
+  const visible = selectedGroupId == null ? groups : groups.filter((g) => g.id === selectedGroupId);
+  const sig = `${selectedGroupId}|${visible.map((g) => g.id + ':' + g.scriptId).join(',')}`;
+  if (sig === lastGroupScriptSig) return;
+  lastGroupScriptSig = sig;
+  if (visible.length === 0) { groupScriptRowEl.innerHTML = ''; return; }
+  groupScriptRowEl.innerHTML = visible.map((g) => {
+    const letter = String.fromCharCode(65 + g.id);
+    const opts = AUTONOMY_OPTIONS.map(
+      (id) => `<option value="${id}"${id === g.scriptId ? ' selected' : ''}>${t('script.' + id)}</option>`,
+    ).join('');
+    return (
+      `<label class="gscript" title="${t('scriptDesc.' + g.scriptId)}">` +
+      `<span class="group-chip" style="background:${g.color.fill}"></span>` +
+      `<span class="gscript-letter">${letter}</span>` +
+      `<select class="gscript-sel" data-group="${g.id}">${opts}</select>` +
+      `</label>`
+    );
+  }).join('');
+}
+function setupGroupScriptHandler() {
+  if (!groupScriptRowEl || groupScriptRowEl.dataset.bound) return;
+  groupScriptRowEl.dataset.bound = '1';
+  groupScriptRowEl.addEventListener('change', (ev) => {
+    const sel = ev.target.closest('select.gscript-sel');
+    if (!sel) return;
+    const gid = Number(sel.dataset.group);
+    const grp = game.groups?.[gid];
+    if (!grp) return;
+    grp.scriptId = sel.value;
+    sel.closest('.gscript')?.setAttribute('title', t('scriptDesc.' + grp.scriptId));
+    lastGroupScriptSig = null; // force a refresh so labels stay in sync
+  });
 }
 
 // Show the crop / structure picker only for the tool that uses it.
@@ -680,13 +727,11 @@ function codexRowHtml(id, c, groupId) {
       `<i style="width:${cur}%"></i><u style="left:${org}%"></u></span>`
     );
   }).join('');
-  // α28-P2: each crop row gets a "Pedigree" link. Disabled (no click)
-  // when the lineage is empty (= original strain only).
-  const lineageCount = (c.lineage?.length) || 0;
-  const pedigreeAttr = lineageCount > 0
-    ? ` data-pedigree-crop="${id}" data-pedigree-group="${groupId}"`
-    : '';
-  const pedigreeClass = lineageCount > 0 ? 'codex-pedigree' : 'codex-pedigree disabled';
+  // α28-P2 / D4: each crop row gets a clickable "Pedigree" link. Even a
+  // crop that has never bred a new record opens — the overlay then shows
+  // just the current strain (single "current generation" node).
+  const pedigreeAttr = ` data-pedigree-crop="${id}" data-pedigree-group="${groupId}"`;
+  const pedigreeClass = 'codex-pedigree';
   return (
     `<div class="codex-row">` +
     `<canvas class="codex-preview" data-crop="${id}" data-best="1" width="48" height="48"></canvas>` +
@@ -1086,6 +1131,8 @@ function refreshPanels() {
   updateMapStats();
   updateColonistsPanel();
   updateTaskPanel();
+  setupGroupScriptHandler();
+  updateGroupScriptRow();
   updateColonyStats();
   updateSeedPanel();
   updateCropButtons();
@@ -1112,6 +1159,7 @@ function applyI18n() {
   lastTabsHtml = null;
   lastHistoryRender = -1;
   lastLogMode = null; // force log rebuild so translated outcome text refreshes
+  lastGroupScriptSig = null; // re-render the per-group script row in the new language
   // Hover hints on the tool / crop / structure buttons.
   for (const b of toolsEl.querySelectorAll('button[data-tool]')) {
     b.title = t('hint.task.' + b.dataset.tool);
@@ -1953,11 +2001,16 @@ if (logModeRowEl) {
   });
 }
 
-// α28 followup Z1: Regenerate now reloads back to the start screen
-// (same flow as a browser refresh). The post-launch World panel no
-// longer carries biome / groups / seed inputs since mid-run setting
-// changes were flaky; the player picks them again on the start screen.
-$('regenerate').addEventListener('click', () => location.reload());
+// α28 followup Z1 / D10: Regenerate reloads back to the start screen
+// (same flow as a browser refresh), but first asks for confirmation so a
+// stray click doesn't abandon the current run.
+const confirmRegenEl = $('confirm-regen');
+$('regenerate').addEventListener('click', () => { if (confirmRegenEl) confirmRegenEl.hidden = false; });
+$('confirm-regen-cancel')?.addEventListener('click', () => { if (confirmRegenEl) confirmRegenEl.hidden = true; });
+$('confirm-regen-ok')?.addEventListener('click', () => location.reload());
+confirmRegenEl?.addEventListener('click', (ev) => {
+  if (ev.target === confirmRegenEl) confirmRegenEl.hidden = true;
+});
 // `apply-seed` and `seed` were removed in the World-panel simplification.
 // Skip the listeners if their elements are gone.
 const _applySeedBtn = document.getElementById('apply-seed');
@@ -1966,7 +2019,8 @@ if (seedInput) {
   seedInput.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') applySeed(); });
 }
 $('center-colonist').addEventListener('click', () => game.centerOnColonist());
-$('clear-tasks').addEventListener('click', () => {
+// D8: the Clear-queue button lived in the removed Tasks panel; guard it.
+$('clear-tasks')?.addEventListener('click', () => {
   game.clearTasks();
   updateTaskPanel();
 });
@@ -2197,8 +2251,26 @@ function openPedigree(cropId, groupId) {
   const wildBanner = isWild
     ? `<div class="pedigree-wild-banner">${icon('herb')} ${t('pedigree.wild')}</div>`
     : '';
+  const curGenome = codex?.best;
   if (lineage.length === 0) {
-    pedigreeBodyEl.innerHTML = wildBanner + `<div class="pedigree-empty">${t('pedigree.empty')}</div>`;
+    // D4: a crop that has never bred a new record still opens — show the
+    // current strain as a single "current generation" node (no parents,
+    // no descent chain) plus a note that no evolution has happened yet.
+    if (curGenome) {
+      const curQ = Math.round(genomeQuality(curGenome) * 100);
+      pedigreeBodyEl.innerHTML = wildBanner +
+        `<div class="pedigree-gen">` +
+        `<div class="pedigree-gen-head">${t('pedigree.current')}` +
+        `<span class="ped-gen-q">Q ${curQ}%</span></div>` +
+        `<div class="ped-child-row">` +
+        _pedigreeCellHtml(cropId, 'cur-c', 'child', curGenome, t('pedigree.current')) +
+        `</div></div>` +
+        `<div class="pedigree-note">${t('pedigree.noEvolve')}</div>`;
+      const cv = pedigreeBodyEl.querySelector('[data-pedigree="cur-c"]');
+      if (cv) game.renderer.drawCropPreview(cv.getContext('2d'), cv.width, cv.height, cropId, curGenome);
+    } else {
+      pedigreeBodyEl.innerHTML = wildBanner + `<div class="pedigree-empty">${t('pedigree.empty')}</div>`;
+    }
   } else {
     // A1: render the lineage as a vertical descent tree. Within each
     // generation the two parents merge (connector lines) into the child;
@@ -2433,6 +2505,8 @@ showStartScreen();
 setInterval(() => {
   updateColonistsPanel();
   updateTaskPanel();
+  setupGroupScriptHandler();
+  updateGroupScriptRow();
   updateColonyStats();
   updateSeedPanel();
   updateCropButtons();

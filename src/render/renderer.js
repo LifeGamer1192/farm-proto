@@ -1603,20 +1603,32 @@ export class Renderer {
     // the colonist "looks" the way it moves.
     const faceX = hx + fx * hr * 0.18;
     const faceY = hy + fy * hr * 0.22 + hr * 0.12;
-    const eyeDX = px * hr * 0.34;
-    const eyeDY = py * hr * 0.34;
-    // eyes
-    ctx.fillStyle = '#2a1c0c';
+    const eyeDX = px * hr * 0.38;
+    const eyeDY = py * hr * 0.38;
+    // D1: big round eyes — ~2× the old size in each dimension — with a
+    // white sclera, dark pupil and a catch-light for an extra-cute look.
+    const eyeR = hr * 0.3;
     for (const s of [-1, 1]) {
+      const ex = faceX + eyeDX * s;
+      const ey = faceY - hr * 0.04 + eyeDY * s * 0;
+      // white of the eye
       ctx.beginPath();
-      ctx.arc(faceX + eyeDX * s, faceY - hr * 0.05, hr * 0.15, 0, Math.PI * 2);
+      ctx.ellipse(ex, ey, eyeR * 0.92, eyeR, 0, 0, Math.PI * 2);
+      ctx.fillStyle = '#ffffff';
       ctx.fill();
-      // tiny catch-light
-      ctx.fillStyle = 'rgba(255,255,255,0.85)';
+      ctx.lineWidth = Math.max(0.5, hr * 0.05);
+      ctx.strokeStyle = 'rgba(60,40,20,0.55)';
+      ctx.stroke();
+      // pupil, nudged toward the facing direction
       ctx.beginPath();
-      ctx.arc(faceX + eyeDX * s - hr * 0.05, faceY - hr * 0.1, hr * 0.05, 0, Math.PI * 2);
+      ctx.arc(ex + fx * eyeR * 0.28, ey + fy * eyeR * 0.28, eyeR * 0.6, 0, Math.PI * 2);
+      ctx.fillStyle = '#241809';
       ctx.fill();
-      ctx.fillStyle = '#2a1c0c';
+      // catch-light
+      ctx.beginPath();
+      ctx.arc(ex + fx * eyeR * 0.28 - eyeR * 0.22, ey + fy * eyeR * 0.28 - eyeR * 0.28, eyeR * 0.22, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(255,255,255,0.92)';
+      ctx.fill();
     }
     // rosy cheeks
     ctx.fillStyle = 'rgba(232,120,120,0.5)';

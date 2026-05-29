@@ -61,6 +61,47 @@ export function freshGenome(rand = Math.random) {
   return g;
 }
 
+/**
+ * α29 (D6): a starting genome whose QUALITY genes cluster around a
+ * per-crop `bias` (a map of {hardiness,yield,vigor,cold} centres in
+ * 0..1), so different crops begin with meaningfully different strengths.
+ * Visual genes still spread wide so appearance varies from the first
+ * sowing. `qSpread` is the ± random jitter around each centre.
+ */
+export function biasedGenome(bias = {}, qSpread = 0.16, rand = Math.random) {
+  const g = {};
+  for (const id of GENE_IDS) {
+    if (VISUAL_GENES.includes(id)) {
+      g[id] = [0.08 + rand() * 0.84, 0.08 + rand() * 0.84];
+    } else {
+      const c = bias[id] != null ? bias[id] : 0.45;
+      const allele = () => clamp01(c + (rand() * 2 - 1) * qSpread);
+      g[id] = [allele(), allele()];
+    }
+  }
+  return g;
+}
+
+/**
+ * α29 (D5): a wild-ancestor genome — deliberately feeble. Quality genes
+ * sit far below a cultivated strain (≈half), so a foraged wild variety
+ * is clearly worse than a starter seed and only becomes useful after
+ * many generations of selective breeding.
+ */
+export function wildGenome(rand = Math.random) {
+  const g = {};
+  for (const id of GENE_IDS) {
+    if (VISUAL_GENES.includes(id)) {
+      g[id] = [0.08 + rand() * 0.84, 0.08 + rand() * 0.84];
+    } else {
+      // centre ~0.18, tight spread → phenotype ≈0.15-0.24, roughly half
+      // of a starter strain's ~0.45.
+      g[id] = [clamp01(0.15 + rand() * 0.12), clamp01(0.15 + rand() * 0.12)];
+    }
+  }
+  return g;
+}
+
 /** Expressed value (phenotype, 0..1) of one gene — the dominance blend. */
 export function phenotype(genome, id) {
   const a = genome[id][0];

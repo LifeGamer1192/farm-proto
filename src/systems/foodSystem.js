@@ -8,7 +8,7 @@
 // method names on Game as thin shims (autonomy.js and tests rely on them).
 
 import { STARTING_WOOD, EAT_RETRY, MEAL_MOOD_BONUS, SEEDS_AFTER_EATING_CHANCE } from '../config.js';
-import { CROP_IDS, getCrop } from '../crops.js';
+import { CROP_IDS, getCrop, seedGenome } from '../crops.js';
 import { DISH_IDS, getRecipe, isDish, pickBestAffordable, averageInputQuality } from '../recipes.js';
 import { freshGenome } from '../genetics.js';
 import { t } from '../i18n.js';
@@ -69,7 +69,7 @@ function maybeDropSeedAfterEating(game, foodId, groupId) {
   const crop = getCrop(foodId);
   if (!crop || !crop.seedsAfterEating) return;
   if (Math.random() >= SEEDS_AFTER_EATING_CHANCE) return;
-  game._addSeed(foodId, freshGenome(), groupId);
+  game._addSeed(foodId, seedGenome(foodId), groupId);
 }
 
 /** Multi-nutrient profile for an item (always returns the 4 keys). */
@@ -301,108 +301,116 @@ function moodFromEating(itemId, quality) {
   return baseNut * 0.04 * qMul;
 }
 
+// α29 (D11): how much hunger one unit of `item` clears. A cooked dish is
+// absorbed far better than a raw ingredient, so a single cooked meal
+// roughly fills a colonist (満腹〜8分目), while raw food clears only a
+// fraction — a colonist must eat 2-3 raw items to get full. Driven by the
+// item's own nutrition value so a rich crop satisfies more than a thin one.
+function satietyOf(item, cooked) {
+  const nut = nutritionOf(item);
+  if (cooked) return Math.max(0.85, Math.min(1.2, 0.85 + nut * 0.5));
+  return Math.max(0.25, Math.min(0.6, 0.20 + nut * 0.48));
+}
+
 /**
- * Feed a colonist (called when an EAT task ends). Priority:
- *  1. cooked meal / dish on hand (big mood lift, quality scales it)
- *  2. raw edible food on hand
- *  3. anything edible from a nearby stockpile (own group's first)
- *  4. nothing — colonist goes hungry, missed-meal counter ticks
- *
- * The food is deducted from whichever group actually owned it, so the
- * per-group display reflects reality even when one colony eats out of
- * another colony's pantry (L2).
- *
- * Inedible-raw items (raw meat, raw legumes, raw almond, raw grains)
- * are skipped at every step; the colonist will starve sooner rather
- * than chew uncooked beans.
+ * Feed a colonist (called when an EAT task ends). α29: a colonist now
+ * eats repeatedly within one sitting until full (hunger ≤ 0) or food
+ * runs out, capped at MAX_MEAL_ITEMS. Cooked food clears hunger fast
+ * (≈1 item), raw ingredients clear only a fraction (≈2-3 items). Each
+ * unit is sourced in priority order:
+ *   1. cooked meal / dish on hand (own group first)
+ *   2. raw edible food on hand
+ *   3. anything edible from a nearby stockpile (own group's first)
+ * Inedible-raw items (raw meat / legumes / almond / grains) are skipped.
+ * Food is deducted from whichever allowed group actually owns it (L2).
  */
+const MAX_MEAL_ITEMS = 4;
 export function feed(game, colonist) {
   colonist.eatCooldown = EAT_RETRY;
   const name = colonist.name;
   const groupId = colonist.groupId;
   const grp = game.groups?.[groupId];
-  const bumpEaten = () => {
-    game.meals.eaten += 1;
-    if (grp) grp.meals.eaten += 1;
-  };
-  const bumpMissed = () => {
-    game.meals.missed += 1;
-    if (grp) grp.meals.missed += 1;
-  };
-  // N4: a colonist may only eat from groups they're allowed to take
-  // food from — same group always, foreign groups only when the
-  // canUseFrom flag for that owner is on. With every flag off (the
-  // default), this collapses to "own group only".
+  // N4: only groups the eater may take food from (own group always; a
+  // foreign group only when its canUseFrom flag is on).
   const allowedGroups = (game.groups || []).filter((g) => game._canUseFrom?.(groupId, g.id) ?? (g.id === groupId));
   const allowedHas = (id) => allowedGroups.some((g) => (g.storage?.[id] || 0) > 0);
-  // Cooked meal / dish — prefer items the eater's own group has, then
-  // fall back to whichever allowed group has stock.
-  const cookedIds = ['meal', ...DISH_IDS].filter((id) => allowedHas(id));
-  if (cookedIds.length > 0) {
-    const ownStore = grp?.storage;
-    cookedIds.sort((a, b) => {
-      const own = (ownStore?.[b] || 0) - (ownStore?.[a] || 0);
-      if (own !== 0) return own;
-      return (game.storage.quality?.[b] || 0.5) - (game.storage.quality?.[a] || 0.5);
-    });
-    const pick = cookedIds[0];
-    const quality = game.storage.quality?.[pick] || 0.5;
-    storageSub(game, groupId, pick, 1);
-    colonist.hunger = 0;
-    colonist.mood = Math.min(1, colonist.mood + moodFromEating(pick, quality));
-    bumpEaten();
-    game._pushLog({ icon: 'meal', text: t('log.ate', { name }), cls: 'log-meal', groupId });
-    return;
-  }
-  // Raw on-hand — same allowed-group filter. largestEdibleRaw normally
-  // walks game.storage, but we want only items the eater is permitted
-  // to claim, so build a synthetic store of "allowed" item counts.
-  const allowedRawStore = {};
-  for (const id of FOOD_TYPES) {
-    let n = 0;
-    for (const g of allowedGroups) n += g.storage?.[id] || 0;
-    allowedRawStore[id] = n;
-  }
-  const onHand = largestEdibleRaw(allowedRawStore, FOOD_TYPES);
-  if (onHand) {
-    const quality = game.storage.quality?.[onHand] || 0.5;
-    storageSub(game, groupId, onHand, 1);
-    colonist.hunger = 0;
-    colonist.mood = Math.min(1, colonist.mood + moodFromEating(onHand, quality));
-    bumpEaten();
-    maybeDropSeedAfterEating(game, onHand, groupId);
-    game._pushLog({ icon: 'fork', text: t('log.ate', { name }), cls: 'log-meal', groupId });
-    return;
-  }
-  // Fall back to stockpiles — prefer own-group piles, then any others
-  // the share matrix permits.
-  const allowedPiles = game.stockpiles.filter((sp) => game._canUseFrom?.(groupId, sp.ownerId) ?? (sp.ownerId === groupId));
-  // Stable ordering: own first, others after.
-  allowedPiles.sort((a, b) => (a.ownerId === groupId ? -1 : 0) - (b.ownerId === groupId ? -1 : 0));
-  for (const sp of allowedPiles) {
-    let pick = null;
-    for (const id of ['meal', ...DISH_IDS]) {
-      if ((sp.items[id] || 0) > 0) { pick = id; break; }
-    }
-    if (!pick) {
-      pick = largestEdibleRaw(sp.items, STOCKPILE_ITEMS);
-    }
-    if (pick) {
-      sp.items[pick] -= 1;
-      colonist.hunger = 0;
-      colonist.mood = Math.min(1, colonist.mood + moodFromEating(pick, 0.5));
-      bumpEaten();
-      maybeDropSeedAfterEating(game, pick, groupId);
-      game._pushLog({
-        icon: pick === 'meal' || isDish(pick) ? 'meal' : 'fork',
-        text: t('log.ate', { name }),
-        cls: 'log-meal',
-        groupId,
+
+  // Take ONE best-available edible unit; returns {item, cooked, quality}
+  // or null when nothing edible is in reach.
+  const takeOne = () => {
+    // 1. cooked meal / dish on hand — own group's stock first, then best quality.
+    const cookedIds = ['meal', ...DISH_IDS].filter(allowedHas);
+    if (cookedIds.length > 0) {
+      const ownStore = grp?.storage;
+      cookedIds.sort((a, b) => {
+        const own = (ownStore?.[b] || 0) - (ownStore?.[a] || 0);
+        if (own !== 0) return own;
+        return (game.storage.quality?.[b] || 0.5) - (game.storage.quality?.[a] || 0.5);
       });
-      return;
+      const pick = cookedIds[0];
+      const quality = game.storage.quality?.[pick] || 0.5;
+      storageSub(game, groupId, pick, 1);
+      return { item: pick, cooked: true, quality };
     }
+    // 2. raw edible on hand.
+    const allowedRawStore = {};
+    for (const id of FOOD_TYPES) {
+      let n = 0;
+      for (const g of allowedGroups) n += g.storage?.[id] || 0;
+      allowedRawStore[id] = n;
+    }
+    const onHand = largestEdibleRaw(allowedRawStore, FOOD_TYPES);
+    if (onHand) {
+      const quality = game.storage.quality?.[onHand] || 0.5;
+      storageSub(game, groupId, onHand, 1);
+      maybeDropSeedAfterEating(game, onHand, groupId);
+      return { item: onHand, cooked: false, quality };
+    }
+    // 3. stockpiles — own-group piles first.
+    const allowedPiles = game.stockpiles.filter((sp) => game._canUseFrom?.(groupId, sp.ownerId) ?? (sp.ownerId === groupId));
+    allowedPiles.sort((a, b) => (a.ownerId === groupId ? -1 : 0) - (b.ownerId === groupId ? -1 : 0));
+    for (const sp of allowedPiles) {
+      let pick = null;
+      let cooked = false;
+      for (const id of ['meal', ...DISH_IDS]) {
+        if ((sp.items[id] || 0) > 0) { pick = id; cooked = true; break; }
+      }
+      if (!pick) pick = largestEdibleRaw(sp.items, STOCKPILE_ITEMS);
+      if (pick) {
+        sp.items[pick] -= 1;
+        maybeDropSeedAfterEating(game, pick, groupId);
+        return { item: pick, cooked: cooked || pick === 'meal' || isDish(pick), quality: 0.5 };
+      }
+    }
+    return null;
+  };
+
+  let ate = 0;
+  let anyCooked = false;
+  for (let i = 0; i < MAX_MEAL_ITEMS && colonist.hunger > 0.001; i++) {
+    const got = takeOne();
+    if (!got) break;
+    ate += 1;
+    if (got.cooked) anyCooked = true;
+    colonist.hunger = Math.max(0, colonist.hunger - satietyOf(got.item, got.cooked));
+    // Mood: cooked food lifts more; raw is a smaller bump. Applied per
+    // item so a hearty multi-item meal cheers a colonist up a little more.
+    colonist.mood = Math.min(1, colonist.mood + moodFromEating(got.item, got.quality) * (got.cooked ? 1 : 0.55));
   }
-  bumpMissed();
+
+  if (ate > 0) {
+    game.meals.eaten += 1;
+    if (grp) grp.meals.eaten += 1;
+    game._pushLog({
+      icon: anyCooked ? 'meal' : 'fork',
+      text: t(ate > 1 ? 'log.ateMulti' : 'log.ate', { name, n: ate }),
+      cls: 'log-meal',
+      groupId,
+    });
+    return;
+  }
+  game.meals.missed += 1;
+  if (grp) grp.meals.missed += 1;
   game._pushLog({ icon: 'warn', text: t('log.hungry', { name }), cls: 'log-warn', groupId });
 }
 

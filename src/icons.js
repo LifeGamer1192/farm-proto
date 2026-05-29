@@ -1,54 +1,64 @@
 // α29: custom mini-icon set. Every place that used to lean on an emoji
-// now renders one of these inline SVGs instead, so the UI carries no
-// emoji glyphs at all (consistent across platforms / fonts).
+// renders one of these inline SVGs instead, so the UI carries no emoji
+// glyphs at all.
 //
-// `icon(name)` returns an inline <svg> string sized to 1em via the `.mi`
-// CSS class (see style.css). Unknown names return '' so a stray lookup
-// never leaks a literal back into the DOM.
+// D7: the icons are a single-weight LINE-ART set (Lucide/Feather style)
+// drawn in `currentColor` — deliberately flat, monochrome and stroked so
+// they read as a custom UI icon set and never get mistaken for a colour
+// emoji. In the activity log they inherit the log line's colour, so a
+// "done" line gets a green check, a "fail" line a red cross, etc.
+//
+// `icon(name)` returns an inline <svg> string sized via the `.mi` CSS
+// class. Unknown names return '' so a stray lookup never leaks anything.
 
-const VB = '0 0 16 16';
+const VB = '0 0 24 24';
 
-// Each entry is the inner markup of a 16×16 SVG.
+// Inner markup of each 24×24 line icon. The wrapper sets fill:none,
+// stroke:currentColor, width 2, round caps — so most entries are just
+// the path/line geometry. Filled dots set fill explicitly.
 const PARTS = {
   // status / generic
-  check: '<path d="M3 8.6l3.2 3.2L13 4.4" fill="none" stroke="#5fc46f" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"/>',
-  cross: '<path d="M4 4l8 8M12 4l-8 8" stroke="#d2493a" stroke-width="2.3" stroke-linecap="round"/>',
-  warn: '<path d="M8 2l6.2 11.4H1.8z" fill="#e8b23c" stroke="#7a5a12" stroke-width="1"/><path d="M8 5.8v3.6" stroke="#3a2a06" stroke-width="1.5" stroke-linecap="round"/><circle cx="8" cy="11.4" r="1" fill="#3a2a06"/>',
-  skip: '<path d="M3 4l4.5 4L3 12z" fill="#9ab3a0"/><path d="M7.5 4L12 8l-4.5 4z" fill="#9ab3a0"/><rect x="12.2" y="4" width="1.6" height="8" rx="0.5" fill="#9ab3a0"/>',
-  sparkle: '<path d="M8 1l1.7 5.1L15 8l-5.3 1.9L8 15l-1.7-5.1L1 8l5.3-1.9z" fill="#ffd95a" stroke="#caa12a" stroke-width="0.6"/><circle cx="13" cy="3" r="1" fill="#fff0b0"/>',
-  star: '<path d="M8 1.4l1.95 4.0 4.4.6-3.2 3.1.75 4.4L8 11.0 3.9 13.5l.75-4.4L1.45 6l4.4-.6z" fill="#ffcf4a" stroke="#c8a02a" stroke-width="0.5"/>',
-  trophy: '<path d="M5 2h6v3.2a3 3 0 01-6 0z" fill="#ffcf4a" stroke="#b8902a" stroke-width="0.8"/><path d="M5 3.2H2.8v1.4A2.2 2.2 0 005 6.8M11 3.2h2.2v1.4A2.2 2.2 0 0111 6.8" fill="none" stroke="#b8902a" stroke-width="0.9"/><rect x="7.1" y="7.6" width="1.8" height="2.8" fill="#b8902a"/><rect x="4.8" y="10.3" width="6.4" height="2.2" rx="0.6" fill="#ffcf4a" stroke="#b8902a" stroke-width="0.6"/>',
-  swords: '<path d="M3 3.5l7 7M10 3.5l-7 7" stroke="#cfd6dd" stroke-width="1.7" stroke-linecap="round"/><path d="M2 11l2 2M14 11l-2 2" stroke="#8a6a3a" stroke-width="1.6" stroke-linecap="round"/>',
-  skull: '<path d="M3 7a5 5 0 0110 0v3l-1.4 1H4.4L3 10z" fill="#e9e7dd" stroke="#9a978c" stroke-width="0.7"/><circle cx="6" cy="7" r="1.3" fill="#26241f"/><circle cx="10" cy="7" r="1.3" fill="#26241f"/><path d="M7 10.4l1 1.6 1-1.6" fill="#26241f"/>',
-  // climate / status conditions
-  cold: '<g stroke="#7fc7ef" stroke-width="1.5" stroke-linecap="round"><path d="M8 2v12M2.7 5l10.6 6M13.3 5L2.7 11"/></g>',
-  injured: '<rect x="1.6" y="6.2" width="12.8" height="3.6" rx="1.8" transform="rotate(-28 8 8)" fill="#f1d9b4" stroke="#b48a4a" stroke-width="0.8"/><path d="M8 6.2v3.6M6.2 8h3.6" stroke="#d2493a" stroke-width="1.3"/>',
-  sleep: '<path d="M4 5h5L4 11h5" fill="none" stroke="#8fb0d0" stroke-width="1.7" stroke-linejoin="round" stroke-linecap="round"/><path d="M10 3h3l-3 3h3" fill="none" stroke="#8fb0d0" stroke-width="1.2" stroke-linejoin="round" stroke-linecap="round"/>',
+  check: '<polyline points="4 12.5 9.5 18 20 6"/>',
+  cross: '<line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/>',
+  warn: '<path d="M12 3.5L22 20H2z"/><line x1="12" y1="9.5" x2="12" y2="14"/><circle cx="12" cy="17" r="0.4" fill="currentColor"/>',
+  skip: '<polygon points="5 5 13 12 5 19"/><line x1="14.5" y1="5" x2="14.5" y2="19"/>',
+  sparkle: '<path d="M12 3l1.9 6.1L20 11l-6.1 1.9L12 19l-1.9-6.1L4 11l6.1-1.9z"/>',
+  star: '<path d="M12 3.2l2.5 5.5 6 .6-4.5 4.1 1.3 5.9L12 16.9 6.7 19.3l1.3-5.9L3.5 9.3l6-.6z"/>',
+  trophy: '<path d="M7 4h10v4.5a5 5 0 01-10 0z"/><path d="M7 5.5H4V8a3 3 0 003 3M17 5.5h3V8a3 3 0 01-3 3"/><line x1="12" y1="13.5" x2="12" y2="17"/><line x1="8" y1="20.5" x2="16" y2="20.5"/><line x1="12" y1="17" x2="12" y2="20.5"/>',
+  swords: '<line x1="4" y1="5" x2="14.5" y2="15.5"/><line x1="20" y1="5" x2="9.5" y2="15.5"/><line x1="3" y1="18" x2="6" y2="21"/><line x1="21" y1="18" x2="18" y2="21"/>',
+  skull: '<path d="M5 11.5a7 7 0 0114 0V14l-2 1.5v2H7v-2L5 14z"/><circle cx="9" cy="11.5" r="1.5"/><circle cx="15" cy="11.5" r="1.5"/>',
+  cold: '<line x1="12" y1="3" x2="12" y2="21"/><line x1="4" y1="7.5" x2="20" y2="16.5"/><line x1="20" y1="7.5" x2="4" y2="16.5"/>',
+  injured: '<rect x="3.5" y="9" width="17" height="6" rx="3" transform="rotate(-28 12 12)"/><line x1="11" y1="9.6" x2="13" y2="14.4"/><line x1="9.6" y1="13" x2="14.4" y2="11"/>',
+  sleep: '<path d="M5 7h6L5 17h6"/><path d="M14 4h5l-5 5h5"/>',
   // resources / food
-  people: '<circle cx="5.4" cy="5.6" r="2.4" fill="#9fbce0"/><circle cx="10.6" cy="5.6" r="2.4" fill="#7fa0c8"/><path d="M1.4 13.5c0-2.6 1.8-4.2 4-4.2s4 1.6 4 4.2z" fill="#9fbce0"/><path d="M6.6 13.5c0-2.6 1.8-4.2 4-4.2s4 1.6 4 4.2z" fill="#7fa0c8"/>',
-  food: '<ellipse cx="8" cy="9" rx="6.2" ry="3.7" fill="#d9a258" stroke="#a06a2a" stroke-width="0.8"/><path d="M4.8 7.4l1 2.2M8 7l1 2.4M11.2 7.4l1 2.2" stroke="#8a5a22" stroke-width="0.9" stroke-linecap="round"/>',
-  meal: '<path d="M1.8 7.6h12.4a6.2 4.4 0 01-12.4 0z" fill="#c98a4a" stroke="#7a4f22" stroke-width="0.8"/><ellipse cx="8" cy="7.6" rx="6.2" ry="1.7" fill="#e8c98a" stroke="#7a4f22" stroke-width="0.6"/><path d="M5.6 5.2c0-1.1.2-1.6.8-2.2M8 4.8c0-1.1.2-1.6.8-2.2M10.4 5.2c0-1.1.2-1.6.8-2.2" stroke="#cfcfcf" stroke-width="0.9" fill="none" stroke-linecap="round"/>',
-  wood: '<rect x="1.8" y="5.6" width="12.4" height="4.8" rx="2.4" fill="#9c6b3a" stroke="#5e3f1e" stroke-width="0.8"/><ellipse cx="4.2" cy="8" rx="1.7" ry="2.4" fill="#c79355" stroke="#5e3f1e" stroke-width="0.6"/><ellipse cx="4.2" cy="8" rx="0.7" ry="1.1" fill="#9c6b3a"/>',
-  warehouse: '<path d="M8 1.8l6.2 3v7.4L8 15.2 1.8 12.2V4.8z" fill="#c79a5a" stroke="#7a5a2a" stroke-width="0.8"/><path d="M1.8 4.8L8 7.8l6.2-3M8 7.8v7.4" fill="none" stroke="#7a5a2a" stroke-width="0.8"/>',
-  bed: '<rect x="1.6" y="6.6" width="12.8" height="5" rx="1" fill="#a86c4a"/><rect x="2.8" y="5" width="4.6" height="3.2" rx="1" fill="#ece2d2"/><rect x="1.6" y="10.4" width="12.8" height="2.4" rx="0.6" fill="#7a4f32"/><path d="M2 12.8v1.4M14 12.8v1.4" stroke="#7a4f32" stroke-width="1.2" stroke-linecap="round"/>',
-  meat: '<ellipse cx="9" cy="7.2" rx="5" ry="4" fill="#c8607a" stroke="#8a3a52" stroke-width="0.8"/><ellipse cx="9" cy="7.2" rx="2.3" ry="1.7" fill="#e7a6b6"/><circle cx="3" cy="11" r="1.7" fill="#efe8df" stroke="#b0a89a" stroke-width="0.6"/><circle cx="4.4" cy="12.2" r="1.5" fill="#efe8df" stroke="#b0a89a" stroke-width="0.6"/>',
-  herb: '<path d="M8 14.5C8 8.5 11 4.2 14.2 3c0 6.2-3.2 10.2-6.2 11.5z" fill="#5fa84a" stroke="#3a6e2a" stroke-width="0.7"/><path d="M8 14.5C8 9.5 5.8 6.2 2.6 5c0 5.4 2.4 8.6 5.4 9.5z" fill="#6fb858" stroke="#3a6e2a" stroke-width="0.7"/>',
-  grain: '<path d="M8 15V5.2" stroke="#b8923a" stroke-width="1.2" stroke-linecap="round"/><g fill="#d9b455" stroke="#a8842e" stroke-width="0.4"><ellipse cx="8" cy="3.4" rx="1.1" ry="2"/><ellipse cx="5.9" cy="6" rx="1" ry="1.8" transform="rotate(-32 5.9 6)"/><ellipse cx="10.1" cy="6" rx="1" ry="1.8" transform="rotate(32 10.1 6)"/><ellipse cx="5.9" cy="9" rx="1" ry="1.8" transform="rotate(-32 5.9 9)"/><ellipse cx="10.1" cy="9" rx="1" ry="1.8" transform="rotate(32 10.1 9)"/></g>',
-  sprout: '<path d="M8 14.5V6.5" stroke="#4f8a3a" stroke-width="1.4" stroke-linecap="round"/><path d="M8 8.5C5.6 8.5 3.6 6.7 3.6 4.3 6.2 4.3 8 6.1 8 8.5z" fill="#6fb24a" stroke="#3a6e2a" stroke-width="0.5"/><path d="M8 9.5c2.4 0 4.4-1.8 4.4-4.2C9.8 5.3 8 7.1 8 9.5z" fill="#7cc257" stroke="#3a6e2a" stroke-width="0.5"/>',
-  wilt: '<path d="M9 14.5C9 11 8 9 6 8" fill="none" stroke="#86863f" stroke-width="1.3" stroke-linecap="round"/><g transform="rotate(48 6 7)"><ellipse cx="6" cy="7" rx="2.6" ry="3.4" fill="#b9708a" stroke="#7a3f55" stroke-width="0.6"/><circle cx="6" cy="7" r="1.2" fill="#e7c46a"/></g><path d="M9 8c1.6-.6 3-.4 3-.4" stroke="#86863f" stroke-width="1" stroke-linecap="round"/>',
-  pest: '<ellipse cx="8" cy="9.2" rx="3.4" ry="4" fill="#6f9a3a" stroke="#3f5a1e" stroke-width="0.8"/><circle cx="8" cy="4.6" r="2.1" fill="#3f5a1e"/><path d="M4.7 7.4H1.8M4.6 9.4H1.6M4.9 11.4H2.2M11.3 7.4h2.9M11.4 9.4h3M11.1 11.4h2.7" stroke="#3f5a1e" stroke-width="0.9" stroke-linecap="round"/><path d="M6.8 3.4L5.8 1.6M9.2 3.4l1-1.8" stroke="#3f5a1e" stroke-width="0.9" stroke-linecap="round"/>',
-  fork: '<path d="M4.6 2v3.4c0 .8.7 1.2.7 1.2V14M3.4 2v3M5.8 2v3" fill="none" stroke="#cfd6dd" stroke-width="1.2" stroke-linecap="round"/><path d="M11 2c-1.4 0-1.4 5 0 5s1.4-5 0-5zM11 7v7" fill="none" stroke="#cfd6dd" stroke-width="1.2" stroke-linecap="round"/>',
+  people: '<circle cx="9" cy="8" r="3"/><path d="M3.5 20a5.5 5.5 0 0111 0"/><path d="M16 5.3a3 3 0 010 5.4"/><path d="M15.5 14.6a5.5 5.5 0 015 5.4"/>',
+  food: '<path d="M3 12.5c0-3.2 4-5.5 9-5.5s9 2.3 9 5.5c0 1.2-1 2.2-2.2 2.2H5.2C4 14.7 3 13.7 3 12.5z"/><line x1="8" y1="9.5" x2="7" y2="12.5"/><line x1="12" y1="9" x2="12" y2="12.5"/><line x1="16" y1="9.5" x2="17" y2="12.5"/>',
+  meal: '<path d="M3 12h18a9 6 0 01-18 0z"/><path d="M8 6.5c0-1.6.6-2.2 1.3-3.2M12 6c0-1.6.6-2.2 1.3-3.2M16 6.5c0-1.6.6-2.2 1.3-3.2"/>',
+  wood: '<rect x="3" y="9" width="18" height="6.5" rx="3.2"/><ellipse cx="6.6" cy="12.25" rx="2" ry="3.2"/><ellipse cx="6.6" cy="12.25" rx="0.7" ry="1.2"/>',
+  warehouse: '<path d="M12 3l9 4.5v9L12 21l-9-4.5v-9z"/><path d="M3.2 7.6L12 12l8.8-4.4M12 12v9"/>',
+  bed: '<path d="M3 8v12"/><path d="M3 13h15a3 3 0 013 3v4"/><path d="M3 19.5h18"/><rect x="5.5" y="9.5" width="5" height="3.2" rx="1.2"/>',
+  meat: '<ellipse cx="13.5" cy="10.5" rx="6.5" ry="5"/><ellipse cx="13.5" cy="10.5" rx="2.6" ry="1.8"/><circle cx="5.5" cy="17" r="2.2"/><circle cx="7" cy="18.4" r="1.9"/>',
+  herb: '<path d="M12 21C12 12.5 16 6.5 21 5.5c0 8.5-4 13.5-9 15.5z"/><path d="M12 21c0-6.5-3-10.5-8-11.5 0 6.5 3 10.5 8 11.5z"/>',
+  grain: '<line x1="12" y1="21" x2="12" y2="8.5"/><ellipse cx="12" cy="5" rx="1.6" ry="2.6"/><ellipse cx="8.6" cy="9" rx="1.5" ry="2.4" transform="rotate(-32 8.6 9)"/><ellipse cx="15.4" cy="9" rx="1.5" ry="2.4" transform="rotate(32 15.4 9)"/><ellipse cx="8.6" cy="13.5" rx="1.5" ry="2.4" transform="rotate(-32 8.6 13.5)"/><ellipse cx="15.4" cy="13.5" rx="1.5" ry="2.4" transform="rotate(32 15.4 13.5)"/>',
+  sprout: '<path d="M12 21V10"/><path d="M12 12C8.2 12 5.2 9 5.2 5.2 9 5.2 12 8.2 12 12z"/><path d="M12 13.5c3.8 0 6.8-3 6.8-6.8C15 6.7 12 9.7 12 13.5z"/>',
+  wilt: '<path d="M14.5 21c0-6.5-1.2-9.8-4.5-12"/><ellipse cx="8.5" cy="8" rx="3.2" ry="4.2" transform="rotate(40 8.5 8)"/><path d="M14.5 11.5c2.2-1 4.5-.8 4.5-.8"/>',
+  pest: '<ellipse cx="12" cy="13" rx="5" ry="6"/><line x1="12" y1="7" x2="12" y2="3"/><line x1="7" y1="10" x2="3" y2="9"/><line x1="7" y1="13" x2="2.8" y2="13"/><line x1="7" y1="16" x2="3.3" y2="17.5"/><line x1="17" y1="10" x2="21" y2="9"/><line x1="17" y1="13" x2="21.2" y2="13"/><line x1="17" y1="16" x2="20.7" y2="17.5"/>',
+  fork: '<path d="M7.5 3v5.5a2 2 0 002 2v10M7.5 3v4.5M9.5 3v4.5"/><path d="M16.5 3c-1.7 0-1.7 7.5 0 7.5s1.7-7.5 0-7.5zM16.5 10.5V21"/>',
   // creatures / events
-  deer: '<path d="M5 8.4a3 3 0 006 0c0-2-1.4-3.2-3-3.2S5 6.4 5 8.4z" fill="#a06a3a" stroke="#6e4520" stroke-width="0.7"/><path d="M6 5.2L4.2 2.2M6 5.2L6.6 2.2M10 5.2l1.8-3M10 5.2l-.6-3" stroke="#7a4f22" stroke-width="1" stroke-linecap="round"/><circle cx="6.8" cy="8" r="0.8" fill="#26201a"/><circle cx="9.2" cy="8" r="0.8" fill="#26201a"/><circle cx="8" cy="10.2" r="0.7" fill="#3a2a1a"/>',
-  baby: '<circle cx="8" cy="8.4" r="5.4" fill="#f3c9a0" stroke="#c79a6a" stroke-width="0.8"/><circle cx="6" cy="8.4" r="0.9" fill="#3a2a1a"/><circle cx="10" cy="8.4" r="0.9" fill="#3a2a1a"/><path d="M6.4 10.6c.9.9 2.3.9 3.2 0" fill="none" stroke="#a05a3a" stroke-width="0.9" stroke-linecap="round"/><path d="M8 3c1.4 0 1.4 1.6 0 1.6" fill="none" stroke="#7a5630" stroke-width="1"/>',
-  cart: '<circle cx="6" cy="13.2" r="1.3" fill="#5a7a9a"/><circle cx="11.2" cy="13.2" r="1.3" fill="#5a7a9a"/><path d="M1.6 2.8h2.2l1.6 7.2h7.2l1.4-5.2H5.2" fill="none" stroke="#5a7a9a" stroke-width="1.3" stroke-linejoin="round" stroke-linecap="round"/>',
+  deer: '<path d="M8 12.5a4 4 0 008 0c0-2.6-1.8-4.2-4-4.2s-4 1.6-4 4.2z"/><path d="M9 8.3L7 4M9.5 8l.6-4M15 8.3l2-4.3M14.5 8l-.6-4"/><circle cx="10.6" cy="12.4" r="0.5" fill="currentColor"/><circle cx="13.4" cy="12.4" r="0.5" fill="currentColor"/>',
+  baby: '<circle cx="12" cy="12.5" r="7.5"/><circle cx="9.3" cy="12.5" r="0.6" fill="currentColor"/><circle cx="14.7" cy="12.5" r="0.6" fill="currentColor"/><path d="M9.6 15.5a4 4 0 004.8 0"/><path d="M12 4.2c2.2 0 2.2 2.4 0 2.4"/>',
+  cart: '<circle cx="9" cy="20" r="1.6"/><circle cx="17.5" cy="20" r="1.6"/><path d="M2.5 3.5h3l2.6 12.5h10.4l2-8.5H6.2"/>',
 };
 
 /** Inline SVG markup for a named mini-icon (or '' when unknown). */
 export function icon(name) {
   const inner = PARTS[name];
   if (!inner) return '';
-  return `<svg class="mi mi-${name}" viewBox="${VB}" aria-hidden="true" focusable="false">${inner}</svg>`;
+  return (
+    `<svg class="mi mi-${name}" viewBox="${VB}" fill="none" stroke="currentColor" ` +
+    `stroke-width="2" stroke-linecap="round" stroke-linejoin="round" ` +
+    `aria-hidden="true" focusable="false">${inner}</svg>`
+  );
 }
 
 /** Names available — handy for tests / verification. */

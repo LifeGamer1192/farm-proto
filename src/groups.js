@@ -10,7 +10,7 @@
 // (save / load / mods) without dragging class methods along.
 
 import { STARTING_WOOD } from './config.js';
-import { CROP_IDS, WILD_CROP_IDS, CROP_TYPES, getCrop } from './crops.js';
+import { CROP_IDS, WILD_CROP_IDS, CROP_TYPES, getCrop, seedGenome } from './crops.js';
 
 const CROP_TYPES_HAS = (id) => Object.prototype.hasOwnProperty.call(CROP_TYPES, id);
 import { freshGenome, genomeQuality } from './genetics.js';
@@ -65,7 +65,7 @@ export function freshSeedsForGroup(startingCrops, seedsPerCrop) {
   for (const id of CROP_IDS) {
     const list = [];
     if (startingCrops.includes(id)) {
-      for (let i = 0; i < seedsPerCrop; i++) list.push({ genome: freshGenome() });
+      for (let i = 0; i < seedsPerCrop; i++) list.push({ genome: seedGenome(id) });
     }
     seeds[id] = list;
   }
@@ -165,7 +165,7 @@ export function createGroup(id, setup = {}) {
       if (!CROP_TYPES_HAS(cropId)) continue;
       startingCrops.push(cropId);
       const list = seeds[cropId];
-      for (let i = 0; i < (slot.count | 0); i++) list.push({ genome: freshGenome() });
+      for (let i = 0; i < (slot.count | 0); i++) list.push({ genome: seedGenome(cropId) });
       if (list.length > 0) {
         let best = list[0].genome;
         for (const s of list) {

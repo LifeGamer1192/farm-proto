@@ -11,6 +11,12 @@
 // how likely it is to survive depends on how well the tile's soil suits
 // it (and from alpha 11 onward on the seed's quality rank too).
 
+// α29: genome builders live in genetics.js (which does NOT import this
+// module, so importing it here is not circular). Used to give each crop
+// its own starting-quality fingerprint (D6) and to keep wild ancestors
+// feeble (D5).
+import { biasedGenome, wildGenome } from './genetics.js';
+
 const clamp01 = (v) => (v < 0 ? 0 : v > 1 ? 1 : v);
 
 // The eleven plant categories. Visuals and a few balance touches branch on
@@ -147,6 +153,55 @@ export const CROP_IDS = Object.keys(CROP_TYPES);
 
 export function getCrop(id) {
   return CROP_TYPES[id];
+}
+
+// Small deterministic hash so two crops with near-identical stats still
+// get a slightly different quality fingerprint.
+function _cropHash(id) {
+  let h = 2166136261;
+  for (let i = 0; i < id.length; i++) {
+    h ^= id.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return h >>> 0;
+}
+
+/**
+ * α29 (D6): per-crop starting-quality centres for the four quality genes,
+ * derived from the crop's real characteristics:
+ *   - yield  ← the crop's yield stat (a high-yield crop carries the trait)
+ *   - hardiness ← low soil demand = hardier
+ *   - vigor  ← faster growth = more vigorous
+ *   - cold   ← sun-hungry crops are less cold-tolerant
+ * A tiny per-crop hash jitter keeps even similar crops distinct.
+ */
+export function cropQualityBias(cropId) {
+  const c = CROP_TYPES[cropId];
+  if (!c) return { hardiness: 0.45, yield: 0.45, vigor: 0.45, cold: 0.45 };
+  const soil = c.soil || {};
+  const req = ((soil.fertility || 0) + (soil.moisture || 0) + (soil.sunlight || 0)) / 3;
+  const yieldC = clamp01(0.30 + (c.yield - 1) * 0.05);   // yield 1..9 → ~0.30..0.70
+  const hardC = clamp01(0.62 - req * 0.7);                // light soil need → hardy
+  const vigorC = clamp01(0.66 - (c.growthTime - 14) / 110); // quick crops → vigorous
+  const coldC = clamp01(0.60 - (soil.sunlight || 0.3) * 0.6); // sun-lovers dislike cold
+  const h = _cropHash(cropId);
+  const jig = (shift) => (((h >>> shift) & 7) / 7) * 0.08 - 0.04; // ±0.04
+  return {
+    hardiness: clamp01(hardC + jig(0)),
+    yield: clamp01(yieldC + jig(3)),
+    vigor: clamp01(vigorC + jig(6)),
+    cold: clamp01(coldC + jig(9)),
+  };
+}
+
+/**
+ * α29 (D5/D6): the genome a fresh seed of `cropId` should carry. Wild
+ * ancestors get the feeble wild genome; cultivated crops get a genome
+ * biased toward their per-crop quality fingerprint.
+ */
+export function seedGenome(cropId, rand = Math.random) {
+  if (WILD_CROP_IDS.includes(cropId)) return wildGenome(rand);
+  return biasedGenome(cropQualityBias(cropId), 0.16, rand);
 }
 
 /** Every crop id whose category matches `cat`. */

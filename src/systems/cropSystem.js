@@ -3,7 +3,7 @@
 // that pick the next farming spot. Extracted from game.js so the seed/
 // genetics economy lives in one tunable place.
 
-import { CROP_IDS, WILD_CROP_IDS, getCrop, cropSuitability } from '../crops.js';
+import { CROP_IDS, WILD_CROP_IDS, getCrop, cropSuitability, seedGenome } from '../crops.js';
 import {
   freshGenome,
   crossGenomes,
@@ -51,7 +51,7 @@ export function freshSeeds(game) {
   for (const id of CROP_IDS) {
     const list = [];
     if (game.startingCrops.includes(id)) {
-      for (let i = 0; i < SEED_START_COUNT; i++) list.push({ genome: freshGenome() });
+      for (let i = 0; i < SEED_START_COUNT; i++) list.push({ genome: seedGenome(id) });
     }
     stock[id] = list;
   }

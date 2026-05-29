@@ -122,6 +122,18 @@
                 </div>
               </div>
             </div>
+            <!-- D10: confirmation before regenerating the world (prevents
+                 accidental loss of the current run). -->
+            <div id="confirm-regen" class="gameover" hidden>
+              <div class="gameover-box">
+                <h2 data-i18n="confirm.regen.title">Regenerate the world?</h2>
+                <p data-i18n="confirm.regen.body">This abandons the current colony and starts over from the setup screen.</p>
+                <div class="victory-actions">
+                  <button id="confirm-regen-ok" type="button" class="primary" data-i18n="confirm.regen.ok">Regenerate</button>
+                  <button id="confirm-regen-cancel" type="button" data-i18n="confirm.regen.cancel">Cancel</button>
+                </div>
+              </div>
+            </div>
             <!-- α28-P2: full-screen pedigree overlay. Built by main.js
                  when the player clicks the "pedigree" link in a codex row. -->
             <div id="pedigree-overlay" class="pedigree-overlay" hidden>
@@ -146,6 +158,7 @@
           <details class="control-group" open>
             <summary class="label" data-i18n="panel.colony">Colony</summary>
             <div id="group-tabs" class="group-tabs"></div>
+            <div id="group-script-row" class="group-script-row"></div>
             <dl id="colony-stats" class="stats"></dl>
             <details class="sub-group">
               <summary class="sub-label" data-i18n="label.foodBreakdown">Food on hand · breakdown</summary>
@@ -269,31 +282,19 @@
           </details>
 
           <details class="control-group">
-            <summary class="label" data-i18n="panel.tasks">Tasks</summary>
-            <dl id="task-stats" class="stats"></dl>
-            <p class="reason-label" data-i18n="label.whyThisTask">Why this task</p>
-            <p id="task-reason" class="reason"></p>
-            <button id="clear-tasks" type="button" data-i18n="btn.clearQueue">Clear queue</button>
-          </details>
-
-          <details class="control-group">
-            <summary class="label" data-i18n="panel.view">View</summary>
+            <summary class="label" data-i18n="panel.viewLegend">View &amp; legend</summary>
             <div class="view-modes" id="view-modes">
               <button type="button" data-mode="terrain" data-i18n="view.terrain" class="active">Terrain</button>
               <button type="button" data-mode="fertility" data-i18n="view.fertility">Fertility</button>
               <button type="button" data-mode="moisture" data-i18n="view.moisture">Moisture</button>
               <button type="button" data-mode="sunlight" data-i18n="view.sunlight">Sunlight</button>
             </div>
+            <div id="legend" class="legend"></div>
           </details>
 
           <details class="control-group">
             <summary class="label" data-i18n="panel.mapStats">Map stats</summary>
             <dl id="map-stats" class="stats"></dl>
-          </details>
-
-          <details class="control-group">
-            <summary class="label" data-i18n="panel.legend">Legend</summary>
-            <div id="legend" class="legend"></div>
           </details>
 
           <details class="control-group">

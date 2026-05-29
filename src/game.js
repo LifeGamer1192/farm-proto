@@ -67,7 +67,7 @@ import {
   aggregateCodex,
   aggregateStartingCrops,
 } from './groups.js';
-import { getCrop, cropSuitability, survivalChance, isRipe } from './crops.js';
+import { getCrop, cropSuitability, survivalChance, isRipe, seedGenome } from './crops.js';
 import {
   freshGenome,
   qualityRank,
@@ -869,7 +869,7 @@ export class Game {
         let seeds = 0;
         const wildId = plant.wildId || 'wildgreens';
         if (Math.random() < WILDGREENS_SEED_CHANCE) {
-          const genome = freshGenome();
+          const genome = seedGenome(wildId);
           this._addSeed(wildId, genome, colonist?.groupId);
           seeds = 1;
         }
