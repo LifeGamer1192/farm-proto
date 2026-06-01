@@ -95,11 +95,16 @@ function cheapestWarehouseCost() {
  * its own first warehouse even if Colony A already has three. The
  * colony-wide hard cap still applies to keep the map from filling up.
  */
-export function wantsWarehouse(game, colonist, { utilThreshold = 0.85 } = {}) {
+export function wantsWarehouse(game, colonist, { utilThreshold = 0.85, oneInFlight = true } = {}) {
   const gid = colonist.groupId;
   const totalSp = game.stockpiles.length + game._pendingBuilds('stockpile')
     + game._pendingBuilds('stockpile_med') + game._pendingBuilds('stockpile_large');
   if (totalSp >= WAREHOUSE_HARD_CAP) return null;
+  // E1+ : default gate — never queue another warehouse for this group
+  // while one is already pending/in-flight. The critical (≥0.95) branch
+  // explicitly opts out (oneInFlight:false) so a colony in genuine
+  // capacity crisis can still spin up several at once.
+  if (oneInFlight && autoWarehousePending(game, gid) > 0) return null;
   // First own-group warehouse is always wanted. After that, only when
   // own-group fill is past the configured threshold for the script.
   const ownPiles = game._stockpileCountFor(gid);
@@ -318,7 +323,9 @@ export function pickAutonomousTask(game, colonist) {
   // doesn't drop everything because Colony A's warehouses are full.
   const critical = game._warehousesCriticalFor?.(colonist.groupId) || false;
   if (critical && game.autoMode) {
-    const dec = wantsWarehouse(game, colonist, { utilThreshold: 0.95 });
+    // Critical (≥95% util): opt out of the one-in-flight gate so the
+    // colony can rush several warehouses in parallel.
+    const dec = wantsWarehouse(game, colonist, { utilThreshold: 0.95, oneInFlight: false });
     if (dec && dec.build) {
       return createTask(TaskType.BUILD, dec.spot.x, dec.spot.y, { structure: dec.build });
     }
@@ -354,13 +361,11 @@ export function pickAutonomousTask(game, colonist) {
     // for it). Falls through to non-additive chores only if even that
     // is blocked, so colonists never sit idle while their pockets are
     // full and food is rotting.
-    // E1+ : only ONE in-flight warehouse build per group at a time —
-    // otherwise N hungry colonists hitting on-hand-full on the same
-    // tick each queue their own BUILD and the colony spawns whole rows
-    // of warehouses for what was a single overflow moment. With this
-    // gate, the next colonist waits for the previous build to land and
-    // re-evaluates (the new pile gives them space → STORE wins).
-    if (game.autoMode && autoWarehousePending(game, colonist.groupId) === 0) {
+    // E1+ : the "one in-flight per group" gate now lives inside
+    // wantsWarehouse (default oneInFlight:true), so this call already
+    // returns null when a warehouse is already being built — N hungry
+    // colonists on the same tick can't each queue their own BUILD.
+    if (game.autoMode) {
       const dec = wantsWarehouse(game, colonist, { utilThreshold: 0 });
       if (dec && dec.build) {
         return createTask(TaskType.BUILD, dec.spot.x, dec.spot.y, { structure: dec.build });
@@ -750,7 +755,9 @@ export function farmerBreedScript(game, colonist) {
   // G1: per-group critical check.
   const critical = game._warehousesCriticalFor?.(colonist.groupId) || false;
   if (critical && game.autoMode) {
-    const dec = wantsWarehouse(game, colonist, { utilThreshold: 0.95 });
+    // Critical (≥95% util): opt out of the one-in-flight gate so the
+    // colony can rush several warehouses in parallel.
+    const dec = wantsWarehouse(game, colonist, { utilThreshold: 0.95, oneInFlight: false });
     if (dec && dec.build) {
       return createTask(TaskType.BUILD, dec.spot.x, dec.spot.y, { structure: dec.build });
     }
