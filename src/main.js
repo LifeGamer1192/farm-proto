@@ -932,8 +932,16 @@ function updateHistoryGraphs() {
   if (historyPanelEl && !historyPanelEl.open) return;
   const samples = game.history?.samples || [];
   const sigGroup = selectedGroupId == null ? 'all' : `g${selectedGroupId}`;
-  if (samples.length === lastHistoryRender && sigGroup === lastHistoryGroup) return;
-  lastHistoryRender = samples.length;
+  // E2 (alpha 29 followup): the cache key used to be `samples.length`,
+  // but the history is a 500-entry ring buffer — once it fills (≈Y15+)
+  // the length is stuck at 500 forever and this check short-circuited
+  // every poll, leaving the graphs frozen until the panel was toggled.
+  // Key on the latest sample's timestamp instead so a new push always
+  // forces a redraw, even after the buffer is saturated.
+  const lastT = samples.length > 0 ? samples[samples.length - 1].t : 0;
+  const sigT = `${samples.length}:${lastT}`;
+  if (sigT === lastHistoryRender && sigGroup === lastHistoryGroup) return;
+  lastHistoryRender = sigT;
   lastHistoryGroup = sigGroup;
   ensureHistTooltip();
 
