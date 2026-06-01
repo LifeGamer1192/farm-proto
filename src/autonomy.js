@@ -366,7 +366,14 @@ export function pickAutonomousTask(game, colonist) {
     // returns null when a warehouse is already being built — N hungry
     // colonists on the same tick can't each queue their own BUILD.
     if (game.autoMode) {
-      const dec = wantsWarehouse(game, colonist, { utilThreshold: 0 });
+      // E1++ : threshold was 0 ("any unclaimed-pile shortage → build")
+      // which over-built at low utilisation when peers momentarily
+      // claimed every pile. 0.3 means transient claim collisions at
+      // very low fill just wait one tick, while sustained on-hand
+      // pressure (which is what actually rots food) still triggers a
+      // build. 0.6 was too tight and starved the colony. The ≥0.95
+      // critical branch is the real emergency net above this.
+      const dec = wantsWarehouse(game, colonist, { utilThreshold: 0.3 });
       if (dec && dec.build) {
         return createTask(TaskType.BUILD, dec.spot.x, dec.spot.y, { structure: dec.build });
       }
