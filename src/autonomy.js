@@ -160,6 +160,26 @@ function autoHutPendingBeds(game, gid) {
   return n;
 }
 
+/** E1+ : warehouse builds in flight that belong to `gid` (queued or in
+ * a colonist's hands). Used to stop a group from spawning N warehouses
+ * at once when many colonists hit on-hand-full on the same tick. */
+function autoWarehousePending(game, gid) {
+  const isWh = (s) => s === 'stockpile' || s === 'stockpile_med' || s === 'stockpile_large';
+  let n = 0;
+  for (const t of game.taskQueue) {
+    if (t.type !== TaskType.BUILD || !isWh(t.structure)) continue;
+    if (!taskBelongsTo(game, t, gid)) continue;
+    n++;
+  }
+  for (const c of game.colonists) {
+    const ct = c.currentTask;
+    if (!ct || ct.type !== TaskType.BUILD || !isWh(ct.structure)) continue;
+    if (gid != null && c.groupId !== gid) continue;
+    n++;
+  }
+  return n;
+}
+
 /** Hearth builds in flight that belong to `gid`. */
 function autoHearthPending(game, gid) {
   let n = 0;
@@ -334,7 +354,13 @@ export function pickAutonomousTask(game, colonist) {
     // for it). Falls through to non-additive chores only if even that
     // is blocked, so colonists never sit idle while their pockets are
     // full and food is rotting.
-    if (game.autoMode) {
+    // E1+ : only ONE in-flight warehouse build per group at a time —
+    // otherwise N hungry colonists hitting on-hand-full on the same
+    // tick each queue their own BUILD and the colony spawns whole rows
+    // of warehouses for what was a single overflow moment. With this
+    // gate, the next colonist waits for the previous build to land and
+    // re-evaluates (the new pile gives them space → STORE wins).
+    if (game.autoMode && autoWarehousePending(game, colonist.groupId) === 0) {
       const dec = wantsWarehouse(game, colonist, { utilThreshold: 0 });
       if (dec && dec.build) {
         return createTask(TaskType.BUILD, dec.spot.x, dec.spot.y, { structure: dec.build });
