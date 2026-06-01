@@ -317,8 +317,16 @@ export function pickAutonomousTask(game, colonist) {
   // perpetually crowded out by farm work.
   const onHandFull = critical || game.onHandFood >= ON_HAND_CAP;
   if (onHandFull) {
-    const sp = game._nearestOwnStockpile(colonist, (s) => game.stockpileFood(s) < (s.cap || STOCKPILE_CAP));
-    if (sp && !game._tileClaimed(sp.x, sp.y)) {
+    // E1: include "unclaimed" in the predicate so we walk past piles
+    // another colonist already targets and pick the next-nearest pile
+    // that ACTUALLY has space. Without this, a single claim on the
+    // nearest pile flipped this whole branch to "build another
+    // warehouse", spawning huge over-built warehouse rows even at <5%
+    // utilisation.
+    const sp = game._nearestOwnStockpile(colonist, (s) =>
+      game.stockpileFood(s) < (s.cap || STOCKPILE_CAP)
+      && !game._tileClaimed(s.x, s.y));
+    if (sp) {
       return createTask(TaskType.STORE, sp.x, sp.y);
     }
     // D3: no warehouse can accept this haul → treat the situation like
@@ -357,9 +365,15 @@ export function pickAutonomousTask(game, colonist) {
     }
   }
   // 2. Fetch food back from a stockpile when the on-hand store runs low.
+  // E1: include "unclaimed" + "reachable" in the predicate so a single
+  // claim on the nearest non-empty pile doesn't leave the colonist
+  // sitting idle when the next-nearest pile is fine.
   if (game.onHandFood < ON_HAND_LOW) {
-    const sp = game._nearestOwnStockpile(colonist, (s) => game.stockpileFood(s) > 0);
-    if (sp && !game._tileClaimed(sp.x, sp.y) && reachable(sp.x, sp.y)) {
+    const sp = game._nearestOwnStockpile(colonist, (s) =>
+      game.stockpileFood(s) > 0
+      && !game._tileClaimed(s.x, s.y)
+      && reachable(s.x, s.y));
+    if (sp) {
       return createTask(TaskType.FETCH, sp.x, sp.y);
     }
   }
@@ -476,9 +490,12 @@ export function pickAutonomousTask(game, colonist) {
     }
   }
   // 11. Haul surplus on-hand food into a stockpile, safe from the pests.
+  // E1: same "nearest unclaimed with space" fix as the onHandFull pivot.
   if (game.onHandFood > ON_HAND_CAP) {
-    const sp = game._nearestOwnStockpile(colonist, (s) => game.stockpileFood(s) < (s.cap || STOCKPILE_CAP));
-    if (sp && !game._tileClaimed(sp.x, sp.y)) {
+    const sp = game._nearestOwnStockpile(colonist, (s) =>
+      game.stockpileFood(s) < (s.cap || STOCKPILE_CAP)
+      && !game._tileClaimed(s.x, s.y));
+    if (sp) {
       return createTask(TaskType.STORE, sp.x, sp.y);
     }
   }
