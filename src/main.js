@@ -537,9 +537,33 @@ function setupGroupScriptHandler() {
     const gid = Number(sel.dataset.group);
     const grp = game.groups?.[gid];
     if (!grp) return;
-    grp.scriptId = sel.value;
-    sel.closest('.gscript')?.setAttribute('title', t('scriptDesc.' + grp.scriptId));
+    const from = grp.scriptId;
+    const to = sel.value;
+    if (from === to) return;
+    grp.scriptId = to;
+    sel.closest('.gscript')?.setAttribute('title', t('scriptDesc.' + to));
     lastGroupScriptSig = null; // force a refresh so labels stay in sync
+    // α29 followup: record the player decision so the summary export can
+    // surface it. Both a permanent stats entry (survives log rotation)
+    // and an activity-log line for immediate feedback.
+    const env = game.environment || {};
+    if (game.stats) {
+      if (!game.stats.scriptChanges) game.stats.scriptChanges = [];
+      game.stats.scriptChanges.push({
+        t: game.clock,
+        year: env.year, season: env.season, day: env.day,
+        groupId: gid, from, to,
+      });
+    }
+    game._pushLog?.({
+      icon: 'check',
+      text: t('log.scriptChange', {
+        from: t('script.' + from),
+        to: t('script.' + to),
+      }),
+      cls: 'log-meal',
+      groupId: gid,
+    });
   });
 }
 
@@ -2080,6 +2104,9 @@ function buildSummaryText() {
       missed: '欠食',
       lost: '枯死',
       pestSpoil: '虫害',
+      playerActions: '## プレイヤー操作の記録',
+      noPlayerActions: '（変更履歴なし）',
+      scriptSwitch: 'スクリプト変更',
     }
     : {
       title: '# Farm Proto Summary Log',
@@ -2115,6 +2142,9 @@ function buildSummaryText() {
       missed: 'missed',
       lost: 'crops lost',
       pestSpoil: 'pest spoil',
+      playerActions: '## Player actions',
+      noPlayerActions: '(no changes recorded)',
+      scriptSwitch: 'Script switch',
     };
 
   const env = game.environment || {};
@@ -2215,6 +2245,23 @@ function buildSummaryText() {
       prev = b;
     }
   }
+
+  // -------- Player actions (script switches etc.) --------
+  // Recorded outside the rotating activity log so it survives long runs.
+  lines.push(L.playerActions);
+  lines.push('');
+  const scriptChanges = game.stats?.scriptChanges || [];
+  if (scriptChanges.length === 0) {
+    lines.push(L.noPlayerActions);
+  } else {
+    for (const c of scriptChanges) {
+      const yt = `Y${c.year} ${t('season.' + c.season)}`;
+      const fromName = t('script.' + c.from);
+      const toName = t('script.' + c.to);
+      lines.push(`- ${yt} — ${colonyOf(c.groupId)}: ${L.scriptSwitch} ${fromName} → ${toName}`);
+    }
+  }
+  lines.push('');
 
   // -------- Mutations --------
   lines.push(L.mutations);

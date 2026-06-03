@@ -353,6 +353,11 @@ export class Game {
     this.stats.birthsByGroup = {};
     this.stats.mutationsByGroup = {};
     this.stats.traderVisitsByYear = {};
+    // α29 followup: a non-rotating list of important player-driven mid-run
+    // changes (currently: switching a group's autonomy script). Survives
+    // the 1000-entry activity-log rotation so the summary export always
+    // shows the full history of decisions the player made.
+    this.stats.scriptChanges = [];
     this.camera = new Camera(this._viewCols(), this._viewRows(), GRID_COLS, GRID_ROWS);
 
     // Build per-group records (identity / color / script). For α23 the
