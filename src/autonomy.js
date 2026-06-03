@@ -504,10 +504,21 @@ export function pickAutonomousTask(game, colonist) {
     }
   }
   // 8. Chop the nearest tree when wood reserve has fallen below the
-  // threshold, so building does not grind to a halt.
-  if (game.autoMode && game.storage.wood - game._reservedBuildWood() < WOOD_LOW) {
-    const tree = game._nearestTree(colonist, AUTO_SEARCH_RANGE);
-    if (tree) return createTask(TaskType.HARVEST, tree.x, tree.y);
+  // threshold, so building (and cooking — hearths burn their own
+  // group's wood) does not grind to a halt.
+  // E3 (alpha 29 followup): the check used to be colony-wide
+  // (`game.storage.wood`). With per-group ownership, one rich group
+  // masked the shortage of every other — a colony with zero own wood
+  // never went to chop while its hearth went cold, and the colonists
+  // starved with a stockpile full of grain they could not cook. Now
+  // each colonist looks at THEIR OWN group's wood.
+  if (game.autoMode) {
+    const ownGrp = game.groups?.[gid];
+    const ownWood = ownGrp?.storage?.wood || 0;
+    if (ownWood < WOOD_LOW) {
+      const tree = game._nearestTree(colonist, AUTO_SEARCH_RANGE);
+      if (tree) return createTask(TaskType.HARVEST, tree.x, tree.y);
+    }
   }
   // 9. Stand up infrastructure before opening more farmland. The single
   // helper urgentInfraBuild() collects the per-group hut → hearth →

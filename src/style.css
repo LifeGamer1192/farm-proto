@@ -1252,6 +1252,25 @@ button.primary:hover {
   letter-spacing: -1px;
 }
 
+/* α29 followup: edible-raw / cook-only chip on each codex row. Sits
+   right after the crop name; the existing .codex-pedigree {margin-left:
+   auto} keeps the pedigree link pinned to the right edge. */
+.codex-raw {
+  display: inline-block;
+  font-size: 0.68rem;
+  letter-spacing: 0.02em;
+  padding: 1px 6px;
+  border-radius: 999px;
+  border: 1px solid currentColor;
+  cursor: help;
+  line-height: 1.4;
+  margin-left: 6px;
+}
+.codex-raw.raw-ok   { color: #8ad07a; background: rgba(80, 160, 80, 0.08); }
+.codex-raw.raw-cook { color: #e8a866; background: rgba(180, 110, 40, 0.10); }
+/* keep the rank + pedigree link tight against the right edge */
+.codex-head { gap: 4px; align-items: center; }
+
 .codex-genes {
   display: flex;
   gap: 4px;

@@ -732,11 +732,21 @@ function codexRowHtml(id, c, groupId) {
   // just the current strain (single "current generation" node).
   const pedigreeAttr = ` data-pedigree-crop="${id}" data-pedigree-group="${groupId}"`;
   const pedigreeClass = 'codex-pedigree';
+  // α29 followup: tag each row as "edible raw" or "needs cooking" so the
+  // player can see at a glance which crops keep them alive without a
+  // hearth + wood (grains / legumes / nuts can only be eaten cooked).
+  const crop = getCrop(id);
+  const isRaw = crop ? crop.edibleRaw !== false : true;
+  const rawCls = isRaw ? 'raw-ok' : 'raw-cook';
+  const rawLabel = isRaw ? t('label.rawOk') : t('label.rawCook');
+  const rawTitle = isRaw ? t('hint.rawOk') : t('hint.rawCook');
+  const rawBadge = `<span class="codex-raw ${rawCls}" title="${rawTitle}">${rawLabel}</span>`;
   return (
     `<div class="codex-row">` +
     `<canvas class="codex-preview" data-crop="${id}" data-best="1" width="48" height="48"></canvas>` +
     `<div class="codex-info"><div class="codex-head">` +
     `<span class="codex-crop">${t('crop.' + id)}</span>` +
+    `${rawBadge}` +
     `<span class="codex-rank">${'★'.repeat(qualityRank(c.best))}</span>` +
     `<a class="${pedigreeClass}"${pedigreeAttr} title="${t('label.pedigreeHint')}">${t('label.pedigree')}</a>` +
     `</div>` +
