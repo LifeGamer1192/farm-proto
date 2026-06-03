@@ -78,6 +78,10 @@ const STRINGS = {
 
     'btn.apply': 'Apply',
     'btn.regenerate': 'Regenerate (random)',
+    'label.exportLog': 'Summary log',
+    'btn.exportLog': 'Download summary log',
+    'hint.exportLog': 'JSON snapshot for investigating extinctions, tracking key time-series stats and reviewing mutations.',
+    'hint.exportDone': 'Saved {name}',
     'btn.clearQueue': 'Clear queue',
     'btn.center': 'Center camera on a colonist',
 
@@ -626,6 +630,10 @@ const STRINGS = {
 
     'btn.apply': '適用',
     'btn.regenerate': '再生成（ランダム）',
+    'label.exportLog': '概要ログ',
+    'btn.exportLog': '概要ログをダウンロード',
+    'hint.exportLog': 'コロニー絶滅の原因調査・主要統計の時系列確認・突然変異の記録を1つのJSONでまとめて保存します。',
+    'hint.exportDone': '{name} を保存しました',
     'btn.clearQueue': 'キューを空に',
     'btn.center': 'コロニストに視点を合わせる',
 

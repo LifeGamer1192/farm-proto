@@ -2019,6 +2019,143 @@ $('confirm-regen-ok')?.addEventListener('click', () => location.reload());
 confirmRegenEl?.addEventListener('click', (ev) => {
   if (ev.target === confirmRegenEl) confirmRegenEl.hidden = true;
 });
+
+// --- Summary log export -----------------------------------------------
+// One-click JSON snapshot of the run, focused on the three questions the
+// player most often needs to answer after a long session:
+//   1) what killed Colony X? — group setup, current state, death events,
+//      missed-meal / cropsLost / pestsLost counters and the recent log.
+//   2) how did the main stats evolve? — the full history-sample buffer.
+//   3) what's the breeding programme done? — every codex.lineage entry
+//      with parent/child quality and the legendary flag.
+// Pure read of game state, no mutations; the JSON is downloaded via a
+// Blob URL so nothing leaves the player's machine.
+function buildSummaryLog() {
+  const env = game.environment || {};
+  const groups = (game.groups || []).map((g) => {
+    const letter = String.fromCharCode(65 + g.id);
+    const setup = (game.groupSetup || [])[g.id] || {};
+    let seedTotal = 0;
+    for (const id of Object.keys(g.seeds || {})) seedTotal += g.seeds[id]?.length || 0;
+    const lastDeath = [...(game.log || [])]
+      .reverse()
+      .find((e) => e.icon === 'skull' && e.groupId === g.id);
+    const extinct = g.colonists.length === 0 ? { lastSeenInLog: lastDeath ? lastDeath.text : null } : null;
+    return {
+      id: g.id,
+      letter,
+      name: g.name || `Colony ${letter}`,
+      scriptId: g.scriptId,
+      color: g.color?.fill,
+      setup: {
+        scriptId: setup.scriptId,
+        colonistCount: setup.colonistCount,
+        startingWood: setup.startingWood,
+        initialSeeds: setup.initialSeeds,
+      },
+      current: {
+        colonists: g.colonists.length,
+        wood: Math.round(g.storage?.wood || 0),
+        seedTotal,
+        mealsEaten: g.meals?.eaten || 0,
+        mealsMissed: g.meals?.missed || 0,
+        cropsLost: g.cropsLost || 0,
+        pestsLost: g.pestsLost || 0,
+      },
+      extinct,
+    };
+  });
+
+  // Walk every group's codex lineage into a flat mutation log so the
+  // analyst can scan generations across crops at once.
+  const mutations = [];
+  for (const g of game.groups || []) {
+    const letter = String.fromCharCode(65 + g.id);
+    for (const [cropId, c] of Object.entries(g.codex || {})) {
+      for (const entry of c.lineage || []) {
+        mutations.push({
+          groupId: g.id,
+          letter,
+          cropId,
+          year: entry.year,
+          season: entry.season,
+          t: entry.t,
+          legendary: !!entry.legendary,
+          parentsQ: entry.parents.map((gen) => Math.round(genomeQuality(gen) * 100)),
+          childQ: Math.round(genomeQuality(entry.child) * 100),
+          child: entry.child,
+          parents: entry.parents,
+        });
+      }
+    }
+  }
+  mutations.sort((a, b) => (a.t || 0) - (b.t || 0));
+
+  // Filter the activity log into the death + warning slices the analyst
+  // jumps to first. Full log goes in too for context.
+  const log = game.log || [];
+  const deaths = log
+    .filter((e) => e.icon === 'skull')
+    .map((e) => ({ groupId: e.groupId, text: e.text }));
+  const warnings = log
+    .filter((e) => e.cls === 'log-warn' || e.cls === 'log-fail')
+    .slice(0, 200)
+    .map((e) => ({ groupId: e.groupId, icon: e.icon, text: e.text, cls: e.cls }));
+
+  return {
+    version: 'alpha 29',
+    exportedAt: new Date().toISOString(),
+    world: {
+      seed: game.seed,
+      biome: game.biome?.id || null,
+      year: env.year,
+      season: env.season,
+      day: env.day,
+      clock: Math.round(game.clock),
+      temperature: Math.round(env.temperature),
+    },
+    colony: {
+      population: game.colonists.length,
+      wood: Math.round(game.storage?.wood || 0),
+      totalFood: game.totalFood,
+      meals: { ...game.meals },
+      cropsLost: game.cropsLost,
+      pestsLost: game.pestsLost,
+    },
+    groups,
+    history: game.history?.samples || [],
+    mutations,
+    deaths,
+    warnings,
+    activityLog: log.map((e) => ({
+      icon: e.icon,
+      text: e.text,
+      cls: e.cls,
+      groupId: e.groupId,
+      kind: e.kind,
+    })),
+  };
+}
+
+function downloadSummaryLog() {
+  if (!game || !game.environment) return;
+  const data = buildSummaryLog();
+  const env = data.world;
+  const stamp = `Y${env.year}-${env.season}-d${env.day}`;
+  const fname = `farm-proto-${stamp}-seed${env.seed}.json`;
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = fname;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  // Release the blob after the click has been dispatched.
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  showToast(t('hint.exportDone', { name: fname }) || `Saved ${fname}`);
+}
+$('export-log')?.addEventListener('click', downloadSummaryLog);
 // `apply-seed` and `seed` were removed in the World-panel simplification.
 // Skip the listeners if their elements are gone.
 const _applySeedBtn = document.getElementById('apply-seed');
