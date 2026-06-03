@@ -1352,9 +1352,20 @@ export class Game {
     if (colonist.hunger >= EAT_THRESHOLD && colonist.eatCooldown <= 0) {
       return createTask(TaskType.EAT, colonist.tileX, colonist.tileY);
     }
+    // α29 followup: a starving colonist (hunger ≥ 0.9) is moments from
+    // death — skip the injured-REST and SLEEP-deprived branches so
+    // autonomy gets a chance to self-rescue (chop a tree → light the
+    // hearth → cook → eat). Without this carve-out, a colonist whose
+    // health dipped below INJURY_THRESHOLD on the way down stays in
+    // rest forever while their raw food sits a tile from an unlit
+    // hearth — exactly the scenario the user reported. EAT itself just
+    // failed (eatCooldown > 0 because nothing edible-raw was in
+    // reach), so the priority falls through to autonomy where the
+    // step-8 wood-chop and step-6 cook gates can finally fire.
+    const starving = colonist.hunger >= 0.9;
     // Injured colonists head home to rest instead of taking new work
     // (alpha 21). Injured colonists prefer a hut when one exists.
-    if (colonist.health < INJURY_THRESHOLD) {
+    if (!starving && colonist.health < INJURY_THRESHOLD) {
       const hut = this._nearestHut(colonist);
       if (hut) return createTask(TaskType.REST, hut.x, hut.y);
       return createTask(TaskType.REST, colonist.tileX, colonist.tileY);
@@ -1364,7 +1375,7 @@ export class Game {
     // is unreachable, escalate: build a new one (own group's land);
     // if the colony can't afford it, chop the nearest tree to gather
     // wood. Only after all three fall through do we sleep on the spot.
-    if (colonist.sleep !== undefined && colonist.sleep < SLEEP_DEFICIT_THRESHOLD) {
+    if (!starving && colonist.sleep !== undefined && colonist.sleep < SLEEP_DEFICIT_THRESHOLD) {
       const hut = this._nearestHut(colonist);
       if (hut) return createTask(TaskType.SLEEP, hut.x, hut.y);
       // C7: with Auto-work off, a hutless colonist just sleeps where they
