@@ -1692,6 +1692,12 @@ export class Game {
     }
     const sample = {
       t: this.clock,
+      // α29 followup: tag each sample with the in-game date so the
+      // summary log can bucket the buffer by (year, season) without
+      // having to derive the time from the clock.
+      year: this.environment?.year,
+      season: this.environment?.season,
+      day: this.environment?.day,
       population: this.colonists.length,
       totalFood: this.totalFood,
       wood: Math.floor(this.storage.wood || 0),

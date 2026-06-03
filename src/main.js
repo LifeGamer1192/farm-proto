@@ -2031,129 +2031,237 @@ confirmRegenEl?.addEventListener('click', (ev) => {
 });
 
 // --- Summary log export -----------------------------------------------
-// One-click JSON snapshot of the run, focused on the three questions the
-// player most often needs to answer after a long session:
-//   1) what killed Colony X? — group setup, current state, death events,
-//      missed-meal / cropsLost / pestsLost counters and the recent log.
-//   2) how did the main stats evolve? — the full history-sample buffer.
-//   3) what's the breeding programme done? — every codex.lineage entry
-//      with parent/child quality and the legendary flag.
-// Pure read of game state, no mutations; the JSON is downloaded via a
+// α29 followup: human-readable summary instead of the old JSON dump.
+// Built around the three questions the player asks after a long run:
+//   1) what killed Colony X?  — final per-group stats + cumulative deaths
+//   2) how did the run unfold? — per-season recap of population, food,
+//      wood, animals, and the per-group deltas that drove the big swings
+//      (births, missed meals, crop losses) — IT SKIPS per-colonist
+//      noise like "X ate", which is what made the old export huge.
+//   3) what did the breeding programme produce? — every codex.lineage
+//      mutation, sorted in time order, with Q% delta and ✨ for legendary.
+// Output is plain Markdown in the current UI language, downloaded via a
 // Blob URL so nothing leaves the player's machine.
-function buildSummaryLog() {
+function buildSummaryText() {
+  const lang = getLang();
+  const ja = lang === 'ja';
+  const L = ja
+    ? {
+      title: '# Farm Proto 概要ログ',
+      version: 'バージョン',
+      exported: '保存日時',
+      seedBiome: 'シード / バイオーム',
+      inGame: 'ゲーム内時点',
+      tempLabel: '気温',
+      curState: '## 現在のコロニー状態',
+      alive: '生存',
+      extinct: '☠ 絶滅',
+      pop: '人口',
+      buildings: '建物',
+      huts: '小屋',
+      hearths: 'かまど',
+      warehouses: '倉庫',
+      wood: '木材',
+      seeds: '種総数',
+      mealsEatenMissed: '食事数 / 欠食',
+      cropsLostPests: '枯死 / 虫害',
+      deathsAccum: '累計死亡',
+      script: 'スクリプト',
+      timeline: '## 季節ごとの推移',
+      timelineNote: '※ 履歴は直近約1.4年（500サンプル）まで保持。それより古い区間は記録されません。',
+      noHistory: '（履歴サンプルなし）',
+      mutations: '## 突然変異の記録',
+      noMutations: '（まだ記録なし）',
+      legend: '✨ レジェンダリー',
+      gen: '第',
+      genSuffix: '世代',
+      animals: '動物',
+      births: '出産',
+      missed: '欠食',
+      lost: '枯死',
+      pestSpoil: '虫害',
+    }
+    : {
+      title: '# Farm Proto Summary Log',
+      version: 'Version',
+      exported: 'Exported',
+      seedBiome: 'Seed / biome',
+      inGame: 'In-game time',
+      tempLabel: 'Temperature',
+      curState: '## Current colony state',
+      alive: 'alive',
+      extinct: '☠ extinct',
+      pop: 'Population',
+      buildings: 'Buildings',
+      huts: 'huts',
+      hearths: 'hearths',
+      warehouses: 'warehouses',
+      wood: 'Wood',
+      seeds: 'Seed total',
+      mealsEatenMissed: 'Meals eaten / missed',
+      cropsLostPests: 'Crops lost / pest-spoiled',
+      deathsAccum: 'Cumulative deaths',
+      script: 'Script',
+      timeline: '## Timeline by season',
+      timelineNote: '※ History buffer holds ~1.4 sim-years (500 samples). Earlier seasons are not recorded.',
+      noHistory: '(no history samples)',
+      mutations: '## Mutations',
+      noMutations: '(no records yet)',
+      legend: '✨ Legendary',
+      gen: 'Gen ',
+      genSuffix: '',
+      animals: 'Animals',
+      births: 'births',
+      missed: 'missed',
+      lost: 'crops lost',
+      pestSpoil: 'pest spoil',
+    };
+
   const env = game.environment || {};
-  const groups = (game.groups || []).map((g) => {
-    const letter = String.fromCharCode(65 + g.id);
-    const setup = (game.groupSetup || [])[g.id] || {};
+  const lines = [];
+  const sign = (n) => (n >= 0 ? `+${n}` : `${n}`);
+  const letter = (id) => String.fromCharCode(65 + id);
+  const colonyOf = (id) => `${L.alive === '生存' ? 'コロニー' : 'Colony'} ${letter(id)}`;
+
+  // -------- Header --------
+  lines.push(L.title);
+  lines.push('');
+  lines.push(`- ${L.version}: alpha 29`);
+  lines.push(`- ${L.exported}: ${new Date().toISOString()}`);
+  lines.push(`- ${L.seedBiome}: ${game.seed} / ${t('biome.' + (game.biome?.id || 'temperate'))}`);
+  lines.push(`- ${L.inGame}: Y${env.year} ${t('season.' + env.season)} ${t('val.day', { n: env.day })}`);
+  lines.push(`- ${L.tempLabel}: ${Math.round(env.temperature)}°C`);
+  lines.push('');
+
+  // -------- Per-group current state --------
+  lines.push(L.curState);
+  lines.push('');
+  for (const g of game.groups || []) {
+    const status = g.colonists.length > 0 ? L.alive : L.extinct;
     let seedTotal = 0;
     for (const id of Object.keys(g.seeds || {})) seedTotal += g.seeds[id]?.length || 0;
-    const lastDeath = [...(game.log || [])]
-      .reverse()
-      .find((e) => e.icon === 'skull' && e.groupId === g.id);
-    const extinct = g.colonists.length === 0 ? { lastSeenInLog: lastDeath ? lastDeath.text : null } : null;
-    return {
-      id: g.id,
-      letter,
-      name: g.name || `Colony ${letter}`,
-      scriptId: g.scriptId,
-      color: g.color?.fill,
-      setup: {
-        scriptId: setup.scriptId,
-        colonistCount: setup.colonistCount,
-        startingWood: setup.startingWood,
-        initialSeeds: setup.initialSeeds,
-      },
-      current: {
-        colonists: g.colonists.length,
-        wood: Math.round(g.storage?.wood || 0),
-        seedTotal,
-        mealsEaten: g.meals?.eaten || 0,
-        mealsMissed: g.meals?.missed || 0,
-        cropsLost: g.cropsLost || 0,
-        pestsLost: g.pestsLost || 0,
-      },
-      extinct,
-    };
-  });
+    const ownPiles = game.stockpiles.filter((sp) => sp.ownerId === g.id).length;
+    const ownHearths = game.hearths.filter((h) => h.ownerId === g.id).length;
+    const ownHuts = (game.huts || []).filter((h) => h.ownerId === g.id).length;
+    const deaths = game.stats?.deathsByGroup?.[g.id] || 0;
+    lines.push(`### ${colonyOf(g.id)} — ${status}`);
+    lines.push(`- ${L.script}: ${t('script.' + g.scriptId)}`);
+    lines.push(`- ${L.pop}: ${g.colonists.length}`);
+    lines.push(`- ${L.buildings}: ${ownHuts} ${L.huts} / ${ownHearths} ${L.hearths} / ${ownPiles} ${L.warehouses}`);
+    lines.push(`- ${L.wood}: ${Math.round(g.storage?.wood || 0)}`);
+    lines.push(`- ${L.seeds}: ${seedTotal}`);
+    lines.push(`- ${L.mealsEatenMissed}: ${g.meals?.eaten || 0} / ${g.meals?.missed || 0}`);
+    lines.push(`- ${L.cropsLostPests}: ${g.cropsLost || 0} / ${g.pestsLost || 0}`);
+    lines.push(`- ${L.deathsAccum}: ${deaths}`);
+    lines.push('');
+  }
 
-  // Walk every group's codex lineage into a flat mutation log so the
-  // analyst can scan generations across crops at once.
+  // -------- Timeline by (year, season) --------
+  lines.push(L.timeline);
+  lines.push(L.timelineNote);
+  lines.push('');
+  const samples = game.history?.samples || [];
+  if (samples.length === 0) {
+    lines.push(L.noHistory);
+  } else {
+    // Bucket samples into Y-season groups, keeping the LAST sample of
+    // each bucket as the snapshot.
+    const buckets = [];
+    let cur = null;
+    for (const s of samples) {
+      const k = `${s.year}_${s.season}`;
+      if (!cur || cur.key !== k) {
+        cur = { key: k, y: s.year, s: s.season, last: s };
+        buckets.push(cur);
+      } else {
+        cur.last = s;
+      }
+    }
+    let prev = null;
+    for (const b of buckets) {
+      const l = b.last;
+      const d = (k) => prev ? l[k] - prev.last[k] : null;
+      const fmtDelta = (k) => {
+        const x = d(k);
+        return x === null ? '' : ` (${sign(x)})`;
+      };
+      lines.push(`### Y${b.y} ${t('season.' + b.s)}`);
+      const line = (
+        `${L.pop} ${l.population}${fmtDelta('population')} · ` +
+        `${t('label.foodBreakdown').split('·')[0].trim()}: ${l.totalFood}${fmtDelta('totalFood')} · ` +
+        `${L.wood}: ${l.wood}${fmtDelta('wood')} · ` +
+        `${L.animals}: ${l.animals}${fmtDelta('animals')}`
+      );
+      lines.push(line);
+      // Per-group deltas: only print groups with a meaningful change
+      if (l.perGroup && prev?.last.perGroup) {
+        for (const gidStr of Object.keys(l.perGroup)) {
+          const cg = l.perGroup[gidStr];
+          const pg = prev.last.perGroup[gidStr];
+          if (!cg || !pg) continue;
+          const evs = [];
+          const popD = cg.population - pg.population;
+          if (popD !== 0) evs.push(`${L.pop} ${sign(popD)}`);
+          const missedD = (cg.mealsMissed || 0) - (pg.mealsMissed || 0);
+          if (missedD > 0) evs.push(`${L.missed} +${missedD}`);
+          const lostD = (cg.cropsLost || 0) - (pg.cropsLost || 0);
+          if (lostD > 0) evs.push(`${L.lost} +${lostD}`);
+          if (evs.length === 0) continue;
+          const gid = Number(gidStr);
+          lines.push(`- ${colonyOf(gid)}: ${evs.join(', ')}`);
+        }
+      }
+      lines.push('');
+      prev = b;
+    }
+  }
+
+  // -------- Mutations --------
+  lines.push(L.mutations);
+  lines.push('');
   const mutations = [];
   for (const g of game.groups || []) {
-    const letter = String.fromCharCode(65 + g.id);
     for (const [cropId, c] of Object.entries(g.codex || {})) {
-      for (const entry of c.lineage || []) {
+      (c.lineage || []).forEach((entry, idx) => {
         mutations.push({
-          groupId: g.id,
-          letter,
+          gid: g.id,
           cropId,
           year: entry.year,
           season: entry.season,
           t: entry.t,
           legendary: !!entry.legendary,
+          gen: idx + 1,
           parentsQ: entry.parents.map((gen) => Math.round(genomeQuality(gen) * 100)),
           childQ: Math.round(genomeQuality(entry.child) * 100),
-          child: entry.child,
-          parents: entry.parents,
         });
-      }
+      });
     }
   }
   mutations.sort((a, b) => (a.t || 0) - (b.t || 0));
+  if (mutations.length === 0) {
+    lines.push(L.noMutations);
+  } else {
+    for (const m of mutations) {
+      const tag = m.legendary ? ` (${L.legend})` : '';
+      const yt = `Y${m.year} ${t('season.' + m.season)}`;
+      const cropName = t('crop.' + m.cropId);
+      const parents = m.parentsQ.join(' / ');
+      const genLbl = `${L.gen}${m.gen}${L.genSuffix}`;
+      lines.push(`- ${yt} — ${colonyOf(m.gid)} ${cropName} ${genLbl}: Q ${parents} → ${m.childQ}%${tag}`);
+    }
+  }
+  lines.push('');
 
-  // Filter the activity log into the death + warning slices the analyst
-  // jumps to first. Full log goes in too for context.
-  const log = game.log || [];
-  const deaths = log
-    .filter((e) => e.icon === 'skull')
-    .map((e) => ({ groupId: e.groupId, text: e.text }));
-  const warnings = log
-    .filter((e) => e.cls === 'log-warn' || e.cls === 'log-fail')
-    .slice(0, 200)
-    .map((e) => ({ groupId: e.groupId, icon: e.icon, text: e.text, cls: e.cls }));
-
-  return {
-    version: 'alpha 29',
-    exportedAt: new Date().toISOString(),
-    world: {
-      seed: game.seed,
-      biome: game.biome?.id || null,
-      year: env.year,
-      season: env.season,
-      day: env.day,
-      clock: Math.round(game.clock),
-      temperature: Math.round(env.temperature),
-    },
-    colony: {
-      population: game.colonists.length,
-      wood: Math.round(game.storage?.wood || 0),
-      totalFood: game.totalFood,
-      meals: { ...game.meals },
-      cropsLost: game.cropsLost,
-      pestsLost: game.pestsLost,
-    },
-    groups,
-    history: game.history?.samples || [],
-    mutations,
-    deaths,
-    warnings,
-    activityLog: log.map((e) => ({
-      icon: e.icon,
-      text: e.text,
-      cls: e.cls,
-      groupId: e.groupId,
-      kind: e.kind,
-    })),
-  };
+  return lines.join('\n');
 }
 
 function downloadSummaryLog() {
   if (!game || !game.environment) return;
-  const data = buildSummaryLog();
-  const env = data.world;
+  const env = game.environment;
   const stamp = `Y${env.year}-${env.season}-d${env.day}`;
-  const fname = `farm-proto-${stamp}-seed${env.seed}.json`;
-  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const fname = `farm-proto-${stamp}-seed${game.seed}.md`;
+  const text = buildSummaryText();
+  const blob = new Blob([text], { type: 'text/markdown;charset=utf-8' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
@@ -2161,7 +2269,6 @@ function downloadSummaryLog() {
   document.body.appendChild(a);
   a.click();
   a.remove();
-  // Release the blob after the click has been dispatched.
   setTimeout(() => URL.revokeObjectURL(url), 1000);
   showToast(t('hint.exportDone', { name: fname }) || `Saved ${fname}`);
 }
