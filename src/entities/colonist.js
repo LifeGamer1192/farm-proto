@@ -218,6 +218,7 @@ export class Colonist {
     const cushion = amount / this.skillMult('strength');
     this.health = Math.max(0, this.health - cushion);
     this.mood = Math.max(0, this.mood - 0.12);
+    this.lastDamage = 'animal';
     if (this.health <= 0) this.dead = true;
   }
 
@@ -312,6 +313,7 @@ export class Colonist {
     this.hunger = Math.min(1, this.hunger + HUNGER_RATE * dt);
     if (this.hunger >= 1) {
       this.health = Math.max(0, this.health - (STARVE_RATE * dt) / this.skillMult('strength'));
+      this.lastDamage = 'starve';
     } else if (this.hunger < HEALTH_REGEN_HUNGER && this.health < 1) {
       this.health = Math.min(1, this.health + HEALTH_REGEN * dt);
     }

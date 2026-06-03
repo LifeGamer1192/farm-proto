@@ -155,6 +155,7 @@ export function updateAnimals(game, dt) {
     }
     if (victim) {
       victim.hurt(ANIMAL_DAMAGE);
+      victim.lastDamage = 'animal:' + a.species;
       a.attackCooldown = ANIMAL_ATTACK_INTERVAL;
       game._pushLog({
         icon: 'swords',

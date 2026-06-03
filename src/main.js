@@ -2107,6 +2107,8 @@ function buildSummaryText() {
       playerActions: '## プレイヤー操作の記録',
       noPlayerActions: '（変更履歴なし）',
       scriptSwitch: 'スクリプト変更',
+      deaths: '## 死亡記録',
+      noDeaths: '（死亡なし）',
     }
     : {
       title: '# Farm Proto Summary Log',
@@ -2145,6 +2147,8 @@ function buildSummaryText() {
       playerActions: '## Player actions',
       noPlayerActions: '(no changes recorded)',
       scriptSwitch: 'Script switch',
+      deaths: '## Deaths',
+      noDeaths: '(no deaths recorded)',
     };
 
   const env = game.environment || {};
@@ -2245,6 +2249,34 @@ function buildSummaryText() {
       prev = b;
     }
   }
+
+  // -------- Death records (name + when + cause) --------
+  // Recorded outside the rotating activity log so every extinction can
+  // be retraced. `cause` is stamped on the colonist at the damage site;
+  // for animal kills it carries the species (e.g. "animal:wolf") so the
+  // export renders "wolf attack" instead of a generic "animal attack".
+  lines.push(L.deaths);
+  lines.push('');
+  const deathEvents = game.stats?.deathEvents || [];
+  if (deathEvents.length === 0) {
+    lines.push(L.noDeaths);
+  } else {
+    for (const d of deathEvents) {
+      const yt = `Y${d.year} ${t('season.' + d.season)} ${t('val.day', { n: d.day })}`;
+      let causeLabel;
+      const raw = d.cause || 'unknown';
+      if (raw.startsWith('animal:')) {
+        const species = raw.slice('animal:'.length);
+        causeLabel = t('cause.animalSpecies', { animal: t('animal.' + species) });
+      } else if (raw === 'cold' || raw === 'starve' || raw === 'animal') {
+        causeLabel = t('cause.' + raw);
+      } else {
+        causeLabel = t('cause.unknown');
+      }
+      lines.push(`- ${yt} — ${colonyOf(d.groupId)}: ${d.name} (${causeLabel})`);
+    }
+  }
+  lines.push('');
 
   // -------- Player actions (script switches etc.) --------
   // Recorded outside the rotating activity log so it survives long runs.

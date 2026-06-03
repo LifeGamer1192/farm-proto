@@ -358,6 +358,10 @@ export class Game {
     // the 1000-entry activity-log rotation so the summary export always
     // shows the full history of decisions the player made.
     this.stats.scriptChanges = [];
+    // α29 followup: individual death events (name + when + cause) so the
+    // summary export can answer "what killed colony X?" even after the
+    // activity-log ring buffer has rotated the per-death lines out.
+    this.stats.deathEvents = [];
     this.camera = new Camera(this._viewCols(), this._viewRows(), GRID_COLS, GRID_ROWS);
 
     // Build per-group records (identity / color / script). For α23 the
@@ -1519,6 +1523,7 @@ export class Game {
         anyCold = true;
         c.health = Math.max(0, c.health - COLD_DAMAGE * dt);
         c.mood = Math.max(0, c.mood - COLD_MOOD_DROP * dt);
+        c.lastDamage = 'cold';
         if (c.health <= 0) c.dead = true;
       }
     }
@@ -1535,6 +1540,21 @@ export class Game {
           // BUG-4 fix: stats counter survives the 1000-entry log rotation.
           const dbg = this.stats.deathsByGroup;
           if (dbg) dbg[c.groupId] = (dbg[c.groupId] || 0) + 1;
+          // Record the individual event for the summary export. lastDamage
+          // is stamped at each damage site (cold / starve / animal:<species>);
+          // 'unknown' is only reached if a colonist drops dead without ever
+          // taking attributable damage, which shouldn't normally happen.
+          if (this.stats.deathEvents) {
+            this.stats.deathEvents.push({
+              t: this.clock,
+              year: this.environment.year,
+              season: this.environment.season,
+              day: this.environment.day,
+              name: c.name,
+              groupId: c.groupId,
+              cause: c.lastDamage || 'unknown',
+            });
+          }
           this._pushLog({
             icon: 'skull',
             text: t('log.died', { name: c.name }),
