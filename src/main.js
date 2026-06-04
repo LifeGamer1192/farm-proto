@@ -372,24 +372,67 @@ function colonistRowHtml(c) {
   );
 }
 
-// α30: 4 thin nutrient bars (carb / protein / fat / vitamin) shown under
-// the survival stats. Each has its own colour and the row carries a
-// title with the % breakdown.
+// α30 followup: single rose-chart SVG combining the 4 nutrient buckets
+// (carb / protein / fat / vitamin) into one compact glyph. Each
+// quadrant's outer radius is sized by the bucket's value (0..1), so a
+// fully-stocked colonist shows a full disc and a deficient one shows
+// shrunken petals. Reused for both the per-colonist row and the
+// pedigree cell (where it shows the crop's nutrient PROFILE instead).
+//
+// Quadrant layout (clockwise from top-right):
+//   carb (top-right) | protein (bottom-right) | fat (bottom-left) | vitamin (top-left)
 const NUTRIENT_BAR_KEYS = ['carb', 'protein', 'fat', 'vitamin'];
+const NUTRIENT_COLORS = {
+  carb:    '#e6b85a',
+  protein: '#d2706f',
+  fat:     '#c8a25a',
+  vitamin: '#6fb24a',
+};
+// Quadrant arc angles (radians, SVG y-down convention: 0 = right, π/2 = down).
+const NUTRIENT_QUADRANTS = {
+  carb:    [-Math.PI / 2, 0],                // top-right
+  protein: [0,             Math.PI / 2],     // bottom-right
+  fat:     [Math.PI / 2,   Math.PI],         // bottom-left
+  vitamin: [Math.PI,       Math.PI * 1.5],   // top-left
+};
+function nutrientPieSvg(values, size, title) {
+  const cx = size / 2;
+  const cy = size / 2;
+  const rMax = size / 2 - 1;
+  const wedges = [];
+  for (const k of NUTRIENT_BAR_KEYS) {
+    const v = Math.max(0, Math.min(1, values[k] ?? 0));
+    const r = rMax * v;
+    if (r < 0.5) continue;
+    const [a0, a1] = NUTRIENT_QUADRANTS[k];
+    const x0 = cx + r * Math.cos(a0);
+    const y0 = cy + r * Math.sin(a0);
+    const x1 = cx + r * Math.cos(a1);
+    const y1 = cy + r * Math.sin(a1);
+    wedges.push(
+      `<path d="M ${cx} ${cy} L ${x0.toFixed(2)} ${y0.toFixed(2)} ` +
+      `A ${r.toFixed(2)} ${r.toFixed(2)} 0 0 1 ${x1.toFixed(2)} ${y1.toFixed(2)} Z" ` +
+      `fill="${NUTRIENT_COLORS[k]}" />`,
+    );
+  }
+  const ring = `<circle cx="${cx}" cy="${cy}" r="${rMax}" fill="none" stroke="rgba(255,255,255,0.18)" stroke-width="0.6" />`;
+  const cross = (
+    `<line x1="${cx}" y1="1" x2="${cx}" y2="${size - 1}" stroke="rgba(255,255,255,0.10)" stroke-width="0.4" />` +
+    `<line x1="1" y1="${cy}" x2="${size - 1}" y2="${cy}" stroke="rgba(255,255,255,0.10)" stroke-width="0.4" />`
+  );
+  return `<svg viewBox="0 0 ${size} ${size}" class="nutrient-pie" width="${size}" height="${size}"><title>${title}</title>${ring}${cross}${wedges.join('')}</svg>`;
+}
+
 function colonistNutrientBarsHtml(c) {
-  const parts = [];
+  const values = {};
   const tipParts = [];
   for (const k of NUTRIENT_BAR_KEYS) {
     const v = c.nutrients?.[k] ?? 0;
-    const pct = Math.max(0, Math.min(100, Math.round(v * 100)));
-    const cls = v >= 0.5 ? 'good' : v >= 0.3 ? 'mid' : 'low';
-    parts.push(
-      `<span class="cbar nut-${k}" title="${t('nut.' + k)} ${pct}%">` +
-      `<b class="${cls}" style="width:${pct}%"></b></span>`,
-    );
-    tipParts.push(`${t('nut.' + k)} ${pct}%`);
+    values[k] = v;
+    tipParts.push(`${t('nut.' + k)} ${Math.round(v * 100)}%`);
   }
-  return `<div class="crow-nutrients" title="${tipParts.join(' / ')}">${parts.join('')}</div>`;
+  const title = tipParts.join(' / ');
+  return `<div class="crow-nutrients" title="${title}">${nutrientPieSvg(values, 26, title)}</div>`;
 }
 
 function updateColonistsPanel() {
@@ -1439,11 +1482,17 @@ function renderStartGroupRows(n) {
     const scriptOpts = AUTONOMY_OPTIONS.map(
       (id) => `<option value="${id}"${id === s.scriptId ? ' selected' : ''} title="${t('scriptDesc.' + id)}">${t('script.' + id)}</option>`,
     ).join('');
-    // C2: groups after A get a button that copies Colony A's entire row
-    // (script, colonists, wood, all four seed slots) onto this row.
-    const copyBtn = i > 0
-      ? `<button type="button" class="group-copy-a" title="${t('start.copyAHint')}">${t('start.copyA')}</button>`
-      : '';
+    // α30 followup: every row carries BOTH a draggable "コピー元" handle
+    // and a "コピー先" drop zone. Drag any row's "コピー元" onto another
+    // row's "コピー先" and the source's full config (script / colonists
+    // / wood / four seed slots) copies onto the target. Lets the player
+    // duplicate E onto H, or B onto D, etc. — not just A→others as the
+    // old "Aをコピー" button allowed.
+    const copyZones =
+      `<span class="group-copy-zones">` +
+      `<span class="group-copy-src" draggable="true" title="${t('start.copySrcHint')}">${icon('copy')} ${t('start.copySrc')}</span>` +
+      `<span class="group-copy-dst" title="${t('start.copyDstHint')}">${t('start.copyDst')}</span>` +
+      `</span>`;
     // Seed slot HTML — 4 dropdowns per group. Prefer the raw slot
     // selection (so "None"/"Random" survive a re-render); fall back to
     // the resolved initialSeeds for older state shapes.
@@ -1465,7 +1514,7 @@ function renderStartGroupRows(n) {
       `<input class="group-colonists" type="number" min="1" max="20" value="${s.colonistCount}"></label>` +
       `<label class="group-colcount">${t('group.startingWood')} ` +
       `<input class="group-wood" type="number" min="0" max="999" value="${s.startingWood ?? 30}"></label>` +
-      copyBtn +
+      copyZones +
       `<div class="group-seed-row">` +
       `<span class="start-row-label" style="margin:0 4px 0 0">${t('group.initialSeeds')}</span>` +
       slots.join('') +
@@ -1487,13 +1536,45 @@ function setupStartGroupHandlers() {
     if (!sel) return;
     sel.title = t('scriptDesc.' + sel.value);
   });
-  startGroupListEl.addEventListener('click', (ev) => {
-    const btn = ev.target.closest('button.group-copy-a');
-    if (!btn) return;
+  // α30 followup: drag the "コピー元" handle of row X over the "コピー先"
+  // zone of row Y → copy X's full setup onto Y. Free-form (not just A→
+  // others), so the player can clone any row onto any other.
+  startGroupListEl.addEventListener('dragstart', (ev) => {
+    const handle = ev.target.closest('.group-copy-src');
+    if (!handle) return;
+    const row = handle.closest('.group-row');
+    if (!row || !ev.dataTransfer) return;
+    ev.dataTransfer.setData('text/x-farm-proto-row', row.dataset.group);
+    ev.dataTransfer.effectAllowed = 'copy';
+    row.classList.add('dragging-src');
+  });
+  startGroupListEl.addEventListener('dragend', (ev) => {
+    const handle = ev.target.closest('.group-copy-src');
+    if (!handle) return;
+    handle.closest('.group-row')?.classList.remove('dragging-src');
+    for (const z of startGroupListEl.querySelectorAll('.group-copy-dst.over')) z.classList.remove('over');
+  });
+  startGroupListEl.addEventListener('dragover', (ev) => {
+    const zone = ev.target.closest('.group-copy-dst');
+    if (!zone) return;
     ev.preventDefault();
-    const rows = [...startGroupListEl.querySelectorAll('.group-row')];
-    const src = rows[0];
-    const dst = btn.closest('.group-row');
+    ev.dataTransfer.dropEffect = 'copy';
+    zone.classList.add('over');
+  });
+  startGroupListEl.addEventListener('dragleave', (ev) => {
+    const zone = ev.target.closest('.group-copy-dst');
+    if (!zone) return;
+    zone.classList.remove('over');
+  });
+  startGroupListEl.addEventListener('drop', (ev) => {
+    const zone = ev.target.closest('.group-copy-dst');
+    if (!zone) return;
+    ev.preventDefault();
+    zone.classList.remove('over');
+    const srcId = ev.dataTransfer?.getData('text/x-farm-proto-row');
+    if (srcId == null) return;
+    const dst = zone.closest('.group-row');
+    const src = startGroupListEl.querySelector(`.group-row[data-group="${srcId}"]`);
     if (!src || !dst || src === dst) return;
     copyGroupRow(src, dst);
   });
@@ -2724,19 +2805,48 @@ function _pedigreeCellTitle(genome, cropId) {
   return lines.join('\n');
 }
 
-// α30: a compact 4-nutrient line for the pedigree cell footer.
+// α30 followup: per-gene "inheritance lesson" — one Mendel/Darwin-flavoured
+// line per quality gene, comparing parent phenotypes against the child's.
+// Classifies the outcome and picks a short educational tag:
+//   - both parents > child   →   recessive resurfaced
+//   - child > both parents   →   beneficial mutation (Darwinian: selection picks this up)
+//   - child ≈ higher parent  →   dominant allele expressed (Mendel)
+//   - child ≈ lower parent   →   recessive expressed (chance pairing)
+//   - child between          →   blended / co-dominant inheritance
+function _inheritanceLessonsHtml(parents, child) {
+  const lines = [];
+  for (const gid of QUALITY_GENES) {
+    const a = Math.round(phenotype(parents[0], gid) * 100);
+    const b = Math.round(phenotype(parents[1], gid) * 100);
+    const c = Math.round(phenotype(child, gid) * 100);
+    const hi = Math.max(a, b);
+    const lo = Math.min(a, b);
+    let lessonKey;
+    if (c > hi + 1) lessonKey = 'mutationUp';   // beneficial mutation
+    else if (c < lo - 1) lessonKey = 'mutationDown'; // recessive surfaced from mutation
+    else if (Math.abs(c - hi) <= 1) lessonKey = 'dominant';
+    else if (Math.abs(c - lo) <= 1) lessonKey = 'recessive';
+    else lessonKey = 'blended';
+    const geneName = t('gene.' + gid);
+    const lesson = t('pedigree.lesson.' + lessonKey);
+    lines.push(
+      `<div class="ped-lesson">` +
+      `<span class="ped-lesson-gene">${geneName}</span>` +
+      `<span class="ped-lesson-math">${a}% × ${b}% → ${c}%</span>` +
+      `<span class="ped-lesson-tag ped-lesson-${lessonKey}">${lesson}</span>` +
+      `</div>`
+    );
+  }
+  return `<div class="ped-lessons">${lines.join('')}</div>`;
+}
+
+// α30 followup: nutrient rose chart for the pedigree cell footer.
+// One compact SVG instead of four colored % chips, matching the
+// per-colonist nutrient glyph.
 function _pedigreeCellNutrientsHtml(cropId) {
   const n = nutrientsOf(cropId);
-  return (
-    `<div class="ped-nutrients">` +
-    ['carb', 'protein', 'fat', 'vitamin']
-      .map((k) => {
-        const pct = Math.round((n[k] || 0) * 100);
-        return `<span class="ped-nut nut-${k}" title="${t('nut.' + k)} ${pct}%">${pct}</span>`;
-      })
-      .join('') +
-    `</div>`
-  );
+  const tipParts = NUTRIENT_BAR_KEYS.map((k) => `${t('nut.' + k)} ${Math.round((n[k] || 0) * 100)}%`);
+  return `<div class="ped-nutrients" title="${tipParts.join(' / ')}">${nutrientPieSvg(n, 28, tipParts.join(' / '))}</div>`;
 }
 
 function _pedigreeCellHtml(cropId, tag, kind, genome, headLabel) {
@@ -2758,13 +2868,27 @@ function openPedigree(cropId, groupId) {
   const codex = grp?.codex?.[cropId];
   const lineage = codex?.lineage || [];
   const groupLabel = grp?.name || t('group.label', { letter: String.fromCharCode(65 + groupId) });
-  // C6: when the crop itself is a wild species, badge the whole pedigree
-  // prominently — these are foraged ancestors, not cultivated varieties.
+  // α30 followup: every pedigree starts with an origin banner naming how
+  // this crop first entered the group's catalogue. C6's wild banner
+  // becomes one specific origin among several:
+  //   - 'wild'   — id is in WILD_SET (foraged ancestor species)
+  //   - 'starter'— id was in this group's freshSeedsForGroup assortment
+  //   - 'trader' — id was added by a trader-visit event (tracked in
+  //                grp.codex[id].originType when the trader code stamps it)
+  //   - 'other'  — anything else (inter-colony gift, manual edits, mods)
   const isWild = WILD_SET.has(cropId);
   pedigreeTitleEl.innerHTML = (isWild ? icon('herb') + ' ' : '') + t('pedigree.title', { crop: t('crop.' + cropId), group: groupLabel });
-  const wildBanner = isWild
-    ? `<div class="pedigree-wild-banner">${icon('herb')} ${t('pedigree.wild')}</div>`
-    : '';
+  let originType;
+  if (isWild) originType = 'wild';
+  else if (codex?.originType) originType = codex.originType;
+  else if (grp?.startingCrops?.includes(cropId)) originType = 'starter';
+  else originType = 'other';
+  const originIcon = { wild: 'herb', starter: 'seed', trader: 'cart', other: 'sparkle' }[originType] || 'sparkle';
+  const originLabel = t('pedigree.origin.' + originType);
+  const originBanner = `<div class="pedigree-origin-banner pedigree-origin-${originType}">${icon(originIcon)} <strong>${t('pedigree.originLabel')}</strong>: ${originLabel}</div>`;
+  // Backwards-compat: keep the wild-banner element name so existing CSS
+  // continues to colour the wild case strongly.
+  const wildBanner = originBanner;
   const curGenome = codex?.best;
   if (lineage.length === 0) {
     // D4: a crop that has never bred a new record still opens — show the
@@ -2812,6 +2936,7 @@ function openPedigree(cropId, groupId) {
         `<div class="ped-child-row">` +
         _pedigreeCellHtml(cropId, `${tag}-c`, 'child', entry.child, t('pedigree.child')) +
         `</div>` +
+        _inheritanceLessonsHtml(entry.parents, entry.child) +
         `</div>`;
       // Descent connector between generations (not after the last one).
       const descend = i < lineage.length - 1

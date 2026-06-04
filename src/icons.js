@@ -51,6 +51,11 @@ const PARTS = {
   // α30: malnutrition — a slightly drawn face with frown to signal "not
   // well-fed". Same single-weight line-art style as the rest of the set.
   malnutrition: '<circle cx="12" cy="12" r="8"/><circle cx="9.3" cy="11" r="0.7" fill="currentColor"/><circle cx="14.7" cy="11" r="0.7" fill="currentColor"/><path d="M8.5 16c1.6 2 5.4 2 7 0"/>',
+  // α30 followup: drag-handle for the start-screen copy zone (two
+  // overlapped sheets) and a seed glyph for the "starter seed" origin
+  // banner in the pedigree view.
+  copy: '<rect x="8" y="8" width="12" height="12" rx="1.5"/><path d="M16 8V4.5h-12v12H8"/>',
+  seed: '<ellipse cx="12" cy="13" rx="4.5" ry="6.5"/><path d="M12 7c0-2.5 1.5-3.5 4-3.5"/>',
 };
 
 /** Inline SVG markup for a named mini-icon (or '' when unknown). */

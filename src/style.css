@@ -993,8 +993,11 @@ button.primary:hover {
   border-radius: 4px;
   max-width: 11em;
 }
-/* C6: prominent banner shown when the pedigree is for a wild species. */
-.pedigree-wild-banner {
+/* C6 / α30 followup: origin banner shown at the top of every pedigree
+   view. The wild case keeps the prominent green styling; other origin
+   types get colour variants that signal at a glance how this crop
+   entered the colony. */
+.pedigree-wild-banner, .pedigree-origin-banner {
   margin: 0 auto 14px;
   max-width: 720px;
   text-align: center;
@@ -1007,6 +1010,48 @@ button.primary:hover {
   border-radius: 6px;
   padding: 8px 12px;
 }
+.pedigree-origin-starter {
+  background: linear-gradient(90deg, rgba(110,120,80,0.18), rgba(180,180,120,0.28), rgba(110,120,80,0.18));
+  border-color: #807a3f;
+  color: #ede6a0;
+}
+.pedigree-origin-trader {
+  background: linear-gradient(90deg, rgba(80,110,140,0.20), rgba(120,170,210,0.32), rgba(80,110,140,0.20));
+  border-color: #4a7090;
+  color: #cdd6f0;
+}
+.pedigree-origin-other {
+  background: linear-gradient(90deg, rgba(100,90,110,0.18), rgba(150,140,180,0.28), rgba(100,90,110,0.18));
+  border-color: #6a5d80;
+  color: #d0c8e0;
+}
+
+/* α30 followup: per-gene inheritance lessons under each lineage entry. */
+.ped-lessons {
+  display: grid;
+  gap: 4px;
+  margin: 10px auto 0;
+  max-width: 680px;
+  font-size: 0.82rem;
+  padding: 6px 10px;
+  background: rgba(40, 48, 36, 0.5);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+.ped-lesson {
+  display: grid;
+  grid-template-columns: 6em 8em 1fr;
+  gap: 10px;
+  align-items: center;
+}
+.ped-lesson-gene { font-weight: 600; color: #cde6b0; }
+.ped-lesson-math { font-family: monospace; color: #b8c8a8; font-size: 0.82rem; }
+.ped-lesson-tag { color: #d8d8d8; }
+.ped-lesson-mutationUp   { color: #f0c060; }
+.ped-lesson-mutationDown { color: #d27068; }
+.ped-lesson-dominant     { color: #aec890; }
+.ped-lesson-recessive    { color: #99a87f; }
+.ped-lesson-blended      { color: #b0b0a0; }
 
 /* T5: small toggle row that flips a panel between "current numbers"
    and "stats graph" views. Sits between the disclosure summary and the
@@ -1096,7 +1141,7 @@ button.primary:hover {
 }
 /* C2: seed slots always drop to their own line under the controls. */
 .group-row .group-seed-row { flex-basis: 100%; }
-/* C2: copy-Colony-A button. */
+/* C2: copy-Colony-A button (legacy). */
 .group-copy-a {
   font-size: 0.72rem;
   padding: 2px 8px;
@@ -1108,6 +1153,33 @@ button.primary:hover {
   white-space: nowrap;
 }
 .group-copy-a:hover { background: rgba(120, 170, 80, 0.30); }
+/* α30 followup: drag-drop copy zones replace the single "Copy A" button. */
+.group-copy-zones { display: inline-flex; gap: 4px; align-items: center; }
+.group-copy-src, .group-copy-dst {
+  font-size: 0.72rem;
+  padding: 2px 8px;
+  border: 1px dashed #3f6042;
+  border-radius: 4px;
+  color: #cde6b0;
+  white-space: nowrap;
+  user-select: none;
+}
+.group-copy-src {
+  background: rgba(120, 170, 80, 0.16);
+  cursor: grab;
+}
+.group-copy-src:hover { background: rgba(120, 170, 80, 0.30); }
+.group-copy-src:active { cursor: grabbing; }
+.group-copy-dst {
+  background: rgba(80, 110, 60, 0.12);
+  color: #98b07a;
+}
+.group-copy-dst.over {
+  background: rgba(180, 220, 120, 0.30);
+  border-style: solid;
+  color: #f0ffd0;
+}
+.group-row.dragging-src { opacity: 0.75; }
 .group-chip {
   display: inline-block;
   width: 12px;
@@ -1451,18 +1523,25 @@ button.primary:hover {
 .cbar.nut-protein b.good { background: #d2706f; }
 .cbar.nut-fat b.good     { background: #c8a25a; }
 .cbar.nut-vitamin b.good { background: #6fb24a; }
+/* α30 followup: 4-nutrient rose chart shared by colonists + codex/pedigree. */
+.nutrient-pie {
+  display: inline-block;
+  vertical-align: middle;
+  filter: drop-shadow(0 0 1px rgba(0, 0, 0, 0.4));
+}
+.crow-nutrients { display: inline-block; vertical-align: middle; margin-left: 6px; }
+.ped-nutrients {
+  display: flex;
+  justify-content: center;
+  margin-top: 6px;
+}
 .cond-ico.cond-mal-1 { color: #e6b85a; }
 .cond-ico.cond-mal-2 { color: #e89a3a; }
 .cond-ico.cond-mal-3 { color: #d2493a; }
 .cond-ico.cond-mal-4 { color: #8a2828; }
 
-.ped-nutrients {
-  display: flex;
-  gap: 4px;
-  margin-top: 6px;
-  font-size: 11px;
-  justify-content: center;
-}
+/* Legacy 4-chip layout — kept for back-compat, but the new
+   `.nutrient-pie` SVG inside `.ped-nutrients` is the active rendering. */
 .ped-nut {
   display: inline-block;
   min-width: 22px;

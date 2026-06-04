@@ -77,7 +77,11 @@ export function freshSeedsForGroup(startingCrops, seedsPerCrop) {
     for (const s of list) {
       if (genomeQuality(s.genome) > genomeQuality(best)) best = s.genome;
     }
-    codex[id] = { origin: list[0].genome, best };
+    // α30 followup: tag the initial codex entry with its origin type so
+    // the pedigree banner can show "初期種". Wild crops are excluded from
+    // the starter pool (see pickStartingCropsForGroup), so a starter
+    // entry can never overwrite a wild one.
+    codex[id] = { origin: list[0].genome, best, originType: 'starter' };
   }
   return { seeds, codex };
 }

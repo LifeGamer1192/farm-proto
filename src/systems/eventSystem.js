@@ -230,6 +230,13 @@ export function runWinterTrader(game) {
       // addSeed handles colony aggregate + per-group pool + codex.
       if (game._addSeed) game._addSeed(id, seedGenome(id), recipientId);
     }
+    // α30 followup: tag the codex entry so the pedigree origin banner
+    // can show "商人から入手". Only stamp if no origin was recorded yet
+    // — a crop already in the catalogue from starter / mutation
+    // shouldn't be relabelled.
+    const grp = game.groups?.[recipientId];
+    const codex = grp?.codex?.[id];
+    if (codex && !codex.originType) codex.originType = 'trader';
     gifts.push(id);
   }
   game._traderEvent = { wood: TRADER_WOOD_GIFT, seeds: gifts, groupId: recipientId };

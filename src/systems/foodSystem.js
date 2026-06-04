@@ -84,17 +84,25 @@ function maybeDropSeedAfterEating(game, foodId, groupId) {
  * of grain refills the carb bucket fully, while a vitamin-rich salad
  * tops up vitamin. Called from every "successful eat" branch in _feed.
  */
-export function feedNutrients(colonist, foodId) {
+export function feedNutrients(colonist, foodId, grp = null) {
   if (!colonist || !colonist.nutrients) return;
-  const n = nutrientsOf(foodId);
+  const n = nutrientsOf(foodId, grp);
   for (const k of NUTRIENT_KEYS) {
     const add = (n[k] || 0) * MEAL_NUTRIENT_CREDIT;
     colonist.nutrients[k] = Math.min(1, (colonist.nutrients[k] || 0) + add);
   }
 }
 
-/** Multi-nutrient profile for an item (always returns the 4 keys). */
-export function nutrientsOf(foodId) {
+/**
+ * Multi-nutrient profile for an item (always returns the 4 keys).
+ * α30 followup: when `grp` is passed AND the item is the generic 'meal',
+ * the group's running meal-nutrient average is used so eating a meal
+ * picks up the actual ingredients cooked into that group's stock.
+ */
+export function nutrientsOf(foodId, grp = null) {
+  if (foodId === 'meal' && grp?.storage?.mealNutrients) {
+    return { ...EMPTY_NUTRIENTS, ...grp.storage.mealNutrients };
+  }
   const recipe = getRecipe(foodId);
   if (recipe) return { ...EMPTY_NUTRIENTS, ...recipe.nutrients };
   if (DEFAULT_NUTRIENTS[foodId]) return { ...EMPTY_NUTRIENTS, ...DEFAULT_NUTRIENTS[foodId] };
@@ -127,7 +135,37 @@ export function freshStorage() {
   for (const id of FOOD_TYPES) s.quality[id] = 0.5;
   for (const id of DISH_IDS) s.quality[id] = 0.5;
   s.quality.meal = 0.5;
+  // α30 followup: running per-group nutrient profile for the generic
+  // "meal" item (the legacy raw→meal fallback path; recipe-based dishes
+  // carry their own nutrients via getRecipe). Each new meal blends the
+  // source ingredient's profile in (with a ±5% per-nutrient variance)
+  // so a colony that cooks mostly wheat ends up with carb-heavy meals
+  // while a nut-heavy cook history shifts toward fat. Starts at the
+  // legacy DEFAULT_NUTRIENTS.meal baseline.
+  s.mealNutrients = { ...DEFAULT_NUTRIENTS.meal };
   return s;
+}
+
+/**
+ * α30 followup: blend `ingredientId`'s nutrient profile into the
+ * group's running meal-nutrient average, with a small ±5% per-nutrient
+ * variance so two batches of "the same wheat meal" don't both end up
+ * with identical values. Called from the legacy raw→meal fallback path
+ * each time one raw item is turned into one meal.
+ */
+export function blendMealNutrients(grp, ingredientId, rand = Math.random) {
+  if (!grp?.storage) return;
+  const prevAvg = grp.storage.mealNutrients || { ...DEFAULT_NUTRIENTS.meal };
+  const prevCount = grp.storage.meal || 0;
+  const newCount = prevCount + 1;
+  const ingredientN = nutrientsOf(ingredientId);
+  const out = {};
+  for (const k of NUTRIENT_KEYS) {
+    const variance = 1 + (rand() - 0.5) * 0.1; // ±5%
+    const sampled = (ingredientN[k] || 0) * variance;
+    out[k] = (prevAvg[k] * prevCount + sampled) / newCount;
+  }
+  grp.storage.mealNutrients = out;
 }
 
 /**
@@ -419,7 +457,10 @@ export function feed(game, colonist) {
     colonist.mood = Math.min(1, colonist.mood + moodFromEating(got.item, got.quality) * (got.cooked ? 1 : 0.55));
     // α30: credit the eater's nutrient buckets so the malnutrition stage
     // tracks what they've actually eaten, not just total calories.
-    feedNutrients(colonist, got.item);
+    // α30 followup: pass the eater's group so a 'meal' eaten draws on
+    // the group's actual cooked-ingredient profile rather than a static
+    // average.
+    feedNutrients(colonist, got.item, grp);
   }
 
   if (ate > 0) {

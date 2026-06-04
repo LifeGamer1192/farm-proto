@@ -114,6 +114,7 @@ import {
   storageAdd,
   storageSub,
   largestGroupHolder,
+  blendMealNutrients,
 } from './systems/foodSystem.js';
 import {
   freshSeeds as csFreshSeeds,
@@ -1059,6 +1060,12 @@ export class Game {
           }
           if (pick === null) break;
           storageSub(this, cookerGid, pick, 1);
+          // α30 followup: blend the ingredient's nutrient profile into
+          // the cooker's group's running meal-nutrient average BEFORE
+          // we increment the meal count, so the rolling average uses
+          // the correct prevCount denominator.
+          const cookerGrp = this.groups?.[cookerGid];
+          if (cookerGrp) blendMealNutrients(cookerGrp, pick);
           storageAdd(this, cookerGid, 'meal', 1);
           allowedSrc[pick] -= 1;
           cooked += 1;
