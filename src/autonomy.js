@@ -35,6 +35,7 @@ import { registerScript } from './groups.js';
 import { t } from './i18n.js';
 import { TileType } from './map/tile.js';
 import { genomeQuality } from './genetics.js';
+import { pickBestAffordable as recipesPickBestAffordable } from './recipes.js';
 
 // --- α26 warehouse policy ----------------------------------------------
 //
@@ -207,6 +208,23 @@ function autoHearthPending(game, gid) {
   return n;
 }
 
+/** α31: workshop builds in flight that belong to `gid`. */
+function autoWorkshopPending(game, gid) {
+  let n = 0;
+  for (const t of game.taskQueue) {
+    if (t.type !== TaskType.BUILD || t.structure !== 'workshop') continue;
+    if (!taskBelongsTo(game, t, gid)) continue;
+    n++;
+  }
+  for (const c of game.colonists) {
+    const ct = c.currentTask;
+    if (!ct || ct.type !== TaskType.BUILD || ct.structure !== 'workshop') continue;
+    if (gid != null && c.groupId !== gid) continue;
+    n++;
+  }
+  return n;
+}
+
 /** Pick the most economical hut variant for the group's current size. */
 function pickAutoHutVariant(game, gid) {
   const need = gid == null
@@ -292,6 +310,18 @@ export function urgentInfraBuild(game, colonist) {
   if (ownHearths < hearthTarget && game._canAffordBuild('hearth')) {
     const spot = game._findFreeLandNear(colonist);
     if (spot) return createTask(TaskType.BUILD, spot.x, spot.y, { structure: 'hearth' });
+  }
+  // 2b. α31: one workshop per group once the first hearth is up. The
+  // workshop hosts all non-hearth processing recipes (mill / brewery /
+  // pickle / drying / oil press / juice press / mochi / malt house /
+  // jam workshop — one building, many stations). Only one is needed
+  // because the prototype's recipe set is modest; a future expansion
+  // could scale this with population the way hearths do.
+  const ownWorkshops = (game.workshops || []).filter((w) => w.ownerId === gid).length;
+  const ownWorkshopsPending = autoWorkshopPending(game, gid);
+  if (ownHearths >= 1 && ownWorkshops + ownWorkshopsPending < 1 && game._canAffordBuild('workshop')) {
+    const spot = game._findFreeLandNear(colonist);
+    if (spot) return createTask(TaskType.BUILD, spot.x, spot.y, { structure: 'workshop' });
   }
   // 3. Warehouse — wantsWarehouse handles "first one" + the
   // utilisation threshold for follow-up expansions. The same helper
@@ -493,6 +523,28 @@ export function pickAutonomousTask(game, colonist) {
         if (colonist.isUnreachable?.(h.x, h.y, game.clock)) continue;
         if (!game._tileClaimed(h.x, h.y)) {
           return createTask(TaskType.COOK, h.x, h.y);
+        }
+      }
+    }
+  }
+  // 6b. α31: workshop processing — every group with a workshop and the
+  // ingredients for at least one workshop recipe runs it. Workshops
+  // don't need a lit hearth (no fuel requirement), they just need
+  // matching ingredients in own-group storage. Each workshop kind
+  // (mill / brewery / pickle / drying / oil press / juice press /
+  // mochi / malt house / jam workshop) shares this one branch
+  // because pickBestAffordable already filters by station.
+  {
+    const ownGrp = game.groups?.[gid];
+    const ownWorkshops = (game.workshops || []).filter((w) => game._canUseFrom(gid, w.ownerId));
+    if (ownWorkshops.length > 0 && ownGrp) {
+      const recipe = recipesPickBestAffordable(ownGrp.storage, undefined, 'workshop');
+      if (recipe) {
+        for (const w of ownWorkshops) {
+          if (colonist.isUnreachable?.(w.x, w.y, game.clock)) continue;
+          if (!game._tileClaimed(w.x, w.y)) {
+            return createTask(TaskType.COOK, w.x, w.y);
+          }
         }
       }
     }

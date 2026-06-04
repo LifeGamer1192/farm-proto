@@ -9,7 +9,7 @@
 
 import { STARTING_WOOD, EAT_RETRY, MEAL_MOOD_BONUS, SEEDS_AFTER_EATING_CHANCE, MEAL_NUTRIENT_CREDIT } from '../config.js';
 import { CROP_IDS, getCrop, seedGenome } from '../crops.js';
-import { DISH_IDS, getRecipe, isDish, pickBestAffordable, averageInputQuality } from '../recipes.js';
+import { DISH_IDS, getRecipe, isDish, pickBestAffordable, averageInputQuality, computeRecipeNutrients, isIntermediate } from '../recipes.js';
 import { freshGenome } from '../genetics.js';
 import { t } from '../i18n.js';
 
@@ -98,13 +98,40 @@ export function feedNutrients(colonist, foodId, grp = null) {
  * α30 followup: when `grp` is passed AND the item is the generic 'meal',
  * the group's running meal-nutrient average is used so eating a meal
  * picks up the actual ingredients cooked into that group's stock.
+ * α31: same idea extended to every recipe-based dish — the per-group
+ * dishNutrients map (updated each cook) carries the actual ingredient-
+ * blended profile; we fall back to a recipe-archetype default only
+ * when this group has never cooked the dish.
  */
 export function nutrientsOf(foodId, grp = null) {
   if (foodId === 'meal' && grp?.storage?.mealNutrients) {
     return { ...EMPTY_NUTRIENTS, ...grp.storage.mealNutrients };
   }
+  if (grp?.storage?.dishNutrients?.[foodId]) {
+    return { ...EMPTY_NUTRIENTS, ...grp.storage.dishNutrients[foodId] };
+  }
   const recipe = getRecipe(foodId);
-  if (recipe) return { ...EMPTY_NUTRIENTS, ...recipe.nutrients };
+  if (recipe) {
+    // α31: recipes no longer carry a baked-in `nutrients` field; if a
+    // group has never cooked this dish, derive a default by running
+    // the ingredient blend through the recipe's processBias against
+    // each ingredient's STATIC archetypal profile. Keeps eating dishes
+    // sane even before the group has any cook history.
+    return computeRecipeNutrients(recipe, (id) => {
+      if (DEFAULT_NUTRIENTS[id]) return DEFAULT_NUTRIENTS[id];
+      const crop = getCrop(id);
+      if (crop) return CATEGORY_NUTRIENTS[crop.category] || EMPTY_NUTRIENTS;
+      // Ingredient is itself a dish (Tier 2) — recurse on its static
+      // profile. Avoid infinite recursion by passing no grp.
+      const sub = getRecipe(id);
+      if (sub) return computeRecipeNutrients(sub, (k) => {
+        if (DEFAULT_NUTRIENTS[k]) return DEFAULT_NUTRIENTS[k];
+        const c2 = getCrop(k);
+        return c2 ? (CATEGORY_NUTRIENTS[c2.category] || EMPTY_NUTRIENTS) : EMPTY_NUTRIENTS;
+      });
+      return EMPTY_NUTRIENTS;
+    });
+  }
   if (DEFAULT_NUTRIENTS[foodId]) return { ...EMPTY_NUTRIENTS, ...DEFAULT_NUTRIENTS[foodId] };
   const crop = getCrop(foodId);
   if (crop) {
@@ -143,6 +170,14 @@ export function freshStorage() {
   // while a nut-heavy cook history shifts toward fat. Starts at the
   // legacy DEFAULT_NUTRIENTS.meal baseline.
   s.mealNutrients = { ...DEFAULT_NUTRIENTS.meal };
+  // α31: per-dish running nutrient profile, keyed by recipe id. Each
+  // time a workshop or hearth runs a recipe, the freshly-computed
+  // output nutrients (computeRecipeNutrients — blends ingredient
+  // profiles weighted by quantity, then applies the recipe's
+  // processBias) get blended into the running average here. When a
+  // colonist eats that dish, nutrientsOf() reads from this map first
+  // so each group's cooking history shows up in what they eat.
+  s.dishNutrients = {};
   return s;
 }
 
@@ -557,14 +592,17 @@ export function feed(game, colonist) {
  * provided, ingredient consumption and dish output are mirrored into
  * that group's per-group store (B2).
  */
-export function cookOne(game, groupId) {
+export function cookOne(game, groupId, station = 'hearth') {
   // H2: when a cooker's group is known, only consider ingredients the
   // cook's own colony actually owns — otherwise B's cook would happily
   // eat through A's pantry just because the colony aggregate has it.
   const ownStore = groupId != null ? game.groups?.[groupId]?.storage : game.storage;
   if (!ownStore) return null;
-  const recipe = pickBestAffordable(ownStore);
+  // α31: filter by station so a workshop only runs workshop-recipes
+  // and a hearth only runs hearth-recipes.
+  const recipe = pickBestAffordable(ownStore, undefined, station);
   if (!recipe) return null;
+  const grp = groupId != null ? game.groups?.[groupId] : null;
   const q = averageInputQuality(recipe, game.storage.quality);
   for (const [ing, n] of Object.entries(recipe.ingredients)) {
     storageSub(game, groupId, ing, n);
@@ -578,6 +616,26 @@ export function cookOne(game, groupId) {
   storageAdd(game, groupId, recipe.id, recipe.out);
   if (!game.storage.quality) game.storage.quality = {};
   game.storage.quality[recipe.id] = newQ;
+  // α31: blend the recipe's computed nutrient profile into this group's
+  // running dishNutrients so eating the dish later picks up the
+  // ingredients this colony actually used (not a static archetype).
+  // Ingredient lookup uses nutrientsOf with `grp` so that a recipe
+  // taking 'meal' or a workshop intermediate as input draws on its
+  // dynamic profile — chains carry their nutrient history forward.
+  if (grp) {
+    if (!grp.storage.dishNutrients) grp.storage.dishNutrients = {};
+    const fresh = computeRecipeNutrients(recipe, (id) => nutrientsOf(id, grp));
+    const prev = grp.storage.dishNutrients[recipe.id];
+    if (!prev) {
+      grp.storage.dishNutrients[recipe.id] = fresh;
+    } else {
+      const blended = {};
+      for (const k of NUTRIENT_KEYS) {
+        blended[k] = (prev[k] * prevCount + fresh[k] * recipe.out) / Math.max(1, newCount);
+      }
+      grp.storage.dishNutrients[recipe.id] = blended;
+    }
+  }
   return recipe;
 }
 

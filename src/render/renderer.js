@@ -370,6 +370,60 @@ export class Renderer {
       return;
     }
 
+    if (structure === 'workshop') {
+      // α31: workbench under a peaked canopy — distinguishes from hearth
+      // (stone ring + fire) at a glance. Brown timber palette, with a
+      // small barrel on top to hint at the brewing / processing role.
+      const cx = px + ts * 0.5;
+      const baseY = py + ts * 0.84;
+      // Bench top
+      ctx.fillStyle = '#8c6234';
+      ctx.fillRect(px + ts * 0.18, py + ts * 0.55, ts * 0.64, ts * 0.12);
+      ctx.strokeStyle = '#3f2a12';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(px + ts * 0.18, py + ts * 0.55, ts * 0.64, ts * 0.12);
+      // Bench legs
+      ctx.fillStyle = '#6a4623';
+      ctx.fillRect(px + ts * 0.22, py + ts * 0.67, ts * 0.08, ts * 0.17);
+      ctx.fillRect(px + ts * 0.70, py + ts * 0.67, ts * 0.08, ts * 0.17);
+      // Canopy roof
+      ctx.fillStyle = '#5b3f1c';
+      ctx.beginPath();
+      ctx.moveTo(px + ts * 0.10, py + ts * 0.42);
+      ctx.lineTo(cx, py + ts * 0.18);
+      ctx.lineTo(px + ts * 0.90, py + ts * 0.42);
+      ctx.closePath();
+      ctx.fill();
+      ctx.strokeStyle = '#321e0a';
+      ctx.lineWidth = 1.2;
+      ctx.stroke();
+      // Canopy support posts
+      ctx.strokeStyle = '#5b3f1c';
+      ctx.lineWidth = 1.4;
+      ctx.beginPath();
+      ctx.moveTo(px + ts * 0.16, py + ts * 0.42);
+      ctx.lineTo(px + ts * 0.16, py + ts * 0.62);
+      ctx.moveTo(px + ts * 0.84, py + ts * 0.42);
+      ctx.lineTo(px + ts * 0.84, py + ts * 0.62);
+      ctx.stroke();
+      // Small barrel sitting on the bench
+      ctx.fillStyle = '#9a6a35';
+      ctx.beginPath();
+      ctx.ellipse(cx, py + ts * 0.49, ts * 0.13, ts * 0.16, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = '#5b3f1c';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+      // Two hoops on the barrel
+      ctx.beginPath();
+      ctx.moveTo(cx - ts * 0.12, py + ts * 0.46);
+      ctx.lineTo(cx + ts * 0.12, py + ts * 0.46);
+      ctx.moveTo(cx - ts * 0.12, py + ts * 0.52);
+      ctx.lineTo(cx + ts * 0.12, py + ts * 0.52);
+      ctx.stroke();
+      return;
+    }
+
     if (structure === 'stockpile' || structure === 'stockpile_med' || structure === 'stockpile_large') {
       // A warehouse — a plank-walled barn with a gabled roof and a wide door.
       // Tier-2 (medium / large) variants paint the same silhouette with a

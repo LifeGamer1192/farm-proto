@@ -212,6 +212,8 @@ export class Game {
     this.stockpiles = [];
     this.huts = [];
     this.fences = [];
+    // α31: processing workshops (one building type, many recipe stations).
+    this.workshops = [];
     // One colony-wide wall plan at a time. Every idle colonist serves the
     // same list of tiles, so the wall ends up a coherent row instead of a
     // scatter of one-tile detours that follow the animal step by step.
@@ -435,6 +437,8 @@ export class Game {
     this.stockpiles = [];
     this.huts = [];
     this.fences = [];
+    // α31: processing workshops (one building type, many recipe stations).
+    this.workshops = [];
     this.fencePlan = null;
     this.fencePlanAt = -Infinity;
     this.storage = this._freshStorage();
@@ -1033,6 +1037,10 @@ export class Game {
             this.huts.push({ x: task.x, y: task.y, type: task.structure, cap, ownerId: colonist?.groupId });
           }
           if (task.structure === 'fence') this.fences.push({ x: task.x, y: task.y, ownerId: colonist?.groupId });
+          // α31: workshop building — host for all non-hearth processing.
+          if (task.structure === 'workshop') {
+            this.workshops.push({ x: task.x, y: task.y, ownerId: colonist?.groupId });
+          }
           // α30 followup: cumulative build count per group.
           if (colonist?.groupId != null && this.stats?.buildsByGroup) {
             this.stats.buildsByGroup[colonist.groupId] = (this.stats.buildsByGroup[colonist.groupId] || 0) + 1;
@@ -1044,13 +1052,22 @@ export class Game {
         task.outcome = 'occupied';
       }
     } else if (task.type === TaskType.COOK) {
-      if (tile.structure !== 'hearth') {
+      // α31: COOK runs at either a hearth (cooked dishes) or a
+      // workshop (mill / brewery / pickle / drying / oil press / juice
+      // press / mochi / malt house / jam workshop — all share one
+      // building type; each recipe carries a `station` field so
+      // cookOne filters by which building this task is at). The fuel
+      // requirement only applies to hearths — workshops don't need a
+      // lit hearth.
+      const station = tile.structure === 'workshop' ? 'workshop'
+        : tile.structure === 'hearth' ? 'hearth' : null;
+      if (station == null) {
         task.outcome = 'noHearth';
         if (colonist?.groupId != null && this.stats?.cooksByGroup) {
           const bag = this.stats.cooksByGroup[colonist.groupId] ||= { ok: 0, fail: 0 };
           bag.fail += 1;
         }
-      } else if (!this.hearthsLit) {
+      } else if (station === 'hearth' && !this.hearthsLit) {
         task.outcome = 'noFuel';
         if (colonist?.groupId != null && this.stats?.cooksByGroup) {
           const bag = this.stats.cooksByGroup[colonist.groupId] ||= { ok: 0, fail: 0 };
@@ -1069,7 +1086,7 @@ export class Game {
         let cooked = 0;
         const dishesMade = {};
         while (cooked < COOK_BATCH) {
-          const recipe = csCookOne(this, cookerGid);
+          const recipe = csCookOne(this, cookerGid, station);
           if (!recipe) break;
           dishesMade[recipe.id] = (dishesMade[recipe.id] || 0) + recipe.out;
           cooked += recipe.out;
@@ -1089,7 +1106,10 @@ export class Game {
           }
           allowedSrc[ft] = n;
         }
-        while (cooked < COOK_BATCH) {
+        // α31: the legacy raw→meal fallback path only fires at hearth.
+        // A workshop with no matching recipe simply ends with noFood
+        // (or with whatever was produced by the recipe pass above).
+        while (cooked < COOK_BATCH && station === 'hearth') {
           let pick = null;
           for (const ft of FOOD_TYPES) {
             if (allowedSrc[ft] > 0 && (pick === null || allowedSrc[ft] > allowedSrc[pick])) {

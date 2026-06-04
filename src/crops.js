@@ -80,6 +80,10 @@ export const CROP_TYPES = {
   // ----- Flower vegetables (花菜類) -----
   broccoli:    { id:'broccoli',    label:'Broccoli',     category:'flower',   growthTime:28, yield:5, color:'#5ea642', ripeColor:'#6caf52', soil:{fertility:0.45,moisture:0.35,sunlight:0.20}, nutrition:0.55 },
   cauliflower: { id:'cauliflower', label:'Cauliflower',  category:'flower',   growthTime:32, yield:5, color:'#7eb858', ripeColor:'#ece6cc', soil:{fertility:0.45,moisture:0.35,sunlight:0.20}, nutrition:0.50 },
+  // α31: brewing ingredient. Inedible raw (pellets are bitter, used only
+  // as a beer flavouring). Flower-category so the renderer treats it
+  // like the existing flower vegetables.
+  hop:         { id:'hop',         label:'Hop',          category:'flower',   growthTime:40, yield:3, color:'#6fa852', ripeColor:'#a8c668', soil:{fertility:0.35,moisture:0.40,sunlight:0.40}, nutrition:0.10 },
 
   // ----- Fruit vegetables (果菜類) -----
   tomato:      { id:'tomato',      label:'Tomato',       category:'fruitVeg', growthTime:30, yield:6, color:'#7ac054', ripeColor:'#e25a3a', soil:{fertility:0.35,moisture:0.30,sunlight:0.35}, nutrition:0.50 },
@@ -147,6 +151,8 @@ const _INEDIBLE_RAW = new Set([
   'wheat', 'rice', 'barley',
   'bean', 'soybean', 'lentil', 'chickpea',
   'chestnut',
+  // α31: hop pellets are bitter — used only for brewing.
+  'hop',
   // Reserved: bitter / wild forms of the trimmed cultivars stay raw-
   // hostile. None of these ids exist yet but they're listed in advance
   // so the trim above is the single source of truth for the cultivars.

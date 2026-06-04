@@ -4,7 +4,7 @@
 // "alpha N..." commit on main. The summary-log exporter and any other
 // UI surface that prints the version should read this constant rather
 // than hard-coding the string — bumping one place propagates everywhere.
-export const ALPHA_VERSION = 'alpha 30';
+export const ALPHA_VERSION = 'alpha 31';
 
 // Full map size in tiles. Alpha 2+ uses a 100×100 grid.
 export const GRID_COLS = 100;
@@ -253,6 +253,12 @@ export const BUILD_COSTS = {
   stockpile: 4,
   stockpile_med: 12,
   stockpile_large: 24,
+  // α31: processing workshop — host structure for all non-hearth food
+  // processing recipes (mill / brewery / pickle / drying / oil press /
+  // juice press / mochi / malt house / jam workshop). One building
+  // type, many recipe "stations" — each recipe carries a `station`
+  // tag that determines which display name is used at output time.
+  workshop: 4,
 };
 // Per-stockpile food capacity by structure type. Anything not listed
 // here falls back to the base STOCKPILE_CAP (kept for legacy callers
