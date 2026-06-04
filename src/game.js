@@ -115,7 +115,9 @@ import {
   storageSub,
   largestGroupHolder,
   blendMealNutrients,
+  isEdibleRaw as fsIsEdibleRaw,
 } from './systems/foodSystem.js';
+import { isDish as rcIsDish } from './recipes.js';
 import {
   freshSeeds as csFreshSeeds,
   freshCodex as csFreshCodex,
@@ -363,6 +365,19 @@ export class Game {
     // summary export can answer "what killed colony X?" even after the
     // activity-log ring buffer has rotated the per-death lines out.
     this.stats.deathEvents = [];
+    // α30 followup: cause-of-death post-mortem fields. All keyed by
+    // group id; per-season buckets keyed by `Y${year}_${season}`.
+    this.stats.cropsHarvestedByGroup = {};      // { gid: { cropId: n } }
+    this.stats.cooksByGroup = {};               // { gid: { ok, fail } }
+    this.stats.treesChoppedByGroup = {};        // { gid: n }
+    this.stats.buildsByGroup = {};              // { gid: n }
+    this.stats.hearthOutEventsByGroup = {};     // { gid: [{year,season,day},...] }
+    this.stats.eatMissReasonsByGroup = {};      // { gid: { noFood, rawInedibleOnly, unreachable, other } }
+    this.stats.seasonByGroup = {};              // { gid: { key: { woodStart, woodEnd, litSamples:[], cooks, eatMissReasons:{} } } }
+    // Per-tick group wood snapshot from the previous tick so updateFuel
+    // can fire a hearth-out event the instant a group transitions from
+    // wood>0 to wood=0.
+    this.stats._prevWoodByGroup = {};
     this.camera = new Camera(this._viewCols(), this._viewRows(), GRID_COLS, GRID_ROWS);
 
     // Build per-group records (identity / color / script). For α23 the
@@ -840,6 +855,12 @@ export class Game {
             tile.witherStreak[plant.cropId] = 0;
           }
           storageAdd(this, colonist?.groupId, plant.cropId, n);
+          // α30 followup: per-group cumulative harvest counts feed the
+          // post-mortem "累計収穫" line in the summary log.
+          if (colonist?.groupId != null && this.stats?.cropsHarvestedByGroup) {
+            const bag = this.stats.cropsHarvestedByGroup[colonist.groupId] ||= {};
+            bag[plant.cropId] = (bag[plant.cropId] || 0) + n;
+          }
           // Alpha 24: blend the harvested batch's quality (from the seed's
           // ★ rank, mapped 0..1) into whatever stock was already on hand.
           // Higher-quality seeds bring better cook outputs downstream.
@@ -860,6 +881,11 @@ export class Game {
         // Chopping a tree yields wood and leaves a fresh stump behind.
         const wood = Math.max(1, Math.round(TREE_WOOD_YIELD * (plant.growth || 1)));
         storageAdd(this, colonist?.groupId, 'wood', wood);
+        // α30 followup: per-group cumulative chop count for the post-
+        // mortem "累計伐採" line.
+        if (colonist?.groupId != null && this.stats?.treesChoppedByGroup) {
+          this.stats.treesChoppedByGroup[colonist.groupId] = (this.stats.treesChoppedByGroup[colonist.groupId] || 0) + 1;
+        }
         tile.plant = { kind: PlantKind.STUMP, regrowAt: this.clock + STUMP_REGROW_TIME };
         task.outcome = 'chopped';
         task.outcomeData = { n: wood };
@@ -1007,6 +1033,10 @@ export class Game {
             this.huts.push({ x: task.x, y: task.y, type: task.structure, cap, ownerId: colonist?.groupId });
           }
           if (task.structure === 'fence') this.fences.push({ x: task.x, y: task.y, ownerId: colonist?.groupId });
+          // α30 followup: cumulative build count per group.
+          if (colonist?.groupId != null && this.stats?.buildsByGroup) {
+            this.stats.buildsByGroup[colonist.groupId] = (this.stats.buildsByGroup[colonist.groupId] || 0) + 1;
+          }
           task.outcome = 'built';
           task.outcomeData = { structure: task.structure, wood: cost };
         }
@@ -1016,8 +1046,16 @@ export class Game {
     } else if (task.type === TaskType.COOK) {
       if (tile.structure !== 'hearth') {
         task.outcome = 'noHearth';
+        if (colonist?.groupId != null && this.stats?.cooksByGroup) {
+          const bag = this.stats.cooksByGroup[colonist.groupId] ||= { ok: 0, fail: 0 };
+          bag.fail += 1;
+        }
       } else if (!this.hearthsLit) {
         task.outcome = 'noFuel';
+        if (colonist?.groupId != null && this.stats?.cooksByGroup) {
+          const bag = this.stats.cooksByGroup[colonist.groupId] ||= { ok: 0, fail: 0 };
+          bag.fail += 1;
+        }
       } else {
         // Alpha 24: recipe-based cooking. Each pass picks the best
         // recipe whose ingredients are on hand (Tier 2 > Tier 1) and
@@ -1075,6 +1113,23 @@ export class Game {
         } else {
           task.outcome = 'cooked';
           task.outcomeData = { n: cooked, dishes: Object.keys(dishesMade) };
+        }
+        // α30 followup: cumulative cook counters (success vs fail).
+        // Success = at least one dish/meal produced; fail = noFood /
+        // noFuel / noHearth pre-checks above (covered by the wrapping
+        // outcome that hasn't been reset to 'cooked').
+        if (cookerGid != null && this.stats?.cooksByGroup) {
+          const bag = this.stats.cooksByGroup[cookerGid] ||= { ok: 0, fail: 0 };
+          if (task.outcome === 'cooked') bag.ok += 1;
+          else bag.fail += 1;
+          // Per-season cook count (success only).
+          if (task.outcome === 'cooked' && this.stats.seasonByGroup) {
+            const env = this.environment;
+            const sk = `Y${env.year}_${env.season}`;
+            const byG = this.stats.seasonByGroup[cookerGid] ||= {};
+            const bucket = byG[sk] ||= { woodStart: 0, woodEnd: 0, litSamples: [], cooks: 0, eatMissReasons: {} };
+            bucket.cooks += 1;
+          }
         }
       }
     } else if (task.type === TaskType.WEED) {
@@ -1558,6 +1613,33 @@ export class Game {
           // BUG-4 fix: stats counter survives the 1000-entry log rotation.
           const dbg = this.stats.deathsByGroup;
           if (dbg) dbg[c.groupId] = (dbg[c.groupId] || 0) + 1;
+          // α30 followup: per-death snapshot captured at the instant of
+          // expiry so the summary log can answer "what state was the
+          // colony in when each colonist died?" without needing
+          // tick-level history. Stockpile totals walk every owned pile
+          // PLUS the on-hand store, bucketed by edibility.
+          const grp = this.groups?.[c.groupId];
+          const snap = { meal: 0, edibleRaw: 0, inedibleRaw: 0, wood: 0, hearthLit: 0, hearthTotal: 0, missCount: c.missCount || 0 };
+          if (grp) {
+            const visit = (store) => {
+              for (const id of Object.keys(store || {})) {
+                if (id === 'wood' || id === 'quality' || id === 'mealNutrients') continue;
+                const n = store[id] || 0;
+                if (n <= 0) continue;
+                if (id === 'meal' || rcIsDish(id)) snap.meal += n;
+                else if (fsIsEdibleRaw(id)) snap.edibleRaw += n;
+                else snap.inedibleRaw += n;
+              }
+            };
+            visit(grp.storage);
+            for (const sp of this.stockpiles) {
+              if (sp.ownerId !== c.groupId) continue;
+              visit(sp.items);
+            }
+            snap.wood = grp.storage?.wood || 0;
+            snap.hearthTotal = this.hearths.filter((h) => h.ownerId === c.groupId).length;
+            snap.hearthLit = snap.wood > 0 ? snap.hearthTotal : 0;
+          }
           // Record the individual event for the summary export. lastDamage
           // is stamped at each damage site (cold / starve / animal:<species>);
           // 'unknown' is only reached if a colonist drops dead without ever
@@ -1571,6 +1653,7 @@ export class Game {
               name: c.name,
               groupId: c.groupId,
               cause: c.lastDamage || 'unknown',
+              snap,
             });
           }
           this._pushLog({

@@ -466,6 +466,8 @@ export function feed(game, colonist) {
   if (ate > 0) {
     game.meals.eaten += 1;
     if (grp) grp.meals.eaten += 1;
+    // α30 followup: reset the eater's miss streak on every success.
+    colonist.missCount = 0;
     game._pushLog({
       icon: anyCooked ? 'meal' : 'fork',
       text: t(ate > 1 ? 'log.ateMulti' : 'log.ate', { name, n: ate }),
@@ -476,6 +478,54 @@ export function feed(game, colonist) {
   }
   game.meals.missed += 1;
   if (grp) grp.meals.missed += 1;
+  // α30 followup: per-colonist consecutive-miss counter used by the
+  // death snapshot in the summary log.
+  colonist.missCount = (colonist.missCount || 0) + 1;
+  // α30 followup: classify WHY the eat failed. Walk the allowed
+  // groups' storage + every allowed stockpile and count each food
+  // bucket against the three categories. Categories are mutually
+  // exclusive, taking precedence in this order:
+  //   noFood         — every allowed source is empty
+  //   rawInedibleOnly — only inedible-raw items remain (grain / legume
+  //                     / raw meat etc.) so cooking is the only path
+  //                     and it hasn't happened
+  //   other           — anything else (a fallback bucket — usually a
+  //                     transient race where a peer took the last unit
+  //                     between the EAT task being scheduled and _feed
+  //                     running; "unreachable" would land here too if
+  //                     we ever wire pathfinder checks into _feed)
+  let cookedOnHand = 0;
+  let edibleRawOnHand = 0;
+  let inedibleRawOnHand = 0;
+  const tally = (store) => {
+    for (const id of Object.keys(store || {})) {
+      if (id === 'wood' || id === 'quality' || id === 'mealNutrients') continue;
+      const n = store[id] || 0;
+      if (n <= 0) continue;
+      if (id === 'meal' || isDish(id)) cookedOnHand += n;
+      else if (isEdibleRaw(id)) edibleRawOnHand += n;
+      else inedibleRawOnHand += n;
+    }
+  };
+  for (const g of allowedGroups) tally(g.storage);
+  const allowedPiles = game.stockpiles.filter((sp) => game._canUseFrom?.(groupId, sp.ownerId) ?? (sp.ownerId === groupId));
+  for (const sp of allowedPiles) tally(sp.items);
+  let reason;
+  if (cookedOnHand === 0 && edibleRawOnHand === 0 && inedibleRawOnHand === 0) reason = 'noFood';
+  else if (cookedOnHand === 0 && edibleRawOnHand === 0 && inedibleRawOnHand > 0) reason = 'rawInedibleOnly';
+  else reason = 'other';
+  if (game.stats?.eatMissReasonsByGroup) {
+    const bag = game.stats.eatMissReasonsByGroup[groupId] ||= { noFood: 0, rawInedibleOnly: 0, unreachable: 0, other: 0 };
+    bag[reason] = (bag[reason] || 0) + 1;
+  }
+  // Per-season miss-reason bucket.
+  if (game.stats?.seasonByGroup && game.environment) {
+    const env = game.environment;
+    const sk = `Y${env.year}_${env.season}`;
+    const byG = game.stats.seasonByGroup[groupId] ||= {};
+    const bucket = byG[sk] ||= { woodStart: 0, woodEnd: 0, litSamples: [], cooks: 0, eatMissReasons: {} };
+    bucket.eatMissReasons[reason] = (bucket.eatMissReasons[reason] || 0) + 1;
+  }
   game._pushLog({ icon: 'warn', text: t('log.hungry', { name }), cls: 'log-warn', groupId });
 }
 

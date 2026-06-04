@@ -44,6 +44,19 @@ import {
  * both fire at exactly the same beat as the season change banner.
  */
 export function onSeasonChange(game, season) {
+  // α30 followup: stamp the wood reading at the moment of season
+  // change into each group's per-season bucket so the timeline can
+  // print "木材 8 → 0".
+  if (game.stats?.seasonByGroup && game.environment) {
+    const env = game.environment;
+    const sk = `Y${env.year}_${env.season}`;
+    for (const grp of game.groups || []) {
+      const byG = game.stats.seasonByGroup[grp.id] ||= {};
+      const bucket = byG[sk] ||= { woodStart: 0, woodEnd: 0, litSamples: [], cooks: 0, eatMissReasons: {} };
+      bucket.woodStart = grp.storage?.wood || 0;
+      bucket.woodEnd = bucket.woodStart;
+    }
+  }
   if (season === 'winter') runWinterTrader(game);
   maybeBirth(game);
   // α26: groups running the Farmer (Selective breeding) script cull
@@ -311,13 +324,38 @@ export function pestStrike(game) {
  */
 export function updateFuel(game, dt) {
   if (game.hearths.length === 0) return;
+  const env = game.environment;
+  const seasonKey = env ? `Y${env.year}_${env.season}` : null;
+  const prevByG = game.stats?._prevWoodByGroup || {};
   for (const grp of game.groups || []) {
     const ownHearths = game.hearths.filter((h) => h.ownerId === grp.id).length;
     if (ownHearths === 0) continue;
     const ownWood = grp.storage?.wood || 0;
-    if (ownWood <= 0) continue;
-    const burn = Math.min(ownWood, ownHearths * WOOD_BURN_RATE * dt);
-    if (burn > 0) storageSub(game, grp.id, 'wood', burn);
+    const wasLit = (prevByG[grp.id] ?? ownWood) > 0;
+    const nowLit = ownWood > 0;
+    // α30 followup: per-season "%-of-time the hearths were lit" — a 1
+    // per tick when group had wood, 0 when dark. Averaged at export time.
+    if (seasonKey && game.stats?.seasonByGroup) {
+      const byG = game.stats.seasonByGroup[grp.id] ||= {};
+      const bucket = byG[seasonKey] ||= { woodStart: ownWood, woodEnd: ownWood, litSamples: [], cooks: 0, eatMissReasons: {} };
+      bucket.litSamples.push(nowLit ? 1 : 0);
+      bucket.woodEnd = ownWood;
+    }
+    // Capture lit → unlit transition once per group per drop-to-zero.
+    if (wasLit && !nowLit) {
+      if (game.stats?.hearthOutEventsByGroup && env) {
+        const arr = game.stats.hearthOutEventsByGroup[grp.id] ||= [];
+        arr.push({ year: env.year, season: env.season, day: env.day });
+      }
+    }
+    if (nowLit) {
+      const burn = Math.min(ownWood, ownHearths * WOOD_BURN_RATE * dt);
+      if (burn > 0) storageSub(game, grp.id, 'wood', burn);
+    }
+    if (game.stats) {
+      if (!game.stats._prevWoodByGroup) game.stats._prevWoodByGroup = {};
+      game.stats._prevWoodByGroup[grp.id] = grp.storage?.wood || 0;
+    }
   }
 }
 

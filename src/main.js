@@ -34,7 +34,8 @@ import { tempGrowthFactor, sunGrowthFactor } from './season.js';
 import { t, setLang, getLang } from './i18n.js';
 import { icon } from './icons.js';
 import { Game, STOCKPILE_ITEMS } from './game.js';
-import { nutrientsOf } from './systems/foodSystem.js';
+import { nutrientsOf, isEdibleRaw as foodIsEdibleRaw } from './systems/foodSystem.js';
+import { isDish as recipesIsDish } from './recipes.js';
 import { GROUP_COLORS } from './groups.js';
 import { TIPS, randomTipIndex } from './tips.js';
 
@@ -2297,6 +2298,31 @@ function buildSummaryText() {
       crisisHearth: 'かまど',
       crisisWood: '木材',
       crisisNearbyTree: '近隣の木',
+      // α30 followup: cause-of-death post-mortem labels.
+      stockBreakdown: '倉庫内訳',
+      bdCooked: '料理',
+      bdEdibleRaw: '生食可',
+      bdInedibleRaw: '生食不可',
+      harvestAccum: '累計収穫',
+      cooksAccum: '累計調理',
+      cookOk: '成功',
+      cookFail: '不発',
+      treesAccum: '累計伐採',
+      buildsAccum: '累計建築',
+      hearthOutEvents: 'かまど消火イベント',
+      eatMissReasons: '累計欠食理由',
+      reasonNoFood: '在庫ゼロ',
+      reasonRawInedibleOnly: '生食不可のみ',
+      reasonUnreachable: 'unreachable',
+      reasonOther: 'その他',
+      cascadeDeath: '人連続',
+      cascadeDetail: '詳細',
+      noOp: '正常',
+      litRate: '点火率',
+      cooksDelta: '調理',
+      woodDelta: '木材',
+      bursts: '本',
+      buildsUnit: '件',
     }
     : {
       title: '# Farm Proto Summary Log',
@@ -2344,6 +2370,31 @@ function buildSummaryText() {
       crisisHearth: 'hearth',
       crisisWood: 'wood',
       crisisNearbyTree: 'nearby tree',
+      // α30 followup: cause-of-death post-mortem labels.
+      stockBreakdown: 'Stock breakdown',
+      bdCooked: 'cooked',
+      bdEdibleRaw: 'raw-edible',
+      bdInedibleRaw: 'raw-inedible',
+      harvestAccum: 'Cumulative harvest',
+      cooksAccum: 'Cumulative cooks',
+      cookOk: 'ok',
+      cookFail: 'fail',
+      treesAccum: 'Cumulative chops',
+      buildsAccum: 'Cumulative builds',
+      hearthOutEvents: 'Hearth-out events',
+      eatMissReasons: 'Cumulative miss reasons',
+      reasonNoFood: 'noFood',
+      reasonRawInedibleOnly: 'rawInedibleOnly',
+      reasonUnreachable: 'unreachable',
+      reasonOther: 'other',
+      cascadeDeath: ' deaths cascade',
+      cascadeDetail: 'detail',
+      noOp: 'steady',
+      litRate: 'lit%',
+      cooksDelta: 'cooks',
+      woodDelta: 'wood',
+      bursts: 'trees',
+      buildsUnit: 'builds',
     };
 
   const env = game.environment || {};
@@ -2365,6 +2416,30 @@ function buildSummaryText() {
   // -------- Per-group current state --------
   lines.push(L.curState);
   lines.push('');
+  // α30 followup: stockpile breakdown helper — cooked / edible-raw /
+  // inedible-raw across this group's on-hand store + its own
+  // warehouses. Used by both the per-group current state and the
+  // death-snapshot rows.
+  const stockBreakdownFor = (g) => {
+    let meal = 0, edibleRaw = 0, inedibleRaw = 0;
+    const visit = (store) => {
+      for (const id of Object.keys(store || {})) {
+        if (id === 'wood' || id === 'quality' || id === 'mealNutrients') continue;
+        const n = store[id] || 0;
+        if (n <= 0) continue;
+        const dish = recipesIsDish(id);
+        if (id === 'meal' || dish) meal += n;
+        else if (foodIsEdibleRaw(id)) edibleRaw += n;
+        else inedibleRaw += n;
+      }
+    };
+    visit(g.storage);
+    for (const sp of game.stockpiles) {
+      if (sp.ownerId !== g.id) continue;
+      visit(sp.items);
+    }
+    return { meal, edibleRaw, inedibleRaw };
+  };
   for (const g of game.groups || []) {
     const status = g.colonists.length > 0 ? L.alive : L.extinct;
     let seedTotal = 0;
@@ -2382,6 +2457,35 @@ function buildSummaryText() {
     lines.push(`- ${L.mealsEatenMissed}: ${g.meals?.eaten || 0} / ${g.meals?.missed || 0}`);
     lines.push(`- ${L.cropsLostPests}: ${g.cropsLost || 0} / ${g.pestsLost || 0}`);
     lines.push(`- ${L.deathsAccum}: ${deaths}`);
+    // α30 followup: cause-of-death evidence fields.
+    const bd = stockBreakdownFor(g);
+    lines.push(`- ${L.stockBreakdown}: ${L.bdCooked} ${bd.meal} / ${L.bdEdibleRaw} ${bd.edibleRaw} / ${L.bdInedibleRaw} ${bd.inedibleRaw}`);
+    const harvest = game.stats?.cropsHarvestedByGroup?.[g.id];
+    if (harvest && Object.keys(harvest).length > 0) {
+      // Top entries by count, capped at 8 to keep the line tight.
+      const top = Object.entries(harvest).sort((a, b) => b[1] - a[1]).slice(0, 8);
+      lines.push(`- ${L.harvestAccum}: ${top.map(([id, n]) => `${t('crop.' + id)} ${n}`).join(' / ')}`);
+    }
+    const cooks = game.stats?.cooksByGroup?.[g.id];
+    if (cooks) lines.push(`- ${L.cooksAccum}: ${L.cookOk} ${cooks.ok} / ${L.cookFail} ${cooks.fail}`);
+    const chops = game.stats?.treesChoppedByGroup?.[g.id] || 0;
+    const builds = game.stats?.buildsByGroup?.[g.id] || 0;
+    if (chops > 0 || builds > 0) lines.push(`- ${L.treesAccum}: ${chops} ${L.bursts} / ${L.buildsAccum}: ${builds} ${L.buildsUnit}`);
+    const houts = game.stats?.hearthOutEventsByGroup?.[g.id];
+    if (houts && houts.length > 0) {
+      const summary = houts.slice(0, 4).map((h) => `Y${h.year}${t('season.' + h.season)}`).join(', ');
+      const more = houts.length > 4 ? `, +${houts.length - 4}` : '';
+      lines.push(`- ${L.hearthOutEvents}: ${houts.length} (${summary}${more})`);
+    }
+    const reasons = game.stats?.eatMissReasonsByGroup?.[g.id];
+    if (reasons) {
+      const parts = [];
+      if (reasons.rawInedibleOnly) parts.push(`${L.reasonRawInedibleOnly}:${reasons.rawInedibleOnly}`);
+      if (reasons.noFood) parts.push(`${L.reasonNoFood}:${reasons.noFood}`);
+      if (reasons.unreachable) parts.push(`${L.reasonUnreachable}:${reasons.unreachable}`);
+      if (reasons.other) parts.push(`${L.reasonOther}:${reasons.other}`);
+      if (parts.length > 0) lines.push(`- ${L.eatMissReasons}: [${parts.join(', ')}]`);
+    }
     lines.push('');
   }
 
@@ -2428,6 +2532,7 @@ function buildSummaryText() {
           const cg = l.perGroup[gidStr];
           const pg = prev.last.perGroup[gidStr];
           if (!cg || !pg) continue;
+          const gid = Number(gidStr);
           const evs = [];
           const popD = cg.population - pg.population;
           if (popD !== 0) evs.push(`${L.pop} ${sign(popD)}`);
@@ -2435,9 +2540,41 @@ function buildSummaryText() {
           if (missedD > 0) evs.push(`${L.missed} +${missedD}`);
           const lostD = (cg.cropsLost || 0) - (pg.cropsLost || 0);
           if (lostD > 0) evs.push(`${L.lost} +${lostD}`);
+          // α30 followup: pull per-season trace from stats.seasonByGroup.
+          const seasonKey = `Y${b.y}_${b.s}`;
+          const bucket = game.stats?.seasonByGroup?.[gid]?.[seasonKey];
+          if (bucket) {
+            const woodDelta = bucket.woodEnd - bucket.woodStart;
+            if (Math.abs(woodDelta) > 2) {
+              evs.push(`${L.woodDelta} ${Math.round(bucket.woodStart)}→${Math.round(bucket.woodEnd)}`);
+            }
+            if (bucket.litSamples.length > 0) {
+              // Take the first / last 25% of samples to derive a start/end ratio.
+              const n = bucket.litSamples.length;
+              const headN = Math.max(1, Math.floor(n / 4));
+              const head = bucket.litSamples.slice(0, headN);
+              const tail = bucket.litSamples.slice(-headN);
+              const avg = (arr) => Math.round(100 * arr.reduce((a, b) => a + b, 0) / arr.length);
+              const sH = avg(head), sT = avg(tail);
+              if (sH !== sT || sH < 90) evs.push(`${L.litRate} ${sH}%→${sT}%`);
+            }
+            if (bucket.cooks > 0) evs.push(`${L.cooksDelta} +${bucket.cooks}`);
+            const rParts = [];
+            for (const k of ['rawInedibleOnly', 'noFood', 'unreachable', 'other']) {
+              if (bucket.eatMissReasons[k]) rParts.push(`${L['reason' + k.charAt(0).toUpperCase() + k.slice(1)] || k}:${bucket.eatMissReasons[k]}`);
+            }
+            if (rParts.length > 0) evs.push(`${L.eatMissReasons.replace('累計','').replace('Cumulative ','').trim()} [${rParts.join(', ')}]`);
+          }
+          // Compression rule: skip "steady" colonies (no missed meals AND
+          // wood delta within ±2 AND no pop change AND no crop loss).
           if (evs.length === 0) continue;
-          const gid = Number(gidStr);
-          lines.push(`- ${colonyOf(gid)}: ${evs.join(', ')}`);
+          const onlyTrivial = popD === 0 && missedD === 0 && lostD === 0
+            && evs.every((s) => !s.includes(L.missed) && !s.includes(L.pop) && !s.includes(L.lost));
+          if (onlyTrivial && evs.length === 0) {
+            // Don't print at all.
+          } else {
+            lines.push(`- ${colonyOf(gid)}: ${evs.join(', ')}`);
+          }
         }
       }
       lines.push('');
@@ -2496,19 +2633,66 @@ function buildSummaryText() {
   if (deathEvents.length === 0) {
     lines.push(L.noDeaths);
   } else {
-    for (const d of deathEvents) {
-      const yt = `Y${d.year} ${t('season.' + d.season)} ${t('val.day', { n: d.day })}`;
-      let causeLabel;
-      const raw = d.cause || 'unknown';
+    // α30 followup: classify the cause label.
+    const causeLabelOf = (raw) => {
       if (raw.startsWith('animal:')) {
         const species = raw.slice('animal:'.length);
-        causeLabel = t('cause.animalSpecies', { animal: t('animal.' + species) });
-      } else if (raw === 'cold' || raw === 'starve' || raw === 'animal') {
-        causeLabel = t('cause.' + raw);
-      } else {
-        causeLabel = t('cause.unknown');
+        return t('cause.animalSpecies', { animal: t('animal.' + species) });
       }
-      lines.push(`- ${yt} — ${colonyOf(d.groupId)}: ${d.name} (${causeLabel})`);
+      if (raw === 'cold' || raw === 'starve' || raw === 'animal') return t('cause.' + raw);
+      return t('cause.unknown');
+    };
+    // α30 followup: compact snapshot suffix.
+    const snapSuffix = (snap) => {
+      if (!snap) return '';
+      const stk = `${L.bdCooked.slice(0,1)}${snap.meal}/${L.bdEdibleRaw.slice(0,1)}${snap.edibleRaw}/${L.bdInedibleRaw.slice(0,1)}${snap.inedibleRaw}`;
+      return ` | ${L.stockBreakdown}:${stk} ${L.wood}${snap.wood} ${L.litRate}${snap.hearthLit}/${snap.hearthTotal} ${L.cascadeDetail.slice(0,1)}${snap.missCount}`;
+    };
+    // α30 followup: group consecutive starve deaths in the same colony
+    // into a single cascade line (≥3 deaths within the same season).
+    let i = 0;
+    while (i < deathEvents.length) {
+      const d = deathEvents[i];
+      let j = i + 1;
+      if (d.cause === 'starve') {
+        while (j < deathEvents.length) {
+          const n = deathEvents[j];
+          if (n.cause !== 'starve' || n.groupId !== d.groupId
+              || n.year !== d.year || n.season !== d.season) break;
+          j++;
+        }
+      }
+      const run = j - i;
+      if (run >= 3) {
+        // Cascade line: range of days + per-snapshot range of values + name list.
+        const first = d, last = deathEvents[j - 1];
+        const days = first.day === last.day ? `${first.day}` : `${first.day}-${last.day}`;
+        // Snapshot ranges across the run.
+        const snaps = deathEvents.slice(i, j).map((e) => e.snap).filter(Boolean);
+        const rng = (sel) => {
+          if (snaps.length === 0) return 'NA';
+          const vals = snaps.map(sel);
+          const mn = Math.min(...vals), mx = Math.max(...vals);
+          return mn === mx ? `${mn}` : `${mn}-${mx}`;
+        };
+        const stkRng = snaps.length
+          ? `${L.bdCooked.slice(0,1)}${rng(s => s.meal)}/${L.bdEdibleRaw.slice(0,1)}${rng(s => s.edibleRaw)}/${L.bdInedibleRaw.slice(0,1)}${rng(s => s.inedibleRaw)}`
+          : '';
+        const woodRng = snaps.length ? `${L.wood}${rng(s => s.wood)}` : '';
+        const litRng = snaps.length ? `${L.litRate}${rng(s => s.hearthLit)}/${rng(s => s.hearthTotal)}` : '';
+        const summary = `Y${first.year} ${t('season.' + first.season)} ${days} ${colonyOf(first.groupId)}: ${run}${L.cascadeDeath} (${t('cause.starve')})`;
+        const evidence = snaps.length ? ` | ${L.stockBreakdown}:${stkRng} ${woodRng} ${litRng}` : '';
+        lines.push(`- ${summary}${evidence}`);
+        lines.push(`  ${L.cascadeDetail}: ${deathEvents.slice(i, j).map((e) => e.name).join('・')}`);
+        i = j;
+      } else {
+        for (let k = i; k < j; k++) {
+          const e = deathEvents[k];
+          const yt = `Y${e.year} ${t('season.' + e.season)} ${e.day}`;
+          lines.push(`- ${yt} ${e.name} ${colonyOf(e.groupId)} (${causeLabelOf(e.cause)})${snapSuffix(e.snap)}`);
+        }
+        i = j;
+      }
     }
   }
   lines.push('');
