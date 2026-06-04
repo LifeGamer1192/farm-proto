@@ -991,18 +991,32 @@ function updateCodexPanel() {
   // the click event never fired. Reusing the existing nodes when
   // unchanged keeps single-click open reliable.
   const html = `<p class="codex-legend">${legend}</p>${sections}`;
+  // α30 followup: track WHETHER the panel HTML was reassigned this poll
+  // — and only redraw the preview canvases when it was. Repainting the
+  // canvas every poll (drawCropPreview begins with ctx.clearRect)
+  // produced a momentary blank between clear and paint that the browser
+  // could composite, making fast-turnover rows visibly flicker even
+  // though the genome wasn't changing. When the HTML is unchanged,
+  // every canvas in the DOM still has the previous paint, so skipping
+  // the redraw entirely fixes the residual flicker the player was
+  // still seeing on cabbage / lettuce after the count-chip extraction.
+  let htmlChanged = false;
   if (html !== lastCodexHtml) {
     lastCodexHtml = html;
     codexEl.innerHTML = html;
+    htmlChanged = true;
   }
-  // Paint each preview canvas with its group's best genome.
-  for (const section of codexEl.querySelectorAll('.group-section')) {
-    const gid = Number(section.dataset.group);
-    const codex = game.groups[gid]?.codex || {};
-    for (const cv of section.querySelectorAll('canvas.codex-preview')) {
-      const id = cv.dataset.crop;
-      if (codex[id]) {
-        game.renderer.drawCropPreview(cv.getContext('2d'), cv.width, cv.height, id, codex[id].best);
+  if (htmlChanged) {
+    // Paint each preview canvas with its group's best genome. Only runs
+    // when the DOM was just rebuilt (so the canvases are fresh / blank).
+    for (const section of codexEl.querySelectorAll('.group-section')) {
+      const gid = Number(section.dataset.group);
+      const codex = game.groups[gid]?.codex || {};
+      for (const cv of section.querySelectorAll('canvas.codex-preview')) {
+        const id = cv.dataset.crop;
+        if (codex[id]) {
+          game.renderer.drawCropPreview(cv.getContext('2d'), cv.width, cv.height, id, codex[id].best);
+        }
       }
     }
   }
