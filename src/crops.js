@@ -116,15 +116,41 @@ export const CROP_TYPES = {
 // represents one of these ancestors).
 export const WILD_CROP_IDS = ['wildgreens', 'wildgrain', 'wildlegume', 'wildroot', 'wildberry'];
 
-// Crops you cannot eat raw — must be cooked first (alpha 24). The list
-// covers categories that need cooking in real life: grains, legumes
-// and the cultivated nuts. Wild ancestors stay edible raw (foraged
-// early-game fallback), even when their cultivated descendants do not.
-// Everything else defaults to edible.
+// Crops you cannot eat raw — must be cooked first (alpha 24).
+//
+// α30 followup: the list was over-inclusive — several items on it are
+// routinely eaten raw in the real world and were unfairly forcing the
+// cooking pipeline. Trimmed five entries:
+//   - oats   : raw rolled / steel-cut oats are the basis of overnight
+//              oats, granola, muesli — fully edible raw, just slightly
+//              lower mineral bioavailability from the phytic acid load
+//   - maize  : sweet-corn varieties are eaten raw routinely (salads,
+//              kids' snacks). Only dent / field corn would need cooking.
+//   - pea    : snap peas, snow peas, young garden peas are standard raw
+//              salad fare. Dried peas would still need cooking.
+//   - almond : "raw almonds" is the supermarket default. Sweet-almond
+//              cultivars only — bitter almonds (a separate species)
+//              would not qualify, but bitter almonds aren't a CROP_TYPE
+//              entry, so this trim is safe.
+//   - walnut : nearly all retail walnuts are uncooked. "Raw" is the
+//              standard state.
+// What remains inedible-raw: wheat / rice / barley (hard grains that
+// genuinely need cooking), bean / soybean / lentil / chickpea (dried
+// legumes — raw kidney beans in particular carry phytohemagglutinin),
+// chestnut (genuinely needs roasting / boiling for the starch).
+//
+// Wild ancestors (wildgreens / wildgrain / ... — see WILD_CROP_IDS)
+// stay edible raw via the default unless explicitly added here. A
+// hypothetical future `wildalmond` would belong on this list — its
+// cultivar trims are sweet-almond specific.
 const _INEDIBLE_RAW = new Set([
-  'wheat', 'rice', 'maize', 'oats', 'barley',
-  'bean', 'soybean', 'pea', 'lentil', 'chickpea',
-  'almond', 'walnut', 'chestnut',
+  'wheat', 'rice', 'barley',
+  'bean', 'soybean', 'lentil', 'chickpea',
+  'chestnut',
+  // Reserved: bitter / wild forms of the trimmed cultivars stay raw-
+  // hostile. None of these ids exist yet but they're listed in advance
+  // so the trim above is the single source of truth for the cultivars.
+  'wildalmond',
 ]);
 for (const id of Object.keys(CROP_TYPES)) {
   CROP_TYPES[id].edibleRaw = !_INEDIBLE_RAW.has(id);
