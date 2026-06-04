@@ -234,7 +234,23 @@ function colonistStateLabel(c) {
   } else if (task.type === 'build' && task.structure) {
     detail = t('detail.build', { structure: t('structure.' + task.structure) });
   } else if (task.type === 'cook') {
-    detail = t('detail.cook');
+    // α30 followup: name the most-stocked raw ingredient the cook can
+    // use AND the dish-type that recipe would produce when known. The
+    // exact recipe fires inside cookOne at apply time; for the in-progress
+    // display we approximate from the group's current top ingredient.
+    const grp = game.groups?.[c.groupId];
+    let ingredient = null;
+    let bestN = 0;
+    if (grp) {
+      for (const id of Object.keys(grp.storage || {})) {
+        if (id === 'wood' || id === 'meal' || id === 'quality' || id === 'mealNutrients') continue;
+        if (typeof grp.storage[id] !== 'number') continue;
+        if (grp.storage[id] > bestN) { bestN = grp.storage[id]; ingredient = id; }
+      }
+    }
+    detail = ingredient
+      ? t('detail.cookOf', { from: itemLabel(ingredient), to: t('stat.cooked') })
+      : t('detail.cook');
   } else if (task.type === 'hunt') {
     detail = t('detail.hunt');
   } else if (task.type === 'till') {
@@ -244,11 +260,47 @@ function colonistStateLabel(c) {
   } else if (task.type === 'weed') {
     detail = t('detail.weed');
   } else if (task.type === 'store') {
-    detail = t('detail.store');
+    // α30 followup: name the on-hand item the colonist is most likely
+    // to be hauling. STORE moves overflowing on-hand stock into a pile,
+    // so we pick the colony's top-stocked food item as the target.
+    const target = _busiestOnHandItem();
+    detail = target
+      ? t('detail.storeOf', { item: itemLabel(target) })
+      : t('detail.store');
   } else if (task.type === 'fetch') {
-    detail = t('detail.fetch');
+    const target = _topStockpileItem(task.x, task.y);
+    detail = target
+      ? t('detail.fetchOf', { item: itemLabel(target) })
+      : t('detail.fetch');
   }
   return detail ? `${base} (${detail})` : base;
+}
+
+// α30 followup: helpers for the enriched STORE / FETCH state labels.
+// The colonist is on the way to (or working at) a stockpile and is
+// hauling the colony's current most-stocked food item — surface that
+// item id so the row reads "haul (tomato)" instead of plain "haul".
+function _busiestOnHandItem() {
+  const store = game.storage || {};
+  let best = null;
+  let bestN = 0;
+  for (const id of Object.keys(store)) {
+    if (id === 'wood' || id === 'quality' || id === 'mealNutrients') continue;
+    const n = store[id];
+    if (typeof n === 'number' && n > bestN) { bestN = n; best = id; }
+  }
+  return best;
+}
+function _topStockpileItem(x, y) {
+  const sp = game.stockpiles?.find((s) => s.x === x && s.y === y);
+  if (!sp) return null;
+  let best = null;
+  let bestN = 0;
+  for (const id of Object.keys(sp.items)) {
+    const n = sp.items[id];
+    if (typeof n === 'number' && n > bestN) { bestN = n; best = id; }
+  }
+  return best;
 }
 
 // --- Per-group view state (alpha 25) ----------------------------------
@@ -360,15 +412,15 @@ function colonistRowHtml(c) {
     statBar('stat.mood', c.mood);
   const sel = c.name === game.selectedColonist ? ' selected' : '';
   const icons = colonistConditionIcons(c);
-  // α30: nutrient bars + hover tooltip showing each bucket %. Compact,
-  // sits below the survival stat bars.
+  // α30 followup: nutrient pie is now an inline child of the bars row
+  // so the 3 stat bars + the rose chart share a single line. Saves a
+  // row of vertical real estate per colonist.
   const nbars = c.nutrients ? colonistNutrientBarsHtml(c) : '';
   return (
     `<div class="colonist-row${sel}" data-colonist="${c.name}">` +
     `<div class="crow-head"><span>${c.name}${icons}</span>` +
     `<span class="cstate">${colonistStateLabel(c)}</span></div>` +
-    `<div class="crow-bars">${bars}</div>` +
-    nbars +
+    `<div class="crow-bars">${bars}${nbars}</div>` +
     `</div>`
   );
 }
@@ -869,11 +921,25 @@ function codexRowHtml(id, c, groupId) {
   const rawLabel = isRaw ? t('label.rawOk') : t('label.rawCook');
   const rawTitle = isRaw ? t('hint.rawOk') : t('hint.rawCook');
   const rawBadge = `<span class="codex-raw ${rawCls}" title="${rawTitle}">${rawLabel}</span>`;
+  // α30 followup: per-row "seeds / stock" chip showing how much of THIS
+  // crop the colony group currently holds. Seeds = list length in the
+  // group's seed pool; stock = on-hand + every owned stockpile.
+  const grp = game.groups?.[groupId];
+  const seedsN = grp?.seeds?.[id]?.length || 0;
+  let stockN = grp?.storage?.[id] || 0;
+  if (grp) {
+    for (const sp of game.stockpiles) {
+      if (sp.ownerId !== grp.id) continue;
+      stockN += sp.items[id] || 0;
+    }
+  }
+  const countChip = `<span class="codex-count" title="${t('hint.codexCount')}">${t('label.codexSeed')}${seedsN} / ${t('label.codexStock')}${stockN}</span>`;
   return (
     `<div class="codex-row">` +
     `<canvas class="codex-preview" data-crop="${id}" data-best="1" width="48" height="48"></canvas>` +
     `<div class="codex-info"><div class="codex-head">` +
     `<span class="codex-crop">${t('crop.' + id)}</span>` +
+    countChip +
     `${rawBadge}` +
     `<span class="codex-rank">${'★'.repeat(qualityRank(c.best))}</span>` +
     `<a class="${pedigreeClass}"${pedigreeAttr} title="${t('label.pedigreeHint')}">${t('label.pedigree')}</a>` +
@@ -946,7 +1012,15 @@ let lastLogMode = null;
 // the routine successful work entries so only the important lines —
 // failures, warnings, and event-style entries — remain.
 let logMode = 'detail';
-const logEntryHtml = (e) => `<li class="${e.cls}"><span class="log-ico">${icon(e.icon)}</span> ${e.text}</li>`;
+const logEntryHtml = (e) => {
+  // α30 followup: `e.detail` (currently the "what was eaten" suffix
+  // pushed by the food system) is appended only in detail mode so the
+  // simple-mode list stays compact. The full rebuild on mode switch
+  // (logEntryMatches above) re-runs this renderer so the detail
+  // string appears / disappears as the player toggles modes.
+  const detail = (logMode === 'detail' && e.detail) ? e.detail : '';
+  return `<li class="${e.cls}"><span class="log-ico">${icon(e.icon)}</span> ${e.text}${detail}</li>`;
+};
 // H1: a group tab is now a STRICT filter — colony-wide entries (no
 // groupId attached) stay in the "All" view only. This stops the
 // per-colony log from being polluted by the season banner / cold snap

@@ -1340,6 +1340,22 @@ button.primary:hover {
 }
 .codex-raw.raw-ok   { color: #8ad07a; background: rgba(80, 160, 80, 0.08); }
 .codex-raw.raw-cook { color: #e8a866; background: rgba(180, 110, 40, 0.10); }
+/* α30 followup: per-group "seeds N / stock N" chip sits between the
+   crop name and the edible-raw badge so the player can see at a glance
+   how much of that variety this colony actually holds. */
+.codex-count {
+  display: inline-block;
+  font-size: 0.68rem;
+  letter-spacing: 0.01em;
+  padding: 1px 6px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--muted);
+  cursor: help;
+  line-height: 1.4;
+  margin-left: 6px;
+}
 /* keep the rank + pedigree link tight against the right edge */
 .codex-head { gap: 4px; align-items: center; }
 
@@ -1483,6 +1499,7 @@ button.primary:hover {
 .crow-bars {
   display: flex;
   gap: 5px;
+  align-items: center;
 }
 
 .cbar {
@@ -1509,13 +1526,9 @@ button.primary:hover {
   background: #d2493a;
 }
 
-/* α30: nutrient bars under the survival bars, plus per-nutrient tints
-   and a stage-coloured malnutrition icon. */
-.crow-nutrients {
-  display: flex;
-  gap: 4px;
-  margin-top: 3px;
-}
+/* α30 followup: nutrient pie chart sits inline with the 3 stat bars
+   (see the consolidated rule below). The old bar-row variant is gone;
+   only per-nutrient tint colours and the malnutrition icon remain. */
 .crow-nutrients .cbar {
   height: 5px;
 }
@@ -1529,7 +1542,12 @@ button.primary:hover {
   vertical-align: middle;
   filter: drop-shadow(0 0 1px rgba(0, 0, 0, 0.4));
 }
-.crow-nutrients { display: inline-block; vertical-align: middle; margin-left: 6px; }
+.crow-nutrients {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 4px;
+  flex: 0 0 auto;
+}
 .ped-nutrients {
   display: flex;
   justify-content: center;

@@ -446,10 +446,16 @@ export function feed(game, colonist) {
 
   let ate = 0;
   let anyCooked = false;
+  // α30 followup: collect what was actually eaten so the activity log's
+  // detail-mode line can name the items ("食事した (2個 (トマト・パン))").
+  // The simple-mode line stays just the count via the `text` field; the
+  // detail string lives on `detail` so the renderer can opt in.
+  const eatenIds = [];
   for (let i = 0; i < MAX_MEAL_ITEMS && colonist.hunger > 0.001; i++) {
     const got = takeOne();
     if (!got) break;
     ate += 1;
+    eatenIds.push(got.item);
     if (got.cooked) anyCooked = true;
     colonist.hunger = Math.max(0, colonist.hunger - satietyOf(got.item, got.cooked));
     // Mood: cooked food lifts more; raw is a smaller bump. Applied per
@@ -468,11 +474,25 @@ export function feed(game, colonist) {
     if (grp) grp.meals.eaten += 1;
     // α30 followup: reset the eater's miss streak on every success.
     colonist.missCount = 0;
+    // α30 followup: detail-mode log line names what was eaten. The
+    // renderer (main.js logEntryHtml) shows `text + detail` only in
+    // detail mode, so simple-mode lines stay compact.
+    const itemLabelInline = (id) => {
+      if (id === 'forage') return t('stat.forage');
+      if (id === 'meat') return t('stat.meat');
+      if (id === 'meal') return t('stat.cooked');
+      return t('crop.' + id);
+    };
+    const itemsDetail = eatenIds.length > 0
+      ? ` (${eatenIds.map(itemLabelInline).join('・')})`
+      : '';
     game._pushLog({
       icon: anyCooked ? 'meal' : 'fork',
       text: t(ate > 1 ? 'log.ateMulti' : 'log.ate', { name, n: ate }),
+      detail: itemsDetail,
       cls: 'log-meal',
       groupId,
+      kind: 'eat',
     });
     return;
   }
