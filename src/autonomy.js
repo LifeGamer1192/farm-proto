@@ -525,15 +525,23 @@ export function pickAutonomousTask(game, colonist) {
   if (game.autoMode) {
     const ownGrp = game.groups?.[gid];
     const ownWood = ownGrp?.storage?.wood || 0;
-    // α30 followup: scale the chop trigger with the colony's hearth
-    // count so a 3-hearth colony doesn't wait until 5 wood to chop —
-    // 3 hearths burn ~7-8 wood per sim-minute, so 6 disappears in a
-    // single in-game minute and cooking stalls anyway. Each own hearth
-    // bumps the threshold by half WOOD_LOW (rounded), with a floor of
-    // the base WOOD_LOW so even a 0-hearth colony still keeps a
-    // building reserve.
+    // α30 followup: chop trigger now factors in three demand drivers,
+    // not just hearth count. The earlier formula (constant + hearths × 3)
+    // ignored population (more colonists = more cook tasks = more lit
+    // hearth time) and season (winter burns more wood for warmth on top
+    // of cooking). Manual-play tests showed colonies of 4-9 surviving
+    // food crises only to freeze to death in autumn/winter once the
+    // wood ran out. The new buffers keep autumn/winter reserves ahead
+    // of demand.
     const ownHearths = game._hearthCountFor(gid);
-    const woodLow = Math.max(WOOD_LOW, WOOD_LOW + Math.ceil(ownHearths * WOOD_LOW / 2));
+    const ownPop = ownGrp?.colonists?.length || 0;
+    const season = game.environment?.season;
+    const hearthBuf = Math.ceil(ownHearths * WOOD_LOW / 2);
+    const popBuf = Math.ceil(ownPop / 2);
+    const seasonBuf = season === 'winter' ? WOOD_LOW
+      : season === 'autumn' ? Math.ceil(WOOD_LOW / 2)
+        : 0;
+    const woodLow = Math.max(WOOD_LOW, WOOD_LOW + hearthBuf + popBuf + seasonBuf);
     if (ownWood < woodLow) {
       const tree = game._nearestTree(colonist, AUTO_SEARCH_RANGE);
       if (tree) return createTask(TaskType.HARVEST, tree.x, tree.y);
