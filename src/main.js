@@ -461,9 +461,22 @@ function updateColonyStats() {
   // shows what that colony actually owns rather than the colony-wide pool.
   const g = selectedGroupId == null ? null : game.groups[selectedGroupId];
   const s = g ? g.storage : game.storage;
-  // Item-total reader: per-group when a tab is active (on-hand from
-  // g.storage only — stockpile items remain colony-wide), else colony.
-  const ti = (it) => g ? (g.storage[it] || 0) : game.totalItem(it);
+  // Item-total reader. α30 followup: in the per-group view, ALSO sum
+  // items in stockpiles this group owns (matching the foodStored
+  // calculation below). The old version only read g.storage[it] which
+  // is the colonists' on-hand for this group — so a group with 715
+  // food sitting in its own warehouses showed up as "食料備蓄 717"
+  // on the top line (on-hand + owned) but the breakdown rows added
+  // to just 2 (on-hand only). Now both numbers agree.
+  const ti = (it) => {
+    if (!g) return game.totalItem(it);
+    let n = g.storage[it] || 0;
+    for (const sp of game.stockpiles) {
+      if (sp.ownerId !== g.id) continue;
+      n += sp.items[it] || 0;
+    }
+    return n;
+  };
   // Stockpile rows: when a tab is active, only count piles this group
   // owns (B2 ownerId). With "All" selected, show every pile.
   let spUsed = 0;
