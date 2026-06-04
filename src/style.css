@@ -1026,9 +1026,16 @@ button.primary:hover {
   color: #d0c8e0;
 }
 
-/* α30 followup: per-gene inheritance lessons under each lineage entry. */
+/* α30 followup: per-gene inheritance lessons under each lineage entry.
+   First attempt used `display: grid` on the outer container without an
+   explicit `grid-template-rows` declaration — all four `.ped-lesson`
+   children collapsed onto the same row, overlapping each other. Fix:
+   use a flex column layout so each lesson row stacks vertically. The
+   per-lesson row keeps its 3-column grid for `gene | math | tag` so the
+   columns stay aligned across rows. */
 .ped-lessons {
-  display: grid;
+  display: flex;
+  flex-direction: column;
   gap: 4px;
   margin: 10px auto 0;
   max-width: 680px;
@@ -1040,10 +1047,13 @@ button.primary:hover {
 }
 .ped-lesson {
   display: grid;
-  grid-template-columns: 6em 8em 1fr;
+  grid-template-columns: 6em 9em 1fr;
   gap: 10px;
-  align-items: center;
+  align-items: baseline;
+  line-height: 1.5;
 }
+.ped-lesson > span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ped-lesson-tag { white-space: normal; }
 .ped-lesson-gene { font-weight: 600; color: #cde6b0; }
 .ped-lesson-math { font-family: monospace; color: #b8c8a8; font-size: 0.82rem; }
 .ped-lesson-tag { color: #d8d8d8; }
