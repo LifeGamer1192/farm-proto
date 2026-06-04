@@ -33,6 +33,7 @@ import { tempGrowthFactor, sunGrowthFactor } from './season.js';
 import { t, setLang, getLang } from './i18n.js';
 import { icon } from './icons.js';
 import { Game, STOCKPILE_ITEMS } from './game.js';
+import { nutrientsOf } from './systems/foodSystem.js';
 import { GROUP_COLORS } from './groups.js';
 import { TIPS, randomTipIndex } from './tips.js';
 
@@ -185,6 +186,16 @@ function colonistConditionIcons(c) {
   }
   if (c.sleep !== undefined && c.sleep < 0.3) {
     ico.push(`<span class="cond-ico" title="${t('cond.sleepy')}">${icon('sleep')}</span>`);
+  }
+  // α30: malnutrition stage 1+ gets a frown icon with a tooltip listing
+  // the stage name + the missing nutrients + recovery hint.
+  const stage = c.malnutritionStage ? c.malnutritionStage() : 0;
+  if (stage > 0) {
+    const missing = (c.missingNutrients ? c.missingNutrients() : [])
+      .map((k) => t('nut.' + k))
+      .join(', ');
+    const tip = `${t('mal.' + stage)} — ${t('mal.tip.' + stage)} ${t('mal.missing', { list: missing })} ${t('mal.fix')}`;
+    ico.push(`<span class="cond-ico cond-mal-${stage}" title="${tip}">${icon('malnutrition')}</span>`);
   }
   // Skill highlight: any skill above 0.7 gets a star tooltip.
   if (c.skills) {
@@ -347,12 +358,37 @@ function colonistRowHtml(c) {
     statBar('stat.mood', c.mood);
   const sel = c.name === game.selectedColonist ? ' selected' : '';
   const icons = colonistConditionIcons(c);
+  // α30: nutrient bars + hover tooltip showing each bucket %. Compact,
+  // sits below the survival stat bars.
+  const nbars = c.nutrients ? colonistNutrientBarsHtml(c) : '';
   return (
     `<div class="colonist-row${sel}" data-colonist="${c.name}">` +
     `<div class="crow-head"><span>${c.name}${icons}</span>` +
     `<span class="cstate">${colonistStateLabel(c)}</span></div>` +
-    `<div class="crow-bars">${bars}</div></div>`
+    `<div class="crow-bars">${bars}</div>` +
+    nbars +
+    `</div>`
   );
+}
+
+// α30: 4 thin nutrient bars (carb / protein / fat / vitamin) shown under
+// the survival stats. Each has its own colour and the row carries a
+// title with the % breakdown.
+const NUTRIENT_BAR_KEYS = ['carb', 'protein', 'fat', 'vitamin'];
+function colonistNutrientBarsHtml(c) {
+  const parts = [];
+  const tipParts = [];
+  for (const k of NUTRIENT_BAR_KEYS) {
+    const v = c.nutrients?.[k] ?? 0;
+    const pct = Math.max(0, Math.min(100, Math.round(v * 100)));
+    const cls = v >= 0.5 ? 'good' : v >= 0.3 ? 'mid' : 'low';
+    parts.push(
+      `<span class="cbar nut-${k}" title="${t('nut.' + k)} ${pct}%">` +
+      `<b class="${cls}" style="width:${pct}%"></b></span>`,
+    );
+    tipParts.push(`${t('nut.' + k)} ${pct}%`);
+  }
+  return `<div class="crow-nutrients" title="${tipParts.join(' / ')}">${parts.join('')}</div>`;
 }
 
 function updateColonistsPanel() {
@@ -587,7 +623,17 @@ function cropHint(id) {
     grow: c.growthTime,
     yield: c.yield,
     nut: Math.round(c.nutrition * 100),
-  })}`;
+  })} · ${nutrientHint(id)}`;
+}
+
+// α30: 4-nutrient breakdown as a compact hint string (e.g.
+// "炭水化物85% / タンパク質5% / 脂質5% / ビタミン5%"). Used in crop /
+// food hover hints and pedigree cells.
+function nutrientHint(foodId) {
+  const n = nutrientsOf(foodId);
+  return ['carb', 'protein', 'fat', 'vitamin']
+    .map((k) => `${t('nut.' + k)} ${Math.round((n[k] || 0) * 100)}%`)
+    .join(' / ');
 }
 
 // Crops the picker should expose — the run's eight starters plus any
@@ -1262,13 +1308,43 @@ const startLangsEl = $('start-langs');
 let startBiomeId = 'temperate';
 const NO_CROP = '__random'; // marker value for "pick randomly"
 const NONE_CROP = '__none'; // B1: marker for "no seed in this slot"
+// α30 followup: nutrient-themed random sentinels. Each picks a random
+// non-wild crop whose category leans toward the named nutrient bucket,
+// so the player can stack their starter slots to defend against a
+// specific malnutrition stage from turn 1.
+const RANDOM_CARB    = '__random_carb';
+const RANDOM_PROTEIN = '__random_protein';
+const RANDOM_FAT     = '__random_fat';
+const RANDOM_VITAMIN = '__random_vitamin';
 const SEED_SLOTS = 4;
 const SEED_DEFAULT_QTY = 12;
 
+// Category buckets used by the themed random options. Categories that
+// fall outside any explicit bucket (e.g. nut sits in BOTH protein and
+// fat) stay accessible via the plain "Random" sentinel.
+const RANDOM_THEME_CATS = {
+  [RANDOM_CARB]:    new Set(['grain', 'tuber', 'root']),
+  [RANDOM_PROTEIN]: new Set(['legume', 'nut']),
+  [RANDOM_FAT]:     new Set(['nut']),
+  [RANDOM_VITAMIN]: new Set(['leaf', 'stem', 'bulb', 'flower', 'fruit', 'fruitVeg', 'root']),
+};
+
 const WILD_SET = new Set(WILD_CROP_IDS);
-function pickRandomSeed(excluded) {
-  const pool = CROP_IDS.filter((id) => !WILD_SET.has(id) && !excluded.has(id));
-  if (pool.length === 0) return null;
+function pickRandomSeed(excluded, theme = null) {
+  const catFilter = theme ? RANDOM_THEME_CATS[theme] : null;
+  const pool = CROP_IDS.filter((id) => {
+    if (WILD_SET.has(id) || excluded.has(id)) return false;
+    if (!catFilter) return true;
+    const c = getCrop(id);
+    return c && catFilter.has(c.category);
+  });
+  if (pool.length === 0) {
+    // Themed pool exhausted by exclusions — fall back to the plain
+    // random pool so the slot still gets *something* instead of going
+    // empty when the player stacks several themed sentinels.
+    if (theme) return pickRandomSeed(excluded, null);
+    return null;
+  }
   return pool[Math.floor(Math.random() * pool.length)];
 }
 
@@ -1290,7 +1366,11 @@ function readStartGroupSetup() {
     for (const slot of slots) {
       let id = slot.id;
       if (id === NONE_CROP) continue;
-      if (id === NO_CROP || !id) id = pickRandomSeed(used);
+      if (id === NO_CROP || !id) {
+        id = pickRandomSeed(used);
+      } else if (RANDOM_THEME_CATS[id]) {
+        id = pickRandomSeed(used, id);
+      }
       if (!id || used.has(id)) continue;
       used.add(id);
       if (slot.count > 0) initialSeeds.push({ id, count: slot.count });
@@ -1323,6 +1403,12 @@ function renderStartGroupRows(n) {
   const cropOptHTML = (selected) => {
     const opts = [
       `<option value="${NO_CROP}"${selected === NO_CROP || !selected ? ' selected' : ''}>${t('start.random')}</option>`,
+      // α30 followup: themed random options let the player stack the
+      // four nutrient buckets defensively from turn 1.
+      `<option value="${RANDOM_CARB}"${selected === RANDOM_CARB ? ' selected' : ''}>${t('start.randomCarb')}</option>`,
+      `<option value="${RANDOM_PROTEIN}"${selected === RANDOM_PROTEIN ? ' selected' : ''}>${t('start.randomProtein')}</option>`,
+      `<option value="${RANDOM_FAT}"${selected === RANDOM_FAT ? ' selected' : ''}>${t('start.randomFat')}</option>`,
+      `<option value="${RANDOM_VITAMIN}"${selected === RANDOM_VITAMIN ? ' selected' : ''}>${t('start.randomVitamin')}</option>`,
       `<option value="${NONE_CROP}"${selected === NONE_CROP ? ' selected' : ''}>${t('start.none')}</option>`,
     ];
     for (const id of cropChoices) {
@@ -2557,25 +2643,44 @@ function _pedigreeGeneBarsHtml(genome) {
   }).join('');
 }
 
-function _pedigreeCellTitle(genome) {
+function _pedigreeCellTitle(genome, cropId) {
   const lines = QUALITY_GENES.map((gid) => {
     const v = Math.round(phenotype(genome, gid) * 100);
     const a = genome[gid][0];
     const b = genome[gid][1];
     return `${t('gene.' + gid)} ${v}% (${a.toFixed(2)} / ${b.toFixed(2)})`;
   });
+  // α30: append the 4-nutrient breakdown for the crop type so the
+  // pedigree hover surfaces "what nutrients this variety brings".
+  if (cropId) lines.push('', t('label.nutrients') + ': ' + nutrientHint(cropId));
   return lines.join('\n');
+}
+
+// α30: a compact 4-nutrient line for the pedigree cell footer.
+function _pedigreeCellNutrientsHtml(cropId) {
+  const n = nutrientsOf(cropId);
+  return (
+    `<div class="ped-nutrients">` +
+    ['carb', 'protein', 'fat', 'vitamin']
+      .map((k) => {
+        const pct = Math.round((n[k] || 0) * 100);
+        return `<span class="ped-nut nut-${k}" title="${t('nut.' + k)} ${pct}%">${pct}</span>`;
+      })
+      .join('') +
+    `</div>`
+  );
 }
 
 function _pedigreeCellHtml(cropId, tag, kind, genome, headLabel) {
   const q = Math.round(genomeQuality(genome) * 100);
   return (
-    `<div class="pedigree-cell pedigree-cell-${kind}" title="${_pedigreeCellTitle(genome)}">` +
+    `<div class="pedigree-cell pedigree-cell-${kind}" title="${_pedigreeCellTitle(genome, cropId)}">` +
     `<div class="label">${headLabel}</div>` +
     `<canvas data-pedigree="${tag}" data-crop="${cropId}" ` +
     `width="${kind === 'child' ? 88 : 64}" height="${kind === 'child' ? 88 : 64}"></canvas>` +
     `<div class="rank">${'★'.repeat(qualityRank(genome))} <span class="ped-q">Q ${q}%</span></div>` +
     `<div class="ped-genes">${_pedigreeGeneBarsHtml(genome)}</div>` +
+    _pedigreeCellNutrientsHtml(cropId) +
     `</div>`
   );
 }

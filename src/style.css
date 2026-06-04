@@ -1437,6 +1437,46 @@ button.primary:hover {
   background: #d2493a;
 }
 
+/* α30: nutrient bars under the survival bars, plus per-nutrient tints
+   and a stage-coloured malnutrition icon. */
+.crow-nutrients {
+  display: flex;
+  gap: 4px;
+  margin-top: 3px;
+}
+.crow-nutrients .cbar {
+  height: 5px;
+}
+.cbar.nut-carb b.good    { background: #e6b85a; }
+.cbar.nut-protein b.good { background: #d2706f; }
+.cbar.nut-fat b.good     { background: #c8a25a; }
+.cbar.nut-vitamin b.good { background: #6fb24a; }
+.cond-ico.cond-mal-1 { color: #e6b85a; }
+.cond-ico.cond-mal-2 { color: #e89a3a; }
+.cond-ico.cond-mal-3 { color: #d2493a; }
+.cond-ico.cond-mal-4 { color: #8a2828; }
+
+.ped-nutrients {
+  display: flex;
+  gap: 4px;
+  margin-top: 6px;
+  font-size: 11px;
+  justify-content: center;
+}
+.ped-nut {
+  display: inline-block;
+  min-width: 22px;
+  padding: 1px 4px;
+  border-radius: 3px;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  text-align: center;
+}
+.ped-nut.nut-carb    { color: #e6b85a; }
+.ped-nut.nut-protein { color: #d2706f; }
+.ped-nut.nut-fat     { color: #c8a25a; }
+.ped-nut.nut-vitamin { color: #6fb24a; }
+
 /* Game-over overlay, shown over the canvas when the colony is lost. */
 .gameover {
   position: absolute;

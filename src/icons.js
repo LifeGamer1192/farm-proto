@@ -48,6 +48,9 @@ const PARTS = {
   deer: '<path d="M8 12.5a4 4 0 008 0c0-2.6-1.8-4.2-4-4.2s-4 1.6-4 4.2z"/><path d="M9 8.3L7 4M9.5 8l.6-4M15 8.3l2-4.3M14.5 8l-.6-4"/><circle cx="10.6" cy="12.4" r="0.5" fill="currentColor"/><circle cx="13.4" cy="12.4" r="0.5" fill="currentColor"/>',
   baby: '<circle cx="12" cy="12.5" r="7.5"/><circle cx="9.3" cy="12.5" r="0.6" fill="currentColor"/><circle cx="14.7" cy="12.5" r="0.6" fill="currentColor"/><path d="M9.6 15.5a4 4 0 004.8 0"/><path d="M12 4.2c2.2 0 2.2 2.4 0 2.4"/>',
   cart: '<circle cx="9" cy="20" r="1.6"/><circle cx="17.5" cy="20" r="1.6"/><path d="M2.5 3.5h3l2.6 12.5h10.4l2-8.5H6.2"/>',
+  // α30: malnutrition — a slightly drawn face with frown to signal "not
+  // well-fed". Same single-weight line-art style as the rest of the set.
+  malnutrition: '<circle cx="12" cy="12" r="8"/><circle cx="9.3" cy="11" r="0.7" fill="currentColor"/><circle cx="14.7" cy="11" r="0.7" fill="currentColor"/><path d="M8.5 16c1.6 2 5.4 2 7 0"/>',
 };
 
 /** Inline SVG markup for a named mini-icon (or '' when unknown). */

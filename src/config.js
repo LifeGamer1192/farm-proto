@@ -206,7 +206,7 @@ export const MEAL_TARGET = 6; // colonists auto-cook until this many meals are s
 
 // --- seeds, crop quality & genetics (alpha 11–12) ------------------------
 
-export const SEED_START_COUNT = 12; // seeds per crop the colony begins with
+export const SEED_START_COUNT = 24; // seeds per crop the colony begins with (α30: doubled)
 export const SEEDS_PER_HARVEST = 2; // seeds bred from one ripe crop
 // C9: when a colony holds fewer than this many distinct seed varieties,
 // idle colonists go forage wild plants for new seed stock even if the
@@ -292,6 +292,40 @@ export const BIRTH_CHANCE = 0.35;
 // Population is uncapped (Infinity). The prototype was built around four
 // colonists; the renderer and overlap math keep working past that.
 export const POPULATION_CAP = Infinity;
+
+// --- nutrition (alpha 30) ------------------------------------------------
+//
+// Each colonist tracks four nutrient buckets (carb / protein / fat / vitamin),
+// each 0..1. Buckets deplete over time and refill when the colonist eats food
+// carrying that nutrient. Any bucket below NUTRIENT_MISSING_THRESHOLD counts
+// as "missing", and the number of missing nutrients drives a four-stage
+// malnutrition state (see stage names in i18n.js, key `mal.*`):
+//
+//   stage 0: healthy — no penalties
+//   stage 1: 軽度  — 1 missing  → −25% work rate
+//   stage 2: 中度  — 2 missing  → −50% work rate
+//   stage 3: 重度  — 3 missing  → −75% work rate
+//   stage 4: 極度  — 4 missing  → −95% work rate (almost cannot work)
+//
+// Stage ≥1 additionally: speed × 0.5, mood drain, no skill XP gain, no HP
+// regen, and the group's birth roll skips colonists in this state.
+// α30 followup: bucket drains from full to empty in ~6 sim-min (was 4).
+// The original 1/240 paired with grain-heavy starter assortments to
+// drop fat to 0 by t≈600 and snowball into total extinction across
+// every seed. 1/360 keeps the "manage four nutrients" pressure but
+// gives the colony time to establish nut crops / hunt before stage-1
+// penalties bite.
+export const NUTRIENT_DRAIN_RATE = 1 / 360;
+export const MEAL_NUTRIENT_CREDIT = 1.0;    // multiplier on the food's per-nutrient values when eaten
+export const NUTRIENT_MISSING_THRESHOLD = 0.3;
+export const MALNUTRITION_WORK_PENALTY = [0, 0.25, 0.50, 0.75, 0.95]; // stage → fraction lost
+export const MALNUTRITION_SPEED_MULT = 0.5;      // B5: movement speed while malnourished
+export const MALNUTRITION_MOOD_DROP = 1 / 120;   // B2: mood lost per sim-second while malnourished
+export const MALNUTRITION_SKILL_XP_MULT = 0;     // B3: XP gain multiplier (0 = no growth)
+export const MALNUTRITION_HP_REGEN_MULT = 0;     // B4: HP regen multiplier (0 = stopped)
+// B1: a group needs at least this many healthy (stage 0) colonists before
+// the birth roll fires. Below it, no new colonist joins regardless of food.
+export const BIRTH_HEALTHY_REQUIRED = 2;
 
 // Winter trader: always arrives once per winter, drops a small gift of
 // wood and a few seed packets to help the colony through.

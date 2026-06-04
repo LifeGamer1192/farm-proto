@@ -12,6 +12,7 @@ import {
   BIRTH_NAMES,
   BIRTH_CHANCE,
   BIRTH_FOOD_PER_HEAD,
+  BIRTH_HEALTHY_REQUIRED,
   TRADER_WOOD_GIFT,
   TRADER_SEED_PACKETS,
   TRADER_SEED_COUNT,
@@ -110,6 +111,13 @@ export function maybeBirth(game) {
     // auto-builder uses to decide when more hut space is needed.
     const beds = game._hutCapacityFor ? game._hutCapacityFor(grp.id) : 0;
     if (beds < grp.colonists.length) continue;
+    // α30 (B1): require at least N healthy (stage 0) colonists in the
+    // group — a colony living on bread alone won't grow until somebody
+    // brings vitamin or protein back to the table.
+    const healthy = grp.colonists.filter(
+      (c) => !c.dead && (c.malnutritionStage ? c.malnutritionStage() : 0) === 0,
+    ).length;
+    if (healthy < BIRTH_HEALTHY_REQUIRED) continue;
     // Own-group food / head
     const ownFood = game._totalFoodFor ? game._totalFoodFor(grp.id) : 0;
     if (ownFood < grp.colonists.length * BIRTH_FOOD_PER_HEAD) continue;
@@ -124,6 +132,11 @@ function maybeBirthLegacy(game) {
   if (game.colonists.length >= POPULATION_CAP) return;
   if (game.huts.length < game.colonists.length) return;
   if (totalFood(game) < game.colonists.length * BIRTH_FOOD_PER_HEAD) return;
+  // α30 (B1): healthy-colonist gate also applies to the legacy path.
+  const healthy = game.colonists.filter(
+    (c) => !c.dead && (c.malnutritionStage ? c.malnutritionStage() : 0) === 0,
+  ).length;
+  if (healthy < BIRTH_HEALTHY_REQUIRED) return;
   if (Math.random() >= BIRTH_CHANCE) return;
   spawnBabyInto(game, null);
 }

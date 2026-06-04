@@ -34,7 +34,18 @@ import {
   SLEEP_DEFICIT_THRESHOLD,
   SLEEP_WORK_PENALTY,
   SLEEP_MOOD_PENALTY,
+  NUTRIENT_DRAIN_RATE,
+  NUTRIENT_MISSING_THRESHOLD,
+  MALNUTRITION_WORK_PENALTY,
+  MALNUTRITION_SPEED_MULT,
+  MALNUTRITION_MOOD_DROP,
+  MALNUTRITION_SKILL_XP_MULT,
+  MALNUTRITION_HP_REGEN_MULT,
 } from '../config.js';
+
+// α30: nutrient bucket keys, kept in this fixed order so the UI and the
+// stage-detection helper agree on iteration.
+export const NUTRIENT_KEYS = ['carb', 'protein', 'fat', 'vitamin'];
 
 const clamp01 = (v) => (v < 0 ? 0 : v > 1 ? 1 : v);
 
@@ -140,6 +151,12 @@ export class Colonist {
       building: startSkill(),
     };
 
+    // α30 nutrient buckets (carb / protein / fat / vitamin), each 0..1.
+    // Drain over time; eating credits them via foodSystem. Any bucket below
+    // NUTRIENT_MISSING_THRESHOLD counts as "missing" and the total drives
+    // the 4-stage malnutrition state (see malnutritionStage()).
+    this.nutrients = { carb: 1, protein: 1, fat: 1, vitamin: 1 };
+
     // α26 followup (E2): a short-term memo of tiles this colonist failed
     // to path to. Autonomy and target-picking helpers skip cached tiles
     // so a single unreachable target (e.g. the other colony's farm cut
@@ -186,7 +203,34 @@ export class Colonist {
   /** Award `sec` sim-seconds of practice to a skill (saturates at 1). */
   gainSkill(name, sec) {
     if (!this.skills || !(name in this.skills)) return;
+    // α30 (B3): no skill XP while malnourished.
+    if (this.malnutritionStage() > 0) sec *= MALNUTRITION_SKILL_XP_MULT;
+    if (sec <= 0) return;
     this.skills[name] = Math.min(1, this.skills[name] + sec / SKILL_TIME_TO_MASTER);
+  }
+
+  /**
+   * α30: which of the 4 nutrients are currently "missing" (bucket below
+   * NUTRIENT_MISSING_THRESHOLD). Returns the count, 0..4.
+   */
+  missingNutrientCount() {
+    if (!this.nutrients) return 0;
+    let n = 0;
+    for (const k of NUTRIENT_KEYS) {
+      if ((this.nutrients[k] || 0) < NUTRIENT_MISSING_THRESHOLD) n++;
+    }
+    return n;
+  }
+
+  /** α30: 4-stage malnutrition state (0 = healthy, 4 = critical). */
+  malnutritionStage() {
+    return this.missingNutrientCount();
+  }
+
+  /** α30: ids of the missing nutrients (used for tooltip text). */
+  missingNutrients() {
+    if (!this.nutrients) return [];
+    return NUTRIENT_KEYS.filter((k) => (this.nutrients[k] || 0) < NUTRIENT_MISSING_THRESHOLD);
   }
 
   get tileX() {
@@ -286,7 +330,9 @@ export class Colonist {
   }
 
   _walk(dt) {
-    let budget = COLONIST_SPEED * this.skillMult('agility') * dt;
+    // α30 (B5): movement speed × 0.5 while malnourished.
+    const malMul = this.malnutritionStage() > 0 ? MALNUTRITION_SPEED_MULT : 1;
+    let budget = COLONIST_SPEED * this.skillMult('agility') * malMul * dt;
     // Walking practises agility a little.
     this.gainSkill('agility', dt);
     while (budget > 0 && this.path.length > 0) {
@@ -309,13 +355,23 @@ export class Colonist {
 
   /** Advance survival stats and the current task by dt seconds. */
   update(dt) {
+    // α30: nutrient buckets drain over time. Eating credits them via
+    // foodSystem.feedNutrients; here we only deplete.
+    if (this.nutrients) {
+      for (const k of NUTRIENT_KEYS) {
+        this.nutrients[k] = Math.max(0, (this.nutrients[k] || 0) - NUTRIENT_DRAIN_RATE * dt);
+      }
+    }
+    const malStage = this.malnutritionStage();
     // Hunger / starvation. Strength cushions starvation damage too.
     this.hunger = Math.min(1, this.hunger + HUNGER_RATE * dt);
     if (this.hunger >= 1) {
       this.health = Math.max(0, this.health - (STARVE_RATE * dt) / this.skillMult('strength'));
       this.lastDamage = 'starve';
     } else if (this.hunger < HEALTH_REGEN_HUNGER && this.health < 1) {
-      this.health = Math.min(1, this.health + HEALTH_REGEN * dt);
+      // α30 (B4): no HP regen while malnourished.
+      const regenMul = malStage > 0 ? MALNUTRITION_HP_REGEN_MULT : 1;
+      this.health = Math.min(1, this.health + HEALTH_REGEN * dt * regenMul);
     }
     // Sleep — sleeping refills, anything else drains. SLEEP task is
     // handled by the work branch below; here we just drain in the
@@ -335,6 +391,8 @@ export class Colonist {
       1 - this.hunger * 0.6 - (1 - this.health) * 0.5 - sleepDeficit * SLEEP_MOOD_PENALTY,
     );
     this.mood = clamp01(this.mood + (moodTarget - this.mood) * MOOD_ADAPT * dt);
+    // α30 (B2): malnutrition slowly drains mood on top of the adapt path.
+    if (malStage > 0) this.mood = Math.max(0, this.mood - MALNUTRITION_MOOD_DROP * dt);
     if (this.eatCooldown > 0) this.eatCooldown -= dt;
     if (this.health <= 0) {
       this.dead = true;
@@ -365,7 +423,11 @@ export class Colonist {
     // now SLEEP_WORK_PENALTY ≈ 1.2). The clamp at 0.3× keeps work from
     // grinding to a halt entirely.
     const sleepDrag = 1 - sleepDeficit * SLEEP_WORK_PENALTY;
-    const rate = skillMul * Math.max(0.3, sleepDrag);
+    // α30 (A4): work rate × (1 − stage_penalty). Stage 0 = no change,
+    // stage 4 ≈ 0.05× (almost can't work).
+    const malPenalty = MALNUTRITION_WORK_PENALTY[malStage] || 0;
+    const malMul = 1 - malPenalty;
+    const rate = skillMul * Math.max(0.3, sleepDrag) * malMul;
     this.state = WORK_STATE[task.type] || 'working';
     this.workTimer += dt * rate;
     if (skill) this.gainSkill(skill, dt);

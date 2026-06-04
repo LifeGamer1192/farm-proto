@@ -7,7 +7,7 @@
 // Functions take the `game` instance as first arg; engine keeps the old
 // method names on Game as thin shims (autonomy.js and tests rely on them).
 
-import { STARTING_WOOD, EAT_RETRY, MEAL_MOOD_BONUS, SEEDS_AFTER_EATING_CHANCE } from '../config.js';
+import { STARTING_WOOD, EAT_RETRY, MEAL_MOOD_BONUS, SEEDS_AFTER_EATING_CHANCE, MEAL_NUTRIENT_CREDIT } from '../config.js';
 import { CROP_IDS, getCrop, seedGenome } from '../crops.js';
 import { DISH_IDS, getRecipe, isDish, pickBestAffordable, averageInputQuality } from '../recipes.js';
 import { freshGenome } from '../genetics.js';
@@ -30,10 +30,16 @@ const NUTRITION = { forage: 0.2, meat: 0.20 /* raw meat is barely edible */, mea
 
 // Multi-nutrient profile per simple item. Dishes carry their own; raw
 // crops + non-dish items get a coarse default by category.
+// α30 followup: meat / meal fat values bumped ×1.5 (0.15→0.225,
+// 0.10→0.15) so the two most readily-available animal-derived items
+// keep the fat bucket above the missing-threshold without requiring a
+// nut harvest from day one. Nut crops are still the decisive fat
+// source (0.55), so the strategic value of planting almond / walnut
+// / chestnut is preserved.
 const DEFAULT_NUTRIENTS = {
   forage: { carb: 0.2, protein: 0.05, fat: 0.0, vitamin: 0.75 },
-  meat:   { carb: 0.0, protein: 0.85, fat: 0.15, vitamin: 0.0 },
-  meal:   { carb: 0.45, protein: 0.2, fat: 0.1, vitamin: 0.25 },
+  meat:   { carb: 0.0, protein: 0.85, fat: 0.225, vitamin: 0.0 },
+  meal:   { carb: 0.45, protein: 0.2, fat: 0.15, vitamin: 0.25 },
 };
 const CATEGORY_NUTRIENTS = {
   grain:    { carb: 0.85, protein: 0.05, fat: 0.05, vitamin: 0.05 },
@@ -70,6 +76,21 @@ function maybeDropSeedAfterEating(game, foodId, groupId) {
   if (!crop || !crop.seedsAfterEating) return;
   if (Math.random() >= SEEDS_AFTER_EATING_CHANCE) return;
   game._addSeed(foodId, seedGenome(foodId), groupId);
+}
+
+/**
+ * α30: credit one eaten unit of `foodId` to the colonist's nutrient
+ * buckets. The food's profile is added (clamped to 1) so a single meal
+ * of grain refills the carb bucket fully, while a vitamin-rich salad
+ * tops up vitamin. Called from every "successful eat" branch in _feed.
+ */
+export function feedNutrients(colonist, foodId) {
+  if (!colonist || !colonist.nutrients) return;
+  const n = nutrientsOf(foodId);
+  for (const k of NUTRIENT_KEYS) {
+    const add = (n[k] || 0) * MEAL_NUTRIENT_CREDIT;
+    colonist.nutrients[k] = Math.min(1, (colonist.nutrients[k] || 0) + add);
+  }
 }
 
 /** Multi-nutrient profile for an item (always returns the 4 keys). */
@@ -396,6 +417,9 @@ export function feed(game, colonist) {
     // Mood: cooked food lifts more; raw is a smaller bump. Applied per
     // item so a hearty multi-item meal cheers a colonist up a little more.
     colonist.mood = Math.min(1, colonist.mood + moodFromEating(got.item, got.quality) * (got.cooked ? 1 : 0.55));
+    // α30: credit the eater's nutrient buckets so the malnutrition stage
+    // tracks what they've actually eaten, not just total calories.
+    feedNutrients(colonist, got.item);
   }
 
   if (ate > 0) {
