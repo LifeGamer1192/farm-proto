@@ -288,16 +288,30 @@ export function pestStrike(game) {
 }
 
 /**
- * Lit hearths burn through the colony's wood over time. B3: the burn
- * is debited from whichever group currently holds the most wood, so the
- * per-group wood ledger stays consistent with the colony aggregate.
+ * Lit hearths burn through their OWN group's wood over time.
+ *
+ * α30 followup: until now the burn was colony-wide — every hearth
+ * pulled from whichever group currently held the most wood. That meant
+ * a poor colony's hearths were "lit" (visually) drawing on a rich
+ * colony's stockpile, but the per-group cook gate `_hearthsLitFor(gid)`
+ * still required the poor group's OWN wood to be > 0, so they could
+ * never actually cook. Real player run: colony B had 8 warehouses of
+ * raw barley, three hearths, zero own wood; A had wood, so B's hearths
+ * drained A's reserve while B starved. Now each group's hearths burn
+ * that group's wood only; a group with no own wood gets dark hearths
+ * (and the per-group chop trigger fires for them, instead of A
+ * silently subsidising B's heating).
  */
 export function updateFuel(game, dt) {
-  if (game.hearths.length === 0 || game.storage.wood <= 0) return;
-  const burn = Math.min(game.storage.wood, game.hearths.length * WOOD_BURN_RATE * dt);
-  if (burn <= 0) return;
-  const holder = largestGroupHolder(game, 'wood');
-  storageSub(game, holder ? holder.id : null, 'wood', burn);
+  if (game.hearths.length === 0) return;
+  for (const grp of game.groups || []) {
+    const ownHearths = game.hearths.filter((h) => h.ownerId === grp.id).length;
+    if (ownHearths === 0) continue;
+    const ownWood = grp.storage?.wood || 0;
+    if (ownWood <= 0) continue;
+    const burn = Math.min(ownWood, ownHearths * WOOD_BURN_RATE * dt);
+    if (burn > 0) storageSub(game, grp.id, 'wood', burn);
+  }
 }
 
 /**

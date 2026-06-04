@@ -7,6 +7,7 @@ import {
   TILL_SURVIVAL_BONUS,
   STOCKPILE_CAP,
   BUILD_COSTS,
+  ALPHA_VERSION,
 } from './config.js';
 import { hashSeed, randomSeed } from './core/rng.js';
 import {
@@ -2208,6 +2209,13 @@ function buildSummaryText() {
       scriptSwitch: 'スクリプト変更',
       deaths: '## 死亡記録',
       noDeaths: '（死亡なし）',
+      cookCrisis: '## 警告: 料理パイプライン危機',
+      cookCrisisNote: '※ 生食材があり、自所有のかまどもあり、近隣に木も生えているのに、薪が無く料理できない状態の生存コロニーを列挙します。autonomy が薪確保に失敗している可能性があります。',
+      noCookCrisis: '（該当コロニーなし）',
+      crisisRaw: '生食材',
+      crisisHearth: 'かまど',
+      crisisWood: '木材',
+      crisisNearbyTree: '近隣の木',
     }
     : {
       title: '# Farm Proto Summary Log',
@@ -2248,6 +2256,13 @@ function buildSummaryText() {
       scriptSwitch: 'Script switch',
       deaths: '## Deaths',
       noDeaths: '(no deaths recorded)',
+      cookCrisis: '## Warning: cooking-pipeline crisis',
+      cookCrisisNote: '※ Surviving colonies that have raw food + an own hearth + trees nearby but zero wood — autonomy may have failed to keep up with wood demand.',
+      noCookCrisis: '(no colony in crisis)',
+      crisisRaw: 'raw food',
+      crisisHearth: 'hearth',
+      crisisWood: 'wood',
+      crisisNearbyTree: 'nearby tree',
     };
 
   const env = game.environment || {};
@@ -2259,7 +2274,7 @@ function buildSummaryText() {
   // -------- Header --------
   lines.push(L.title);
   lines.push('');
-  lines.push(`- ${L.version}: alpha 29`);
+  lines.push(`- ${L.version}: ${ALPHA_VERSION}`);
   lines.push(`- ${L.exported}: ${new Date().toISOString()}`);
   lines.push(`- ${L.seedBiome}: ${game.seed} / ${t('biome.' + (game.biome?.id || 'temperate'))}`);
   lines.push(`- ${L.inGame}: Y${env.year} ${t('season.' + env.season)} ${t('val.day', { n: env.day })}`);
@@ -2348,6 +2363,46 @@ function buildSummaryText() {
       prev = b;
     }
   }
+
+  // -------- Cook-pipeline crisis (current-state warning) --------
+  // Surviving groups holding raw food + an own hearth + a tree within
+  // CRISIS_TREE_RANGE but with zero own wood. These are the exact
+  // colonies the player flagged: "warehouse full, hearth present, trees
+  // visible, still starving." Autonomy ought to be chopping for them —
+  // if a group sits in this state at export time the script chain
+  // missed it (e.g. tree out of AUTO_SEARCH_RANGE for the only idle
+  // colonist, every colonist already busy with a higher-priority task).
+  lines.push(L.cookCrisis);
+  lines.push(L.cookCrisisNote);
+  lines.push('');
+  const CRISIS_TREE_RANGE = 20;
+  const crisisRows = [];
+  for (const grp of game.groups || []) {
+    if (grp.colonists.length === 0) continue;
+    const rawTotal = game._rawFoodFor ? game._rawFoodFor(grp.id) : 0;
+    const ownHearths = game.hearths.filter((h) => h.ownerId === grp.id).length;
+    const ownWood = grp.storage?.wood || 0;
+    if (!(rawTotal > 0 && ownHearths > 0 && ownWood === 0)) continue;
+    // Probe for any tree within range of any own colonist.
+    let nearestTreeD = Infinity;
+    for (const c of grp.colonists) {
+      const tree = game._nearestTree?.(c, CRISIS_TREE_RANGE);
+      if (tree) {
+        const d = Math.max(Math.abs(tree.x - c.tileX), Math.abs(tree.y - c.tileY));
+        if (d < nearestTreeD) nearestTreeD = d;
+      }
+    }
+    if (!Number.isFinite(nearestTreeD)) continue;
+    crisisRows.push({ gid: grp.id, raw: rawTotal, hearths: ownHearths, treeD: nearestTreeD });
+  }
+  if (crisisRows.length === 0) {
+    lines.push(L.noCookCrisis);
+  } else {
+    for (const r of crisisRows) {
+      lines.push(`- ${colonyOf(r.gid)}: ${L.crisisRaw} ${r.raw} · ${L.crisisHearth} ${r.hearths} · ${L.crisisWood} 0 · ${L.crisisNearbyTree} ${r.treeD}`);
+    }
+  }
+  lines.push('');
 
   // -------- Death records (name + when + cause) --------
   // Recorded outside the rotating activity log so every extinction can

@@ -1,5 +1,11 @@
 // Global tuning constants.
 
+// Current alpha version label. KEEP IN SYNC with the most recent
+// "alpha N..." commit on main. The summary-log exporter and any other
+// UI surface that prints the version should read this constant rather
+// than hard-coding the string — bumping one place propagates everywhere.
+export const ALPHA_VERSION = 'alpha 30';
+
 // Full map size in tiles. Alpha 2+ uses a 100×100 grid.
 export const GRID_COLS = 100;
 export const GRID_ROWS = 100;

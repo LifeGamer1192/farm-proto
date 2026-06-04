@@ -525,7 +525,16 @@ export function pickAutonomousTask(game, colonist) {
   if (game.autoMode) {
     const ownGrp = game.groups?.[gid];
     const ownWood = ownGrp?.storage?.wood || 0;
-    if (ownWood < WOOD_LOW) {
+    // α30 followup: scale the chop trigger with the colony's hearth
+    // count so a 3-hearth colony doesn't wait until 5 wood to chop —
+    // 3 hearths burn ~7-8 wood per sim-minute, so 6 disappears in a
+    // single in-game minute and cooking stalls anyway. Each own hearth
+    // bumps the threshold by half WOOD_LOW (rounded), with a floor of
+    // the base WOOD_LOW so even a 0-hearth colony still keeps a
+    // building reserve.
+    const ownHearths = game._hearthCountFor(gid);
+    const woodLow = Math.max(WOOD_LOW, WOOD_LOW + Math.ceil(ownHearths * WOOD_LOW / 2));
+    if (ownWood < woodLow) {
       const tree = game._nearestTree(colonist, AUTO_SEARCH_RANGE);
       if (tree) return createTask(TaskType.HARVEST, tree.x, tree.y);
     }
