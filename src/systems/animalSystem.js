@@ -59,6 +59,7 @@ export function animalNear(game, x, y, range, colonist) {
 export function nearestAnimalToColony(game, range) {
   let best = null;
   let bestD = range;
+  let threatenedGid = null;
   for (const c of game.colonists) {
     for (const a of game.animals) {
       if (!a.hostile) continue;
@@ -66,10 +67,12 @@ export function nearestAnimalToColony(game, range) {
       if (d < bestD) {
         bestD = d;
         best = a;
+        threatenedGid = c.groupId;
       }
     }
   }
-  return best;
+  if (!best) return null;
+  return { animal: best, groupId: threatenedGid };
 }
 
 /**

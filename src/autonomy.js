@@ -23,6 +23,7 @@ import {
   AUTO_HUNT_RANGE,
   AUTO_SEARCH_RANGE,
   FENCE_AUTO_CAP,
+  FENCE_AUTO_CAP_BUILDER,
   STOCKPILE_CAP,
   WOOD_LOW,
   HUT_CAPACITY_BY_TYPE,
@@ -49,6 +50,10 @@ import { genomeQuality } from './genetics.js';
 // build sooner / later by passing a different fill ratio.
 
 const WAREHOUSE_HARD_CAP = Infinity; // no colony-wide cap on warehouse count
+// α29 followup: target hearth count = ceil(pop / HEARTH_POP_RATIO),
+// floor 1. One hearth comfortably feeds and warms ~4 colonists; a
+// larger group queues a second / third hearth as it grows.
+const HEARTH_POP_RATIO = 4;
 // Diagnostic log: emitted at most once per (groupId, reason) per minute
 // so the activity log doesn't flood with "no land for warehouse".
 const _warnedAt = new Map();
@@ -276,10 +281,15 @@ export function urgentInfraBuild(game, colonist) {
       if (spot) return createTask(TaskType.BUILD, spot.x, spot.y, { structure: variant });
     }
   }
-  // 2. Hearth — own hearths short of own huts (so each hut has warmth).
+  // 2. Hearth — α29 followup: gate by colonist headcount instead of hut
+  // count. Hut variants come in three capacities (1 / 4 / 8); one
+  // hut_large that sleeps eight previously only earned its colony a
+  // single hearth, while eight tiny huts triggered eight hearths even
+  // for one family each. Now every script targets ~one hearth per
+  // HEARTH_POP_RATIO colonists (4), with a floor of 1.
+  const hearthTarget = Math.max(1, Math.ceil(ownPop / HEARTH_POP_RATIO));
   const ownHearths = game._hearthCountFor(gid) + autoHearthPending(game, gid);
-  const ownHuts = game._hutCountFor(gid);
-  if (ownHearths < ownHuts && game._canAffordBuild('hearth')) {
+  if (ownHearths < hearthTarget && game._canAffordBuild('hearth')) {
     const spot = game._findFreeLandNear(colonist);
     if (spot) return createTask(TaskType.BUILD, spot.x, spot.y, { structure: 'hearth' });
   }
@@ -977,11 +987,27 @@ export function builderScript(game, colonist) {
         return createTask(TaskType.BUILD, wh.spot.x, wh.spot.y, { structure: wh.build });
       }
     }
-    const ownHuts = game._hutCountFor(gid);
+    // α29 followup: builder's "+1 extra hearth" character now layers on
+    // top of the pop-based target so the script's signature (more
+    // infra) stays intact under any hut composition.
+    const ownPop = game.groups?.[gid]?.colonists?.length || 0;
+    const hearthTarget = Math.max(1, Math.ceil(ownPop / HEARTH_POP_RATIO)) + 1;
     const ownHearths = game._hearthCountFor(gid);
-    if (ownHearths < ownHuts + 1 && game._canAffordBuild('hearth')) {
+    if (ownHearths < hearthTarget && game._canAffordBuild('hearth')) {
       const spot = game._findFreeLandNear(colonist);
       if (spot) return createTask(TaskType.BUILD, spot.x, spot.y, { structure: 'hearth' });
+    }
+    // α29 followup: builder gets a higher fence cap (FENCE_AUTO_CAP_BUILDER)
+    // before delegating to balanced (which would stop at FENCE_AUTO_CAP).
+    // The trigger is still the same — a hostile animal within range — so
+    // peaceful runs don't see a wall of fence; once the threat fires the
+    // planner, builder just keeps adding until its higher ceiling.
+    if (
+      game._totalFences() < FENCE_AUTO_CAP_BUILDER
+      && game._canAffordBuild('fence')
+    ) {
+      const spot = game._nextFenceTile(colonist);
+      if (spot) return createTask(TaskType.BUILD, spot.x, spot.y, { structure: 'fence' });
     }
   }
   // Fallthrough — balanced handles farming / hunting / hauling.

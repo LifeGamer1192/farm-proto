@@ -256,12 +256,29 @@ export function nextFenceTile(game, colonist) {
  * cooldown starts even if no plan was actually made.
  */
 export function planFenceLine(game) {
-  const animal = game._nearestAnimalToColony(FENCE_TRIGGER_RANGE);
+  const threat = game._nearestAnimalToColony(FENCE_TRIGGER_RANGE);
   game.fencePlanAt = game.clock;
-  if (!animal) return;
-  const anchors = game.huts.length > 0
-    ? game.huts
-    : game.colonists.map((c) => ({ x: c.tileX, y: c.tileY }));
+  if (!threat) return;
+  const animal = threat.animal;
+  // α29 followup: anchor the wall to the THREATENED group's huts (or
+  // its colonists if it has no huts yet), not the colony-wide hut
+  // centroid. The old code averaged every group's huts, which in a
+  // multi-colony setup placed the wall near the map centre — useless
+  // for stopping a boar from walking into the actual threatened group.
+  const gid = threat.groupId;
+  let anchors = game.huts.filter((h) => h.ownerId === gid);
+  if (anchors.length === 0) {
+    anchors = game.colonists
+      .filter((c) => c.groupId === gid)
+      .map((c) => ({ x: c.tileX, y: c.tileY }));
+  }
+  // Last-resort fallback: use any anchor at all so a group whose huts
+  // and colonists are both gone (death-spiral edge case) doesn't crash.
+  if (anchors.length === 0) {
+    anchors = game.huts.length > 0
+      ? game.huts
+      : game.colonists.map((c) => ({ x: c.tileX, y: c.tileY }));
+  }
   if (anchors.length === 0) return;
   let cx = 0;
   let cy = 0;

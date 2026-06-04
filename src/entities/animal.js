@@ -24,13 +24,25 @@ const PAUSE = 3; // sim-seconds an animal rests between strolls
  * flag only, with no behavioural effect.
  */
 export const SPECIES = {
-  boar:   { hostile: true,  meat: 4, wander: 1.0, speedMul: 1.0 },
-  wolf:   { hostile: true,  meat: 5, wander: 0.7, speedMul: 1.4 },
-  bear:   { hostile: true,  meat: 8, wander: 0.5, speedMul: 0.9 },
-  deer:   { hostile: false, meat: 6, wander: 0.9, speedMul: 1.2 },
-  rabbit: { hostile: false, meat: 2, wander: 0.6, speedMul: 1.6 },
-  sheep:  { hostile: false, meat: 4, wander: 0.8, speedMul: 1.0, domesticable: true },
-  fowl:   { hostile: false, meat: 2, wander: 0.5, speedMul: 1.3, domesticable: true },
+  // α29 followup: meat yield now spans 1..12, scaled to body size.
+  // Bear/deer/boar are the prize hunts; fowl/rabbit are nibbles.
+  // α29 followup: meat yield now spans 2..12, scaled to body size.
+  // Bear / deer / boar are the prize hunts (~3× a rabbit); fowl and
+  // rabbit are tiny nibbles. Total catchable meat per temperate-biome
+  // spawn rose 45 → 61, so the food economy keeps pace with the
+  // smaller per-kill yield from the new tiny-game lower bound.
+  // Note: rabbit / fowl stay at 2 (not 1) — they're the FASTEST species
+  // (speedMul 1.6 / 1.3) so they brush against colonists most often
+  // and get auto-hunted disproportionately. Halving their yield (2→1)
+  // collapsed the food economy in headless tests; 2 keeps the gap with
+  // the big game (~×5) without starving balanced colonies.
+  boar:   { hostile: true,  meat: 8,  wander: 1.0, speedMul: 1.0 },
+  wolf:   { hostile: true,  meat: 5,  wander: 0.7, speedMul: 1.4 },
+  bear:   { hostile: true,  meat: 12, wander: 0.5, speedMul: 0.9 },
+  deer:   { hostile: false, meat: 10, wander: 0.9, speedMul: 1.2 },
+  rabbit: { hostile: false, meat: 2,  wander: 0.6, speedMul: 1.6 },
+  sheep:  { hostile: false, meat: 5,  wander: 0.8, speedMul: 1.0, domesticable: true },
+  fowl:   { hostile: false, meat: 2,  wander: 0.5, speedMul: 1.3, domesticable: true },
 };
 
 export class Animal {

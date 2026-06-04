@@ -226,6 +226,9 @@ export const HAUL_DURATION = 1.2; // work phase (sim-seconds) to store or fetch
 export const AUTO_SEARCH_RANGE = 12; // tile radius an idle colonist scans for auto work
 export const FENCE_TRIGGER_RANGE = 10; // build a fence when a wild animal is this close to any colonist
 export const FENCE_AUTO_CAP = 20; // never auto-place more fence tiles than this colony-wide
+// α29 followup: builder script earns a higher cap so its signature
+// "infra-heavy" character extends to perimeter defence too.
+export const FENCE_AUTO_CAP_BUILDER = 32;
 export const FENCE_PLAN_LENGTH = 10; // tiles in one auto-planned wall row
 export const FENCE_REPLAN_COOLDOWN = 25; // seconds before the colony can plan another wall
 
