@@ -2218,6 +2218,17 @@ window.addEventListener('keydown', (ev) => {
     ev.preventDefault();
     return;
   }
+  // α30 followup: keys 6 / 7 / 8 / 9 / 0 pick a zoom level (XXS → XS →
+  // Small → Medium → Large), in increasing-tile-size order. Mirrors the
+  // 1-5 speed shortcut layout and matches the on-screen button row.
+  if ((k >= '6' && k <= '9') || k === '0') {
+    const idx = k === '0' ? 4 : Number(k) - 6;
+    game.setZoom(idx);
+    const btn = zoomsEl.querySelector(`button[data-zoom="${idx}"]`);
+    if (btn) selectIn(zoomsEl, btn, 'zoom');
+    ev.preventDefault();
+    return;
+  }
   if (k === 'w' || k === 'a' || k === 's' || k === 'd') {
     game.keys.add(k);
     ev.preventDefault();
