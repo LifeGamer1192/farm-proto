@@ -933,7 +933,17 @@ function codexRowHtml(id, c, groupId) {
       stockN += sp.items[id] || 0;
     }
   }
-  const countChip = `<span class="codex-count" title="${t('hint.codexCount')}">${t('label.codexSeed')}${seedsN} / ${t('label.codexStock')}${stockN}</span>`;
+  // α30 followup: the count chip's text content (seeds + stock) is the
+  // ONLY thing on this row that changes from tick to tick — every
+  // harvest / store / eat shifts the stock number. Embedding those
+  // numbers in the row HTML made the codex-panel diff check flip every
+  // tick for fast-turnover crops (cabbage / lettuce / forage), which
+  // re-ran the innerHTML assignment and blanked every canvas just
+  // before the redraw loop redrew them. The result was a visible flicker
+  // on exactly those rows. Fix: leave the chip empty here and have
+  // updateCodexPanel write the numbers via textContent on each tick —
+  // no HTML diff change, no innerHTML reassign, no canvas wipe.
+  const countChip = `<span class="codex-count" data-codex-crop="${id}" data-codex-group="${groupId}" title="${t('hint.codexCount')}"></span>`;
   return (
     `<div class="codex-row">` +
     `<canvas class="codex-preview" data-crop="${id}" data-best="1" width="48" height="48"></canvas>` +
@@ -995,6 +1005,28 @@ function updateCodexPanel() {
         game.renderer.drawCropPreview(cv.getContext('2d'), cv.width, cv.height, id, codex[id].best);
       }
     }
+  }
+  // α30 followup: refresh the per-row "seeds / stock" chip text in
+  // place. Done outside the HTML-diff path so that high-turnover crops
+  // (cabbage / lettuce / forage) no longer flicker — the chip is the
+  // one thing on the row that legitimately changes every tick, and
+  // updating it via textContent skips the innerHTML reassign that was
+  // wiping each row's canvas just before the redraw loop redrew it.
+  const seedLabel = t('label.codexSeed');
+  const stockLabel = t('label.codexStock');
+  for (const chip of codexEl.querySelectorAll('.codex-count')) {
+    const id = chip.dataset.codexCrop;
+    const gid = Number(chip.dataset.codexGroup);
+    const grp = game.groups?.[gid];
+    if (!grp) continue;
+    const seedsN = grp.seeds?.[id]?.length || 0;
+    let stockN = grp.storage?.[id] || 0;
+    for (const sp of game.stockpiles) {
+      if (sp.ownerId !== gid) continue;
+      stockN += sp.items[id] || 0;
+    }
+    const next = `${seedLabel}${seedsN} / ${stockLabel}${stockN}`;
+    if (chip.textContent !== next) chip.textContent = next;
   }
 }
 
