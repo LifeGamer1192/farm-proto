@@ -120,6 +120,28 @@ export const RECIPES = [
   // little of the original profile.
   { id: 'tomatoJuice',  tier: 1, station: 'workshop', kind: 'juice', ingredients: { tomato: 3 },   out: 3, nutrition: 0.45, processBias: bias({ mul: { vitamin: 1.0, carb: 0.95 } }) },
 
+  // --- α31 followup: 2-raw → 1-product workshop recipes ------------------
+  // Each takes exactly two raw ingredients (mirroring beer = malt + hop)
+  // and produces one new dish. processBias for each follows the station's
+  // existing pattern so emergent nutrients stay consistent with the
+  // single-raw recipes above.
+  // Pickle station — mixed pickle styles.
+  { id: 'mixedPickles', tier: 1, station: 'workshop', kind: 'pickle', ingredients: { cucumber: 2, onion: 1 }, out: 3, nutrition: 0.45, processBias: bias({ mul: { vitamin: 1.1, carb: 0.85 }, add: { protein: 0.05 } }) },
+  { id: 'namasu',       tier: 1, station: 'workshop', kind: 'pickle', ingredients: { radish: 2, carrot: 1 },  out: 3, nutrition: 0.45, processBias: bias({ mul: { vitamin: 1.1, carb: 0.85 }, add: { protein: 0.05 } }) },
+  // Juice station — mixed juices / smoothies.
+  { id: 'vegJuice',     tier: 1, station: 'workshop', kind: 'juice',  ingredients: { tomato: 2, carrot: 1 },  out: 3, nutrition: 0.50, processBias: bias({ mul: { vitamin: 1.05, carb: 0.95 } }) },
+  { id: 'fruitSmoothie',tier: 1, station: 'workshop', kind: 'juice',  ingredients: { strawberry: 2, melon: 1 }, out: 3, nutrition: 0.50, processBias: bias({ mul: { vitamin: 1.05, carb: 1.0 } }) },
+  // Mill station — fortified / blended flour. Intermediate (further
+  // baking happens at the hearth).
+  { id: 'mixedFlour',   tier: 1, station: 'workshop', kind: 'mill',   ingredients: { wheat: 2, barley: 1 },   out: 2, nutrition: 0.45, processBias: bias({ mul: { vitamin: 0.45, carb: 1.05 } }), intermediate: true },
+  // Drying station — mixed dried fruit / herb-cured meat.
+  { id: 'driedFruit',   tier: 1, station: 'workshop', kind: 'dry',    ingredients: { strawberry: 2, melon: 1 }, out: 2, nutrition: 0.55, processBias: bias({ mul: { vitamin: 1.3, carb: 1.5 } }) },
+  // Brewery station — sake (rice + malt; malt provides the koji-style
+  // sugar conversion path). Distinct from strawberryWine / beer.
+  { id: 'sake',         tier: 1, station: 'workshop', kind: 'brew',   ingredients: { rice: 2, malt: 1 },      out: 3, nutrition: 0.50, processBias: bias({ mul: { vitamin: 0.6, carb: 0.7 }, add: { protein: 0.05 } }) },
+  // Jam station — mixed-fruit jam.
+  { id: 'mixedJam',     tier: 1, station: 'workshop', kind: 'jam',    ingredients: { strawberry: 2, melon: 1 }, out: 2, nutrition: 0.55, processBias: bias({ mul: { vitamin: 0.7, carb: 1.5 }, add: { carb: 0.05 } }) },
+
   // --- Tier 1 hearth, takes a workshop intermediate as one ingredient ----
   // Hearth recipe consuming the chickpea flour. Falafel rebuilds protein
   // a touch and adds fat from frying.

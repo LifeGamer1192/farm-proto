@@ -604,6 +604,15 @@ const STRINGS = {
     'dish.pickles': 'Pickles',
     'dish.curedMeat': 'Cured meat',
     'dish.tomatoJuice': 'Tomato juice',
+    // α31 followup — 2-raw → 1-product workshop dishes.
+    'dish.mixedPickles':  'Mixed pickles',
+    'dish.namasu':        'Namasu',
+    'dish.vegJuice':      'Vegetable juice',
+    'dish.fruitSmoothie': 'Fruit smoothie',
+    'dish.mixedFlour':    'Mixed flour',
+    'dish.driedFruit':    'Dried fruit mix',
+    'dish.sake':          'Sake',
+    'dish.mixedJam':      'Mixed-fruit jam',
     // --- Nutrient labels -----------------------------------------------
     'nut.carb': 'Carbs',
     'nut.protein': 'Protein',
@@ -1228,6 +1237,15 @@ const STRINGS = {
     'dish.pickles': 'ピクルス',
     'dish.curedMeat': '塩漬け肉',
     'dish.tomatoJuice': 'トマトジュース',
+    // α31 followup — 2-raw → 1-product workshop dishes.
+    'dish.mixedPickles':  'ミックスピクルス',
+    'dish.namasu':        '紅白なます',
+    'dish.vegJuice':      '野菜ジュース',
+    'dish.fruitSmoothie': 'フルーツスムージー',
+    'dish.mixedFlour':    'ブレンド小麦粉',
+    'dish.driedFruit':    'ドライフルーツミックス',
+    'dish.sake':          '日本酒',
+    'dish.mixedJam':      'ミックスフルーツジャム',
     // --- Nutrient labels -----------------------------------------------
     'nut.carb': '炭水化物',
     'nut.protein': 'タンパク質',
