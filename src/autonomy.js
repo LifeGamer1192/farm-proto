@@ -62,27 +62,44 @@ const HEARTH_POP_RATIO = 4;
 // threshold and bleeds resources. So we also require sustained meal
 // surplus (>= MEAL_SURPLUS_TARGET, see below) AND a wood reserve, so
 // auto-build only fires when the colony is GENUINELY established.
-// Only the two scripts whose manual late-placement showed a CLEAR
-// survival gain (farmer_breed +18, builder +7) auto-build a workshop.
-// The other scripts saw no improvement large enough to overcome the
-// 4-wood + colonist-time cost in the autonomous case, so they require
-// the player to OPT IN by manually placing one via the Build tool. The
-// in-game workshop autonomy (the cook step further down) still uses
-// any placed workshop regardless of script.
+// α31 followup: every script except scout auto-builds a workshop. The
+// auto-build trigger is per-script — scripts whose manual late-placement
+// trial showed a clear survival gain (farmer_breed +18, builder +7,
+// farmer +9) build it sooner; scripts whose gain was smaller (temperate
+// +3, balanced +1) require a much more established colony first. Scout
+// opts out entirely because its hunting + immediate-eat loop never piles
+// up surplus crops worth preserving.
+//
+// All conditions must be met for auto-build:
+//   - colonist population at or above the per-script pop gate
+//   - own meal stock at or above WORKSHOP_MEAL_SURPLUS (BY_SCRIPT)
+//   - own wood reserve at or above WORKSHOP_WOOD_RESERVE_BY_SCRIPT
+//   - at least one hearth and one warehouse already up (set in caller)
+// This three-way gate means the workshop only fires when the colony is
+// genuinely beyond subsistence — never as a knee-jerk pop-threshold
+// trigger that drained colonies in earlier iterations.
 const WORKSHOP_POP_GATE_BY_SCRIPT = {
-  builder:      8,
-  farmer_breed: 8,
-  farmer:       Infinity,
-  temperate:    Infinity,
-  balanced:     Infinity,
-  scout:        Infinity,
+  builder:       8,
+  farmer_breed:  8,
+  farmer:       10,
+  balanced:     10,
+  temperate:    10,
+  scout:         Infinity,
 };
-// Workshop only builds when meal stock is comfortably above the basic
-// MEAL_TARGET — being merely at target means the colony is feeding
-// itself but has no slack, and the 4-wood build would dip below
-// survival margin.
-const WORKSHOP_MEAL_SURPLUS = 12;
-const WORKSHOP_WOOD_RESERVE = 30;
+const WORKSHOP_MEAL_SURPLUS_BY_SCRIPT = {
+  builder:      12,
+  farmer_breed: 12,
+  farmer:       14,
+  balanced:     14,
+  temperate:    14,
+};
+const WORKSHOP_WOOD_RESERVE_BY_SCRIPT = {
+  builder:      28,
+  farmer_breed: 28,
+  farmer:       32,
+  balanced:     32,
+  temperate:    32,
+};
 // Diagnostic log: emitted at most once per (groupId, reason) per minute
 // so the activity log doesn't flood with "no land for warehouse".
 const _warnedAt = new Map();
@@ -369,12 +386,14 @@ export function urgentInfraBuild(game, colonist) {
   // condition that showed gains in trials.
   const ownMeals = grpForWS?.storage?.meal || 0;
   const ownWood = grpForWS?.storage?.wood || 0;
+  const mealGate = WORKSHOP_MEAL_SURPLUS_BY_SCRIPT[wsScriptId] ?? Infinity;
+  const woodGate = WORKSHOP_WOOD_RESERVE_BY_SCRIPT[wsScriptId] ?? Infinity;
   if (
     ownPop >= popGate
     && ownHearths >= 1
     && ownStockpiles >= 1
-    && ownMeals >= WORKSHOP_MEAL_SURPLUS
-    && ownWood >= WORKSHOP_WOOD_RESERVE
+    && ownMeals >= mealGate
+    && ownWood >= woodGate
     && ownWorkshops + ownWorkshopsPending < 1
     && game._canAffordBuild('workshop')
   ) {
