@@ -82,65 +82,67 @@ export const RECIPES = [
 
   // --- Tier 1 workshop intermediates (raw → ingredient, not a meal) -------
   //
-  // α31 followup: workshop processBias values are tuned so that a single
-  // serving of the processed product delivers ROUGHLY 2× the most-relevant
-  // nutrient bucket of the raw inputs, with additive bonuses on secondary
-  // nutrients so each processed item covers more of the 4-nutrient grid
-  // than its raw equivalents. The dominant-nutrient multiplier almost
-  // always clamps to 1.0 in the per-bucket cap, but the additive bonus
-  // genuinely raises the dish's profile, so 1 serving of (say) sauerkraut
-  // tops up vitamin AND meaningfully adds protein + carb where 1 head of
-  // raw cabbage only filled vitamin. The 3-raw → 2-output food-loss many
-  // recipes carry is offset by the higher per-item nutritional density.
+  // α31 followup: workshop OUTPUT COUNT is now ROUGHLY 1.5×–2× the
+  // input count, so processing GAINS food rather than losing it. This
+  // models the abstraction that fermentation / drying / pressing
+  // produces more SERVINGS per raw unit even when total mass drops
+  // (e.g. 1 large melon → 6 dried slices). Each serving still carries
+  // the boosted nutrient profile (processBias multipliers and additive
+  // bonuses) so workshops both increase total food AND lift nutrient
+  // density per item. Headless trials with 3→2-output recipes showed
+  // workshops as a survival NET-NEGATIVE; bumping to 3→5 / 2→3 turns
+  // them into a clear gain.
   //
   // Mill (粉ひき所): grain / nut → flour. Milling strips vitamin but
   // concentrates carb strongly (refined flour is essentially pure starch).
-  { id: 'flour',       tier: 1, station: 'workshop', kind: 'mill',  ingredients: { wheat: 2 },     out: 2, nutrition: 0.45, processBias: bias({ mul: { vitamin: 0.35, carb: 1.6 }, add: { carb: 0.05 } }), intermediate: true },
-  { id: 'oatMeal',     tier: 1, station: 'workshop', kind: 'mill',  ingredients: { oats: 2 },      out: 2, nutrition: 0.45, processBias: bias({ mul: { vitamin: 0.40, carb: 1.6 }, add: { carb: 0.05 } }), intermediate: true },
-  { id: 'cornMeal',    tier: 1, station: 'workshop', kind: 'mill',  ingredients: { maize: 2 },     out: 2, nutrition: 0.45, processBias: bias({ mul: { vitamin: 0.40, carb: 1.6 }, add: { carb: 0.05 } }), intermediate: true },
-  { id: 'chickpeaFlour',tier: 1, station: 'workshop', kind: 'mill', ingredients: { chickpea: 2 },  out: 2, nutrition: 0.45, processBias: bias({ mul: { vitamin: 0.40, carb: 1.5 }, add: { protein: 0.10 } }), intermediate: true },
-  // Malt house (製麦所): sprouted barley — enzymes raise protein.
-  { id: 'malt',        tier: 1, station: 'workshop', kind: 'malt',  ingredients: { barley: 2 },    out: 2, nutrition: 0.50, processBias: bias({ mul: { vitamin: 0.6, carb: 1.5 }, add: { protein: 0.15 } }), intermediate: true },
-  // Mochi shop (餅つき場): pounded sticky rice — carb density up.
-  { id: 'mochi',       tier: 1, station: 'workshop', kind: 'mochi', ingredients: { rice: 3 },      out: 2, nutrition: 0.65, processBias: bias({ mul: { vitamin: 0.85, carb: 1.7 }, add: { protein: 0.08 } }) },
-  // Oil press (搾油所): soybean → soy oil. Pure lipid extraction.
-  { id: 'soyOil',      tier: 1, station: 'workshop', kind: 'oil',   ingredients: { soybean: 3 },   out: 1, nutrition: 0.55, processBias: bias({ mul: { carb: 0.15, protein: 0.25, vitamin: 0.15, fat: 4.5 } }), intermediate: true },
+  // Output 3 (was 2) — 2 input → 3 servings, 1.5× food.
+  { id: 'flour',       tier: 1, station: 'workshop', kind: 'mill',  ingredients: { wheat: 2 },     out: 3, nutrition: 0.45, processBias: bias({ mul: { vitamin: 0.35, carb: 1.6 }, add: { carb: 0.05 } }), intermediate: true },
+  { id: 'oatMeal',     tier: 1, station: 'workshop', kind: 'mill',  ingredients: { oats: 2 },      out: 3, nutrition: 0.45, processBias: bias({ mul: { vitamin: 0.40, carb: 1.6 }, add: { carb: 0.05 } }), intermediate: true },
+  { id: 'cornMeal',    tier: 1, station: 'workshop', kind: 'mill',  ingredients: { maize: 2 },     out: 3, nutrition: 0.45, processBias: bias({ mul: { vitamin: 0.40, carb: 1.6 }, add: { carb: 0.05 } }), intermediate: true },
+  { id: 'chickpeaFlour',tier: 1, station: 'workshop', kind: 'mill', ingredients: { chickpea: 2 },  out: 3, nutrition: 0.45, processBias: bias({ mul: { vitamin: 0.40, carb: 1.5 }, add: { protein: 0.10 } }), intermediate: true },
+  // Malt house (製麦所). Output 3 (was 2) — 1.5×.
+  { id: 'malt',        tier: 1, station: 'workshop', kind: 'malt',  ingredients: { barley: 2 },    out: 3, nutrition: 0.50, processBias: bias({ mul: { vitamin: 0.6, carb: 1.5 }, add: { protein: 0.15 } }), intermediate: true },
+  // Mochi shop. Output 5 (was 2) — 3 input → 5, ~1.7×.
+  { id: 'mochi',       tier: 1, station: 'workshop', kind: 'mochi', ingredients: { rice: 3 },      out: 5, nutrition: 0.65, processBias: bias({ mul: { vitamin: 0.85, carb: 1.7 }, add: { protein: 0.08 } }) },
+  // Oil press — concentrated lipid. Output 2 (was 1) — 3 input → 2 oil
+  // (still concentrated, but ratio improved to avoid catastrophic loss).
+  { id: 'soyOil',      tier: 1, station: 'workshop', kind: 'oil',   ingredients: { soybean: 3 },   out: 2, nutrition: 0.55, processBias: bias({ mul: { carb: 0.15, protein: 0.25, vitamin: 0.15, fat: 4.5 } }), intermediate: true },
 
   // --- Tier 1 workshop finished (no further cook needed) ------------------
-  // Jam workshop (ジャム工房). Sugar concentration boosts carb heavily.
-  { id: 'strawberryJam',tier: 1, station: 'workshop', kind: 'jam',   ingredients: { strawberry: 3 }, out: 2, nutrition: 0.65, processBias: bias({ mul: { vitamin: 1.0, carb: 2.0 }, add: { carb: 0.10 } }) },
-  // Brewery — alcoholic drinks. Modest nutrients, but +protein from yeast.
-  { id: 'strawberryWine',tier: 1, station: 'workshop', kind: 'brew', ingredients: { strawberry: 3 }, out: 2, nutrition: 0.55, processBias: bias({ mul: { vitamin: 0.6, carb: 1.0 }, add: { carb: 0.15, protein: 0.10 } }) },
-  { id: 'beer',         tier: 1, station: 'workshop', kind: 'brew', ingredients: { malt: 2, hop: 1 }, out: 3, nutrition: 0.55, processBias: bias({ mul: { vitamin: 0.7, carb: 1.0 }, add: { protein: 0.18 } }) },
-  // Drying yard — dehydration concentrates everything to ~2× density.
-  { id: 'driedMelon',   tier: 1, station: 'workshop', kind: 'dry',  ingredients: { melon: 3 },      out: 2, nutrition: 0.65, processBias: bias({ mul: { vitamin: 1.8, carb: 2.0 }, add: { protein: 0.05 } }) },
-  { id: 'driedMeat',    tier: 1, station: 'workshop', kind: 'dry',  ingredients: { meat: 2 },       out: 2, nutrition: 0.75, processBias: bias({ mul: { protein: 1.8, fat: 1.8 }, add: { fat: 0.10 } }) },
-  // Pickle shop — lacto-fermentation. Vitamin holds, +protein from
-  // microbial growth, +carb from sugar conversion.
-  { id: 'sauerkraut',   tier: 1, station: 'workshop', kind: 'pickle', ingredients: { cabbage: 3 }, out: 3, nutrition: 0.55, processBias: bias({ mul: { vitamin: 1.6, carb: 1.2 }, add: { protein: 0.20, carb: 0.08 } }) },
-  { id: 'napaPickle',   tier: 1, station: 'workshop', kind: 'pickle', ingredients: { lettuce: 3 }, out: 3, nutrition: 0.55, processBias: bias({ mul: { vitamin: 1.6, carb: 1.2 }, add: { protein: 0.20, carb: 0.08 } }) },
-  { id: 'pickles',      tier: 1, station: 'workshop', kind: 'pickle', ingredients: { cucumber: 3 }, out: 3, nutrition: 0.50, processBias: bias({ mul: { vitamin: 1.5, carb: 1.2 }, add: { protein: 0.18, carb: 0.05 } }) },
-  { id: 'curedMeat',    tier: 1, station: 'workshop', kind: 'pickle', ingredients: { meat: 2 },     out: 2, nutrition: 0.75, processBias: bias({ mul: { protein: 1.5, fat: 1.5 }, add: { protein: 0.08, vitamin: 0.05 } }) },
-  // Juice press — concentration; vitamin and carb retained / boosted.
-  { id: 'tomatoJuice',  tier: 1, station: 'workshop', kind: 'juice', ingredients: { tomato: 3 },   out: 3, nutrition: 0.55, processBias: bias({ mul: { vitamin: 1.6, carb: 1.3 }, add: { protein: 0.05 } }) },
+  // Jam — output 5 (was 2). 3 input → 5 jars, ~1.7×.
+  { id: 'strawberryJam',tier: 1, station: 'workshop', kind: 'jam',   ingredients: { strawberry: 3 }, out: 5, nutrition: 0.65, processBias: bias({ mul: { vitamin: 1.0, carb: 2.0 }, add: { carb: 0.10 } }) },
+  // Brewery — drinks. Wine output 5 (was 2), beer output 5 (was 3).
+  { id: 'strawberryWine',tier: 1, station: 'workshop', kind: 'brew', ingredients: { strawberry: 3 }, out: 5, nutrition: 0.55, processBias: bias({ mul: { vitamin: 0.6, carb: 1.0 }, add: { carb: 0.15, protein: 0.10 } }) },
+  { id: 'beer',         tier: 1, station: 'workshop', kind: 'brew', ingredients: { malt: 2, hop: 1 }, out: 5, nutrition: 0.55, processBias: bias({ mul: { vitamin: 0.7, carb: 1.0 }, add: { protein: 0.18 } }) },
+  // Drying — output 5 (was 2). 3 input → 5 slices, ~1.7×.
+  { id: 'driedMelon',   tier: 1, station: 'workshop', kind: 'dry',  ingredients: { melon: 3 },      out: 5, nutrition: 0.65, processBias: bias({ mul: { vitamin: 1.8, carb: 2.0 }, add: { protein: 0.05 } }) },
+  // driedMeat — output 3 (was 2). 2 input → 3, 1.5×.
+  { id: 'driedMeat',    tier: 1, station: 'workshop', kind: 'dry',  ingredients: { meat: 2 },       out: 3, nutrition: 0.75, processBias: bias({ mul: { protein: 1.8, fat: 1.8 }, add: { fat: 0.10 } }) },
+  // Pickle — output 5 (was 3). 3 input → 5 jars, ~1.7×.
+  { id: 'sauerkraut',   tier: 1, station: 'workshop', kind: 'pickle', ingredients: { cabbage: 3 }, out: 5, nutrition: 0.55, processBias: bias({ mul: { vitamin: 1.6, carb: 1.2 }, add: { protein: 0.20, carb: 0.08 } }) },
+  { id: 'napaPickle',   tier: 1, station: 'workshop', kind: 'pickle', ingredients: { lettuce: 3 }, out: 5, nutrition: 0.55, processBias: bias({ mul: { vitamin: 1.6, carb: 1.2 }, add: { protein: 0.20, carb: 0.08 } }) },
+  { id: 'pickles',      tier: 1, station: 'workshop', kind: 'pickle', ingredients: { cucumber: 3 }, out: 5, nutrition: 0.50, processBias: bias({ mul: { vitamin: 1.5, carb: 1.2 }, add: { protein: 0.18, carb: 0.05 } }) },
+  // curedMeat — output 3 (was 2). 2 input → 3, 1.5×.
+  { id: 'curedMeat',    tier: 1, station: 'workshop', kind: 'pickle', ingredients: { meat: 2 },     out: 3, nutrition: 0.75, processBias: bias({ mul: { protein: 1.5, fat: 1.5 }, add: { protein: 0.08, vitamin: 0.05 } }) },
+  // Juice — output 5 (was 3). 3 input → 5 cups, ~1.7×.
+  { id: 'tomatoJuice',  tier: 1, station: 'workshop', kind: 'juice', ingredients: { tomato: 3 },   out: 5, nutrition: 0.55, processBias: bias({ mul: { vitamin: 1.6, carb: 1.3 }, add: { protein: 0.05 } }) },
 
   // --- α31 followup: 2-raw → 1-product workshop recipes ------------------
-  // Each takes exactly two raw ingredients and produces one new dish.
-  // Same boosted processBias style as the single-raw workshop recipes.
+  // All 3-input → 5-output. 1.7× food gain.
   // Pickle station — mixed pickle styles.
-  { id: 'mixedPickles', tier: 1, station: 'workshop', kind: 'pickle', ingredients: { cucumber: 2, onion: 1 }, out: 3, nutrition: 0.55, processBias: bias({ mul: { vitamin: 1.5, carb: 1.2 }, add: { protein: 0.20, carb: 0.08 } }) },
-  { id: 'namasu',       tier: 1, station: 'workshop', kind: 'pickle', ingredients: { radish: 2, carrot: 1 },  out: 3, nutrition: 0.55, processBias: bias({ mul: { vitamin: 1.5, carb: 1.2 }, add: { protein: 0.20, carb: 0.08 } }) },
+  { id: 'mixedPickles', tier: 1, station: 'workshop', kind: 'pickle', ingredients: { cucumber: 2, onion: 1 }, out: 5, nutrition: 0.55, processBias: bias({ mul: { vitamin: 1.5, carb: 1.2 }, add: { protein: 0.20, carb: 0.08 } }) },
+  { id: 'namasu',       tier: 1, station: 'workshop', kind: 'pickle', ingredients: { radish: 2, carrot: 1 },  out: 5, nutrition: 0.55, processBias: bias({ mul: { vitamin: 1.5, carb: 1.2 }, add: { protein: 0.20, carb: 0.08 } }) },
   // Juice station — mixed juices / smoothies.
-  { id: 'vegJuice',     tier: 1, station: 'workshop', kind: 'juice',  ingredients: { tomato: 2, carrot: 1 },  out: 3, nutrition: 0.60, processBias: bias({ mul: { vitamin: 1.6, carb: 1.3 }, add: { protein: 0.05 } }) },
-  { id: 'fruitSmoothie',tier: 1, station: 'workshop', kind: 'juice',  ingredients: { strawberry: 2, melon: 1 }, out: 3, nutrition: 0.60, processBias: bias({ mul: { vitamin: 1.5, carb: 1.5 }, add: { protein: 0.05 } }) },
-  // Mill station — fortified / blended flour. Intermediate.
-  { id: 'mixedFlour',   tier: 1, station: 'workshop', kind: 'mill',   ingredients: { wheat: 2, barley: 1 },   out: 2, nutrition: 0.50, processBias: bias({ mul: { vitamin: 0.40, carb: 1.6 }, add: { carb: 0.08, protein: 0.05 } }), intermediate: true },
+  { id: 'vegJuice',     tier: 1, station: 'workshop', kind: 'juice',  ingredients: { tomato: 2, carrot: 1 },  out: 5, nutrition: 0.60, processBias: bias({ mul: { vitamin: 1.6, carb: 1.3 }, add: { protein: 0.05 } }) },
+  { id: 'fruitSmoothie',tier: 1, station: 'workshop', kind: 'juice',  ingredients: { strawberry: 2, melon: 1 }, out: 5, nutrition: 0.60, processBias: bias({ mul: { vitamin: 1.5, carb: 1.5 }, add: { protein: 0.05 } }) },
+  // Mill station — fortified / blended flour. Intermediate. Out 5 (was 2).
+  { id: 'mixedFlour',   tier: 1, station: 'workshop', kind: 'mill',   ingredients: { wheat: 2, barley: 1 },   out: 5, nutrition: 0.50, processBias: bias({ mul: { vitamin: 0.40, carb: 1.6 }, add: { carb: 0.08, protein: 0.05 } }), intermediate: true },
   // Drying station — mixed dried fruit.
-  { id: 'driedFruit',   tier: 1, station: 'workshop', kind: 'dry',    ingredients: { strawberry: 2, melon: 1 }, out: 2, nutrition: 0.65, processBias: bias({ mul: { vitamin: 1.8, carb: 1.8 }, add: { protein: 0.05 } }) },
-  // Brewery station — sake (rice + malt; like beer + wine).
-  { id: 'sake',         tier: 1, station: 'workshop', kind: 'brew',   ingredients: { rice: 2, malt: 1 },      out: 3, nutrition: 0.55, processBias: bias({ mul: { vitamin: 0.6, carb: 1.0 }, add: { protein: 0.15 } }) },
+  { id: 'driedFruit',   tier: 1, station: 'workshop', kind: 'dry',    ingredients: { strawberry: 2, melon: 1 }, out: 5, nutrition: 0.65, processBias: bias({ mul: { vitamin: 1.8, carb: 1.8 }, add: { protein: 0.05 } }) },
+  // Brewery station — sake.
+  { id: 'sake',         tier: 1, station: 'workshop', kind: 'brew',   ingredients: { rice: 2, malt: 1 },      out: 5, nutrition: 0.55, processBias: bias({ mul: { vitamin: 0.6, carb: 1.0 }, add: { protein: 0.15 } }) },
   // Jam station — mixed-fruit jam.
-  { id: 'mixedJam',     tier: 1, station: 'workshop', kind: 'jam',    ingredients: { strawberry: 2, melon: 1 }, out: 2, nutrition: 0.65, processBias: bias({ mul: { vitamin: 1.0, carb: 2.0 }, add: { carb: 0.10 } }) },
+  { id: 'mixedJam',     tier: 1, station: 'workshop', kind: 'jam',    ingredients: { strawberry: 2, melon: 1 }, out: 5, nutrition: 0.65, processBias: bias({ mul: { vitamin: 1.0, carb: 2.0 }, add: { carb: 0.10 } }) },
 
   // --- Tier 1 hearth, takes a workshop intermediate as one ingredient ----
   // Hearth recipe consuming the chickpea flour. Falafel rebuilds protein
