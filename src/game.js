@@ -117,7 +117,7 @@ import {
   blendMealNutrients,
   isEdibleRaw as fsIsEdibleRaw,
 } from './systems/foodSystem.js';
-import { isDish as rcIsDish } from './recipes.js';
+import { isDish as rcIsDish, isWorkshopOnlyInput } from './recipes.js';
 import {
   freshSeeds as csFreshSeeds,
   freshCodex as csFreshCodex,
@@ -1109,9 +1109,13 @@ export class Game {
         // α31: the legacy raw→meal fallback path only fires at hearth.
         // A workshop with no matching recipe simply ends with noFood
         // (or with whatever was produced by the recipe pass above).
+        // Workshop-only ingredients (hop, etc.) are skipped here so
+        // they aren't burnt up by the hearth's survival cooking before
+        // the workshop ever gets a chance to use them.
         while (cooked < COOK_BATCH && station === 'hearth') {
           let pick = null;
           for (const ft of FOOD_TYPES) {
+            if (isWorkshopOnlyInput(ft)) continue;
             if (allowedSrc[ft] > 0 && (pick === null || allowedSrc[ft] > allowedSrc[pick])) {
               pick = ft;
             }
@@ -1360,7 +1364,16 @@ export class Game {
     const g = this.groups?.[gid];
     if (!g) return 0;
     let n = 0;
-    for (const ft of FOOD_TYPES) n += g.storage[ft] || 0;
+    for (const ft of FOOD_TYPES) {
+      // α31: workshop-only inputs (hop, etc.) don't count as raw food
+      // for the hearth-cook gate. Otherwise a colony with 20 hops and
+      // nothing else would think they had cookable food and march a
+      // colonist to the hearth, where the no-recipe legacy fallback
+      // (also gated against these ids now) would do nothing — wasting
+      // the trip and keeping the workshop branch in a stalemate.
+      if (isWorkshopOnlyInput(ft)) continue;
+      n += g.storage[ft] || 0;
+    }
     return n;
   }
 

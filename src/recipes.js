@@ -151,6 +151,32 @@ export function isIntermediate(id) {
   return _byId.get(id)?.intermediate === true;
 }
 
+/**
+ * α31: ids that ONLY appear as workshop-recipe inputs (never in a
+ * hearth recipe). The hearth raw→meal legacy fallback skips these so
+ * that workshop-exclusive ingredients (most notably hop, which has
+ * no hearth use at all) stay available for their intended workshop
+ * recipe instead of being shovelled into the survival-cooking meal
+ * stack the instant a hearth is up.
+ */
+const _hearthInputs = new Set();
+for (const r of RECIPES) {
+  if (r.station !== 'hearth') continue;
+  for (const ing of Object.keys(r.ingredients)) _hearthInputs.add(ing);
+}
+const _workshopInputs = new Set();
+for (const r of RECIPES) {
+  if (r.station !== 'workshop') continue;
+  for (const ing of Object.keys(r.ingredients)) _workshopInputs.add(ing);
+}
+const _workshopOnlyInputs = new Set();
+for (const id of _workshopInputs) {
+  if (!_hearthInputs.has(id)) _workshopOnlyInputs.add(id);
+}
+export function isWorkshopOnlyInput(id) {
+  return _workshopOnlyInputs.has(id);
+}
+
 /** All dish ids in display order. */
 export const DISH_IDS = RECIPES.map((r) => r.id);
 

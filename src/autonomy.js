@@ -517,34 +517,42 @@ export function pickAutonomousTask(game, colonist) {
   {
     const ownRaw = game._rawFoodFor(gid);
     const ownMeal = game.groups?.[gid]?.storage?.meal || 0;
-    if (game._hearthsLitFor(gid) && ownRaw > 0 && ownMeal < MEAL_TARGET) {
-      for (const h of game.hearths) {
-        if (!game._canUseFrom(gid, h.ownerId)) continue;
-        if (colonist.isUnreachable?.(h.x, h.y, game.clock)) continue;
-        if (!game._tileClaimed(h.x, h.y)) {
-          return createTask(TaskType.COOK, h.x, h.y);
-        }
-      }
-    }
-  }
-  // 6b. α31: workshop processing — every group with a workshop and the
-  // ingredients for at least one workshop recipe runs it. Workshops
-  // don't need a lit hearth (no fuel requirement), they just need
-  // matching ingredients in own-group storage. Each workshop kind
-  // (mill / brewery / pickle / drying / oil press / juice press /
-  // mochi / malt house / jam workshop) shares this one branch
-  // because pickBestAffordable already filters by station.
-  {
+    // 6a. α31: workshop processing fires BEFORE the hearth-cook branch
+    // below. Without this priority, the legacy hearth raw→meal fallback
+    // would consume any FOOD_TYPE raw item (including bittering hops or
+    // any future processing input) into generic meals before the
+    // workshop ever got a chance to run its specific recipe. Workshops
+    // do not need a lit hearth (no fuel requirement); pickBestAffordable
+    // filters by station so only workshop-station recipes run here.
     const ownGrp = game.groups?.[gid];
     const ownWorkshops = (game.workshops || []).filter((w) => game._canUseFrom(gid, w.ownerId));
     if (ownWorkshops.length > 0 && ownGrp) {
-      const recipe = recipesPickBestAffordable(ownGrp.storage, undefined, 'workshop');
+      // Inventory check spans on-hand + every own-group stockpile so
+      // the workshop fires even when the colonist has already STOREd
+      // its inputs into a warehouse (cookOne pulls from both sources
+      // when this branch returns the COOK task).
+      const ownPiles = (game.stockpiles || []).filter((sp) => sp.ownerId === gid);
+      const getQty = (k) => {
+        let n = ownGrp.storage[k] || 0;
+        for (const sp of ownPiles) n += sp.items[k] || 0;
+        return n;
+      };
+      const recipe = recipesPickBestAffordable(ownGrp.storage, getQty, 'workshop');
       if (recipe) {
         for (const w of ownWorkshops) {
           if (colonist.isUnreachable?.(w.x, w.y, game.clock)) continue;
           if (!game._tileClaimed(w.x, w.y)) {
             return createTask(TaskType.COOK, w.x, w.y);
           }
+        }
+      }
+    }
+    if (game._hearthsLitFor(gid) && ownRaw > 0 && ownMeal < MEAL_TARGET) {
+      for (const h of game.hearths) {
+        if (!game._canUseFrom(gid, h.ownerId)) continue;
+        if (colonist.isUnreachable?.(h.x, h.y, game.clock)) continue;
+        if (!game._tileClaimed(h.x, h.y)) {
+          return createTask(TaskType.COOK, h.x, h.y);
         }
       }
     }

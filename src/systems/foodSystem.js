@@ -433,7 +433,12 @@ export function feed(game, colonist) {
   // or null when nothing edible is in reach.
   const takeOne = () => {
     // 1. cooked meal / dish on hand — own group's stock first, then best quality.
-    const cookedIds = ['meal', ...DISH_IDS].filter(allowedHas);
+    // α31: workshop intermediates (flour / malt / corn-meal etc., flagged
+    // `intermediate: true` in recipes.js) are NOT eaten — they're inputs
+    // to further recipes. Colonists previously ate malt directly because
+    // it lives in DISH_IDS; the brewer's hops would then end up consumed
+    // without any beer to show for it.
+    const cookedIds = ['meal', ...DISH_IDS].filter((id) => !isIntermediate(id) && allowedHas(id));
     if (cookedIds.length > 0) {
       const ownStore = grp?.storage;
       cookedIds.sort((a, b) => {
@@ -467,6 +472,7 @@ export function feed(game, colonist) {
       let pick = null;
       let cooked = false;
       for (const id of ['meal', ...DISH_IDS]) {
+        if (isIntermediate(id)) continue;
         if ((sp.items[id] || 0) > 0) { pick = id; cooked = true; break; }
       }
       if (!pick) pick = largestEdibleRaw(sp.items, STOCKPILE_ITEMS);
@@ -554,10 +560,15 @@ export function feed(game, colonist) {
   let inedibleRawOnHand = 0;
   const tally = (store) => {
     for (const id of Object.keys(store || {})) {
-      if (id === 'wood' || id === 'quality' || id === 'mealNutrients') continue;
+      if (id === 'wood' || id === 'quality' || id === 'mealNutrients' || id === 'dishNutrients') continue;
       const n = store[id] || 0;
       if (n <= 0) continue;
-      if (id === 'meal' || isDish(id)) cookedOnHand += n;
+      // α31: intermediates (flour / malt / corn-meal / soy-oil) sit in
+      // dish slots but aren't eatable — count them as "inedible raw"
+      // for the miss-reason classifier so the bug pattern is reported
+      // correctly when a colony only has intermediates left.
+      if ((id === 'meal' || isDish(id)) && !isIntermediate(id)) cookedOnHand += n;
+      else if (isIntermediate(id)) inedibleRawOnHand += n;
       else if (isEdibleRaw(id)) edibleRawOnHand += n;
       else inedibleRawOnHand += n;
     }
@@ -598,14 +609,44 @@ export function cookOne(game, groupId, station = 'hearth') {
   // eat through A's pantry just because the colony aggregate has it.
   const ownStore = groupId != null ? game.groups?.[groupId]?.storage : game.storage;
   if (!ownStore) return null;
-  // α31: filter by station so a workshop only runs workshop-recipes
-  // and a hearth only runs hearth-recipes.
-  const recipe = pickBestAffordable(ownStore, undefined, station);
+  // α31: ingredient inventory check looks at on-hand storage AND every
+  // own-group stockpile combined. Workshop recipes in particular often
+  // need an ingredient the colonist already STOREd into a pile (e.g.
+  // hop harvests get hauled into the warehouse before the workshop
+  // ever has a chance to run beer), so a storage-only check would
+  // never match. The store / pile inventories are summed via getQty.
+  const ownPiles = groupId != null
+    ? (game.stockpiles || []).filter((sp) => sp.ownerId === groupId)
+    : [];
+  const getQty = (k) => {
+    let n = ownStore[k] || 0;
+    for (const sp of ownPiles) n += sp.items[k] || 0;
+    return n;
+  };
+  const recipe = pickBestAffordable(ownStore, getQty, station);
   if (!recipe) return null;
   const grp = groupId != null ? game.groups?.[groupId] : null;
   const q = averageInputQuality(recipe, game.storage.quality);
+  // Consume ingredients: drain storage first, then dip into own
+  // stockpiles for any shortfall. Mirrors how an actual cook would
+  // grab what's on the table before walking to the pantry.
   for (const [ing, n] of Object.entries(recipe.ingredients)) {
-    storageSub(game, groupId, ing, n);
+    let need = n;
+    const fromStore = Math.min(ownStore[ing] || 0, need);
+    if (fromStore > 0) {
+      storageSub(game, groupId, ing, fromStore);
+      need -= fromStore;
+    }
+    for (const sp of ownPiles) {
+      if (need <= 0) break;
+      const have = sp.items[ing] || 0;
+      if (have <= 0) continue;
+      const take = Math.min(have, need);
+      sp.items[ing] = have - take;
+      // Keep the colony-aggregate ledger in step.
+      game.storage[ing] = Math.max(0, (game.storage[ing] || 0) - take);
+      need -= take;
+    }
   }
   // Output count + quality update: blend new quality with whatever was
   // already in the bucket so a fresh batch can lift a stale stack.

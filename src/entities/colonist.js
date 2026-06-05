@@ -309,7 +309,11 @@ export class Colonist {
       if (tile.type === TileType.WATER) return this._fail(task, 'onWater');
       if (tile.plant || tile.structure) return this._fail(task, 'occupied');
     } else if (task.type === TaskType.COOK) {
-      if (tile.structure !== 'hearth') return this._fail(task, 'noHearth');
+      // α31: COOK runs at either a hearth or a workshop. A workshop
+      // tile lets the colonist process recipes that don't need a fire
+      // (mill / brewery / pickle / drying / oil press / juice press
+      // / mochi / malt house / jam workshop).
+      if (tile.structure !== 'hearth' && tile.structure !== 'workshop') return this._fail(task, 'noHearth');
     } else if (task.type === TaskType.MOVE) {
       if (tile.type === TileType.WATER) return this._fail(task, 'onWater');
     }
