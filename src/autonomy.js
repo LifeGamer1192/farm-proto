@@ -384,7 +384,18 @@ export function urgentInfraBuild(game, colonist) {
   // hits the gate) is worse than no workshop. Waiting until the colony
   // has actual surplus aligns the build with the late-placement
   // condition that showed gains in trials.
-  const ownMeals = grpForWS?.storage?.meal || 0;
+  // α31 followup: count meals across on-hand AND own warehouses.
+  // grp.storage.meal alone barely passes 6 (the hearth-cook target) —
+  // colonists eat it as fast as it's cooked. The colony's REAL meal
+  // reserve sits in the warehouses they've hauled into. Diagnostic
+  // run showed temperate maxed at meal=2 on-hand across 1271 samples
+  // — workshop gate never fired with that measure, even when meal
+  // stocks across warehouses were comfortable.
+  let ownMeals = grpForWS?.storage?.meal || 0;
+  for (const sp of game.stockpiles || []) {
+    if (sp.ownerId !== gid) continue;
+    ownMeals += sp.items?.meal || 0;
+  }
   const ownWood = grpForWS?.storage?.wood || 0;
   const mealGate = WORKSHOP_MEAL_SURPLUS_BY_SCRIPT[wsScriptId] ?? Infinity;
   const woodGate = WORKSHOP_WOOD_RESERVE_BY_SCRIPT[wsScriptId] ?? Infinity;
@@ -636,13 +647,18 @@ export function pickAutonomousTask(game, colonist) {
       };
       const recipe = recipesPickBestAffordable(ownGrp.storage, getQty, 'workshop');
       if (recipe) {
-        // Gate: meals must be near MEAL_TARGET — OR — the recipe's
-        // ingredients include a workshop-only input that the hearth
-        // can't process anyway.
+        // Gate: meal stock comfortably above the basic target — OR —
+        // the recipe's ingredients include a workshop-only input that
+        // the hearth can't process anyway (hop, etc.). The combined
+        // (on-hand + own-warehouse) count is used so the cook fires
+        // when the colony is genuinely food-secure, not just when
+        // on-hand has been topped up by a recent FETCH.
+        let combinedMeal = ownMeal;
+        for (const sp of ownPiles) combinedMeal += sp.items?.meal || 0;
         const usesWorkshopOnly = Object.keys(recipe.ingredients).some(
           (id) => game._isWorkshopOnlyInput?.(id),
         );
-        if (ownMeal >= MEAL_TARGET || usesWorkshopOnly) {
+        if (combinedMeal >= MEAL_TARGET * 2 || usesWorkshopOnly) {
           for (const w of ownWorkshops) {
             if (colonist.isUnreachable?.(w.x, w.y, game.clock)) continue;
             if (!game._tileClaimed(w.x, w.y)) {
