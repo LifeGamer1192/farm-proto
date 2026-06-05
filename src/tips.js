@@ -145,9 +145,36 @@ export const TIPS = [
   { cat: 'plant', en: 'Heirloom varieties are old crops kept true by saving their seed.', ja: 'エアルーム品種は、種を採り続けて受け継がれてきた古い作物です。' },
   { cat: 'plant', en: 'Wild grasses still grow beside fields, holding genes crops have lost.', ja: '野生の草は今も畑のそばに育ち、作物が失った遺伝子を保っています。' },
   { cat: 'plant', en: 'A crop and its wild ancestor can often still cross and share traits.', ja: '作物とその野生の祖先は、今も交配して形質を分け合えることが多いです。' },
+
+  // --- process: food processing lore + game-mechanics for workshops -----
+  // α31 followup: workshop = mill / brewery / pickle / drying / oil press
+  // / juice press / mochi shop / malt house / jam workshop, all in one
+  // building. These tips lean educational (real-world food culture +
+  // chemistry) so they sit naturally with the "spec / plant / genetics"
+  // pool already in rotation.
+  { cat: 'process', en: 'Milling grain into flour strips much of the vitamin layer — that is why whole grain keeps more nutrition.', ja: '穀物を粉にひくと、ビタミンを多く含む外層が落ちます。全粒粉が栄養価で勝るのはそのためです。' },
+  { cat: 'process', en: 'Beer is brewed from malted grain plus hops — malt feeds the yeast, hops bitter and preserve the brew.', ja: 'ビールは麦芽とホップから造ります。麦芽が酵母の餌、ホップが苦みと保存性を与えます。' },
+  { cat: 'process', en: 'Malting sprouts grain to wake its starch-cutting enzymes — the first step in brewing beer or whiskey.', ja: '製麦は穀物を発芽させ、デンプンを糖に変える酵素を起こします。ビールやウイスキーの第一歩です。' },
+  { cat: 'process', en: 'Sake uses koji mould on rice instead of malt — different microbe, same idea: turn starch into sugar to ferment.', ja: '日本酒は麦芽でなく米麹を使います。微生物は違えど「デンプンを糖に変えて発酵させる」原理は同じです。' },
+  { cat: 'process', en: 'Tofu is soy milk curdled with a coagulant — the protein folds out and locks together into a soft block.', ja: '豆腐は豆乳を凝固剤で固めたもの。タンパク質が網目状に絡んで柔らかい塊になります。' },
+  { cat: 'process', en: 'Drying meat or fruit pulls out water — without water, the microbes that spoil food cannot grow.', ja: '肉や果物を乾かすと水分が抜け、腐敗菌が増えられなくなります。これが保存の基本原理です。' },
+  { cat: 'process', en: 'Salt and acid in pickles both stop spoilage bugs — but lactic-acid bacteria thrive and ferment the vegetables.', ja: '漬物の塩と酸は腐敗菌を抑える一方、乳酸菌は生き残って野菜を発酵させます。' },
+  { cat: 'process', en: 'Sauerkraut is cabbage shredded, salted and left under its own brine — the brine and time do the work.', ja: 'ザワークラウトはキャベツを刻んで塩を打ち、自分の汁に浸けるだけ。あとは時間が仕上げます。' },
+  { cat: 'process', en: 'A jar of jam keeps because sugar binds the water — without free water, mould has nowhere to grow.', ja: 'ジャムが保存できるのは砂糖が水を結びつけるから。自由水がなければカビは育ちません。' },
+  { cat: 'process', en: 'Pressing nuts releases their oil — almonds and walnuts are over half fat by weight.', ja: 'ナッツを搾ると油が出ます。アーモンドやクルミは重量の半分以上が脂質です。' },
+  { cat: 'process', en: 'Mochi pounds cooked sticky rice until the grains break and bind into a chewy mass — a very old Japanese food.', ja: '餅はもち米を搗いて粒をつぶし、ねばる塊にしたもの。日本のとても古い食べ物です。' },
+  { cat: 'process', en: 'Smoking meat preserves it three ways at once — dries the surface, deposits antimicrobial smoke, and adds flavour.', ja: '燻製は表面の乾燥・煙の抗菌成分・風味付けを同時に行う保存法です。' },
+  { cat: 'process', en: 'Cured meat hangs in salt and time — months for prosciutto, years for some hams.', ja: '塩漬け肉は塩と時間で熟成します。プロシュットで数か月、生ハムは何年もかかるものもあります。' },
+  { cat: 'process', en: 'Fermentation does not just preserve — it transforms. Cabbage gains vitamin C, soy gains umami, grain gains alcohol.', ja: '発酵は保存だけでなく食材を作り変えます。キャベツはビタミンCが増え、大豆は旨味が出て、穀物には酒ができます。' },
+  { cat: 'process', en: 'Bread leavens because yeast eats sugar in the dough and exhales carbon dioxide — the bubbles you see.', ja: 'パンが膨らむのは、生地中の糖を酵母が食べて二酸化炭素を出すから。あの気泡がそれです。' },
+  { cat: 'process', en: 'Olive oil, soybean oil and almond oil all come from pressing — squeezing the fat out of the raw material.', ja: 'オリーブ油・大豆油・アーモンド油は、いずれも原料を絞って油を取り出したものです。' },
+  { cat: 'process', en: 'Cooking and processing often raise calories per bite but can lower vitamins — drying concentrates, milling strips, fermenting transforms.', ja: '加工は一口あたりのカロリーを上げがちですが、ビタミンは減ることが多い。乾燥は濃縮、製粉は除去、発酵は変換します。' },
+  { cat: 'process', en: 'In this game, workshops process raw ingredients into preserved or transformed dishes — no fuel needed, unlike hearths.', ja: 'このゲームの工房は、原料を保存食や変換食に加工します。かまどと違って薪は不要です。' },
+  { cat: 'process', en: 'Intermediates like flour, malt or chickpea flour are not eaten directly — they feed downstream recipes at the hearth or workshop.', ja: '小麦粉・麦芽・ひよこ豆粉などの中間品はそのまま食べません。かまどや工房で次のレシピの材料になります。' },
+  { cat: 'process', en: 'Each cooked dish blends in the actual ingredients you used — a wheat-heavy colony cooks carb-heavy meals, a nut-heavy one ends up with fat-rich plates.', ja: '出来上がった料理には実際に使った原料の栄養が反映されます。小麦中心のコロニーは炭水化物寄り、ナッツ中心なら脂質寄りの料理に。' },
 ];
 
-const CATS = ['spec', 'genetics', 'plant'];
+const CATS = ['spec', 'genetics', 'plant', 'process'];
 
 /** A random tip index different from `notIndex` (if possible). */
 export function randomTipIndex(notIndex = -1) {

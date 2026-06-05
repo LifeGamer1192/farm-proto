@@ -486,6 +486,7 @@ const STRINGS = {
     'tipcat.spec': 'Game',
     'tipcat.genetics': 'Genetics',
     'tipcat.plant': 'Plants',
+    'tipcat.process': 'Processing',
     'btn.nextTip': 'Next tip',
 
     'tip.look': 'look: {desc}',
@@ -1119,6 +1120,7 @@ const STRINGS = {
     'tipcat.spec': '仕様',
     'tipcat.genetics': '遺伝',
     'tipcat.plant': '作物',
+    'tipcat.process': '加工',
     'btn.nextTip': '次のヒント',
 
     'tip.look': '見た目: {desc}',
