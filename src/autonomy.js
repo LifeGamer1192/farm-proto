@@ -55,6 +55,10 @@ const WAREHOUSE_HARD_CAP = Infinity; // no colony-wide cap on warehouse count
 // floor 1. One hearth comfortably feeds and warms ~4 colonists; a
 // larger group queues a second / third hearth as it grows.
 const HEARTH_POP_RATIO = 4;
+// α31 followup: workshop auto-build trigger — population threshold below
+// which the colony is still in "establish basic food survival" mode and
+// shouldn't divert wood / colonist time into preservation infra.
+const WORKSHOP_POP_GATE = 8;
 // Diagnostic log: emitted at most once per (groupId, reason) per minute
 // so the activity log doesn't flood with "no land for warehouse".
 const _warnedAt = new Map();
@@ -311,18 +315,21 @@ export function urgentInfraBuild(game, colonist) {
     const spot = game._findFreeLandNear(colonist);
     if (spot) return createTask(TaskType.BUILD, spot.x, spot.y, { structure: 'hearth' });
   }
-  // 2b. α31: one workshop per group once the first hearth is up. The
-  // workshop hosts all non-hearth processing recipes (mill / brewery /
-  // pickle / drying / oil press / juice press / mochi / malt house /
-  // jam workshop — one building, many stations). Only one is needed
-  // because the prototype's recipe set is modest; a future expansion
-  // could scale this with population the way hearths do.
-  const ownWorkshops = (game.workshops || []).filter((w) => w.ownerId === gid).length;
-  const ownWorkshopsPending = autoWorkshopPending(game, gid);
-  if (ownHearths >= 1 && ownWorkshops + ownWorkshopsPending < 1 && game._canAffordBuild('workshop')) {
-    const spot = game._findFreeLandNear(colonist);
-    if (spot) return createTask(TaskType.BUILD, spot.x, spot.y, { structure: 'workshop' });
-  }
+  // 2b. α31: workshop is NO LONGER auto-built. Initial α31 auto-built
+  // one workshop per group after the first hearth — that diverted wood
+  // (4 wood per build) at a fragile point in colony growth AND the
+  // workshop's preservation recipes (jam / dried fruit / oil) are mostly
+  // net food-negative (e.g. strawberry:3 → jam:2 loses a unit per pass)
+  // which bled the colony out. Headless regression run (6 scripts × 8
+  // seeds): single-colony survival dropped balanced 4/8 → 1/8 and scout
+  // 4/8 → 0/8. Even gating by pop didn't recover survival because once
+  // pop hit the gate the workshop still bled food.
+  //
+  // Workshop is now a player-driven building: open the Build tool,
+  // pick "Workshop", and place one where you want. Existing workshops
+  // still get fed by the cook autonomy (6b. below), so a player who
+  // wants brewing / pickling / drying can opt in without forcing the
+  // pattern on every colony.
   // 3. Warehouse — wantsWarehouse handles "first one" + the
   // utilisation threshold for follow-up expansions. The same helper
   // is shared with the critical-warehouse pivot at script level.
@@ -517,20 +524,40 @@ export function pickAutonomousTask(game, colonist) {
   {
     const ownRaw = game._rawFoodFor(gid);
     const ownMeal = game.groups?.[gid]?.storage?.meal || 0;
-    // 6a. α31: workshop processing fires BEFORE the hearth-cook branch
-    // below. Without this priority, the legacy hearth raw→meal fallback
-    // would consume any FOOD_TYPE raw item (including bittering hops or
-    // any future processing input) into generic meals before the
-    // workshop ever got a chance to run its specific recipe. Workshops
-    // do not need a lit hearth (no fuel requirement); pickBestAffordable
-    // filters by station so only workshop-station recipes run here.
+    // 6. Hearth-cook FIRST. α31 first-try put workshops ahead of
+    // hearth-cook so brewing-only ingredients (hop) wouldn't get
+    // burnt into survival meals before the workshop fired. But a
+    // colony in early game uses most of its raw stock to feed
+    // itself, and the workshop's preservation recipes are net food
+    // negative (cabbage:3 → sauerkraut:3 is neutral, but berry:3 →
+    // jam:2, melon:3 → driedMelon:2, soybean:3 → soyOil:1 all lose
+    // food). With workshops running ahead of hearth-cook the
+    // colony bled food into preserves and intermediates and starved
+    // — single-colony survival dropped from ~6/8 to 0/8 across most
+    // scripts. Hearth-cook (which actually produces eatable meals
+    // toward MEAL_TARGET) now wins; workshops fire only AFTER the
+    // colony's meal stock is healthy.
+    if (game._hearthsLitFor(gid) && ownRaw > 0 && ownMeal < MEAL_TARGET) {
+      for (const h of game.hearths) {
+        if (!game._canUseFrom(gid, h.ownerId)) continue;
+        if (colonist.isUnreachable?.(h.x, h.y, game.clock)) continue;
+        if (!game._tileClaimed(h.x, h.y)) {
+          return createTask(TaskType.COOK, h.x, h.y);
+        }
+      }
+    }
+    // 6b. α31 (revised): workshop processing fires AFTER hearth-cook,
+    // and is itself gated by meal sufficiency — preserves are nice
+    // but they're a luxury until basic food is stocked. The exception
+    // is workshop-only inputs (hop): if the colony has those, fire
+    // the workshop regardless of meal stock because the hearth would
+    // never use them and they'd otherwise sit idle. Inventory check
+    // spans on-hand + every own-group stockpile so the workshop
+    // fires even when the colonist has already STOREd its inputs
+    // into a warehouse.
     const ownGrp = game.groups?.[gid];
     const ownWorkshops = (game.workshops || []).filter((w) => game._canUseFrom(gid, w.ownerId));
     if (ownWorkshops.length > 0 && ownGrp) {
-      // Inventory check spans on-hand + every own-group stockpile so
-      // the workshop fires even when the colonist has already STOREd
-      // its inputs into a warehouse (cookOne pulls from both sources
-      // when this branch returns the COOK task).
       const ownPiles = (game.stockpiles || []).filter((sp) => sp.ownerId === gid);
       const getQty = (k) => {
         let n = ownGrp.storage[k] || 0;
@@ -539,20 +566,19 @@ export function pickAutonomousTask(game, colonist) {
       };
       const recipe = recipesPickBestAffordable(ownGrp.storage, getQty, 'workshop');
       if (recipe) {
-        for (const w of ownWorkshops) {
-          if (colonist.isUnreachable?.(w.x, w.y, game.clock)) continue;
-          if (!game._tileClaimed(w.x, w.y)) {
-            return createTask(TaskType.COOK, w.x, w.y);
+        // Gate: meals must be near MEAL_TARGET — OR — the recipe's
+        // ingredients include a workshop-only input that the hearth
+        // can't process anyway.
+        const usesWorkshopOnly = Object.keys(recipe.ingredients).some(
+          (id) => game._isWorkshopOnlyInput?.(id),
+        );
+        if (ownMeal >= MEAL_TARGET || usesWorkshopOnly) {
+          for (const w of ownWorkshops) {
+            if (colonist.isUnreachable?.(w.x, w.y, game.clock)) continue;
+            if (!game._tileClaimed(w.x, w.y)) {
+              return createTask(TaskType.COOK, w.x, w.y);
+            }
           }
-        }
-      }
-    }
-    if (game._hearthsLitFor(gid) && ownRaw > 0 && ownMeal < MEAL_TARGET) {
-      for (const h of game.hearths) {
-        if (!game._canUseFrom(gid, h.ownerId)) continue;
-        if (colonist.isUnreachable?.(h.x, h.y, game.clock)) continue;
-        if (!game._tileClaimed(h.x, h.y)) {
-          return createTask(TaskType.COOK, h.x, h.y);
         }
       }
     }

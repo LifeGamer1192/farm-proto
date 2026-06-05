@@ -286,6 +286,7 @@ export class Game {
   get totalFood()  { return fsTotalFood(this); }
   _freshStorage()  { return freshStorage(); }
   _freshStockpileItems() { return freshStockpileItems(); }
+  _isWorkshopOnlyInput(id) { return isWorkshopOnlyInput(id); }
   _largestFood(store, items) { return largestFood(store, items); }
   totalItem(it)            { return fsTotalItem(this, it); }
   stockpileAt(x, y)         { return fsStockpileAt(this, x, y); }
