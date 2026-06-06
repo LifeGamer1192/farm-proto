@@ -78,27 +78,36 @@ const HEARTH_POP_RATIO = 4;
 // This three-way gate means the workshop only fires when the colony is
 // genuinely beyond subsistence — never as a knee-jerk pop-threshold
 // trigger that drained colonies in earlier iterations.
+// α31 followup: per-script gates are tuned by empirical timing trial —
+// manually placing a workshop at Y2 / Y5 / Y8 / Y12 across 4 seeds × 3
+// repeats showed each script has a different sweet spot. EARLY building
+// is universally bad (balanced Y2 Δ-5.7, builder Y2 Δ-6.5); late timing
+// is best for builder and scout (Y12 Δ+0.9 and Δ+3.6). Gate thresholds
+// are calibrated to pop levels that typically correspond to each
+// script's best timing in the test data.
 const WORKSHOP_POP_GATE_BY_SCRIPT = {
-  builder:       8,
-  farmer_breed:  8,
-  farmer:       10,
-  balanced:     10,
-  temperate:    10,
-  scout:         Infinity,
+  farmer_breed:  6,   // Y2 best — eager (lots of surplus from selective breeding)
+  farmer:       10,   // Y5 best — mid-game
+  temperate:    10,   // Y5 best — diverse crops mature mid-game
+  balanced:     12,   // Y8 best — mid-late, needs colony establishment first
+  scout:        18,   // Y12 best — late! Foraged stock + accumulated raw food
+  builder:      18,   // Y12 best — built-out infra ready to use workshop
 };
 const WORKSHOP_MEAL_SURPLUS_BY_SCRIPT = {
-  builder:      12,
-  farmer_breed: 12,
+  farmer_breed: 10,
   farmer:       14,
-  balanced:     14,
   temperate:    14,
+  balanced:     16,
+  scout:        18,
+  builder:      18,
 };
 const WORKSHOP_WOOD_RESERVE_BY_SCRIPT = {
-  builder:      28,
-  farmer_breed: 28,
-  farmer:       32,
+  farmer_breed: 24,
+  farmer:       30,
+  temperate:    30,
   balanced:     32,
-  temperate:    32,
+  scout:        35,
+  builder:      35,
 };
 // Diagnostic log: emitted at most once per (groupId, reason) per minute
 // so the activity log doesn't flood with "no land for warehouse".
