@@ -7,7 +7,18 @@
 // α32 begins the post-prototype "α-version era". Versions alpha 4 through
 // alpha 31 (the prototype era) are preserved under /versions/ and remain
 // playable via the link in the header.
-export const ALPHA_VERSION = 'alpha 32';
+export const ALPHA_VERSION = 'alpha 33';
+
+// α33: seafood (fish / clams) on water tiles. Fraction of water tiles
+// that start with a fishable catch on them; regrows over time so the
+// shoreline isn't fished out permanently after a few seasons.
+export const SEAFOOD_SPAWN_CHANCE = 0.06;
+// Sim-seconds for a fished tile to repopulate. Slower than tree regrowth
+// because seafood is supposed to be a richer-but-scarcer food source.
+export const SEAFOOD_REGROW_TIME = 400;
+// Hunger / nutrient yield per harvest. Catch is "n units of seafood id"
+// added to the colony storage.
+export const SEAFOOD_YIELD = 2;
 
 // Full map size in tiles. Alpha 2+ uses a 100×100 grid.
 export const GRID_COLS = 100;

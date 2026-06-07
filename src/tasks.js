@@ -15,6 +15,8 @@ export const TaskType = {
   TILL: 'till',
   WATER: 'water',
   HUNT: 'hunt',
+  // α33: fish at a water tile adjacent to land. Yields fish / clams.
+  FISH: 'fish',
   BUILD: 'build',
   COOK: 'cook',
   WEED: 'weed', // clear a withered, dead crop (autonomous)
@@ -35,6 +37,7 @@ export const WORK_TYPES = [
   TaskType.TILL,
   TaskType.WATER,
   TaskType.HUNT,
+  TaskType.FISH,
   TaskType.BUILD,
   TaskType.COOK,
   TaskType.WEED,

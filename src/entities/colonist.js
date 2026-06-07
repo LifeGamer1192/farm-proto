@@ -77,6 +77,7 @@ const WORK_PHASE = {
   [TaskType.WATER]: WORK_DURATION,
   [TaskType.WEED]: WORK_DURATION,
   [TaskType.HUNT]: HUNT_DURATION,
+  [TaskType.FISH]: HUNT_DURATION,
   [TaskType.BUILD]: BUILD_DURATION,
   [TaskType.COOK]: COOK_DURATION,
   [TaskType.STORE]: HAUL_DURATION,
@@ -95,6 +96,7 @@ const TASK_SKILL = {
   [TaskType.WEED]: 'farming',
   [TaskType.COOK]: 'farming',
   [TaskType.HUNT]: 'strength',
+  [TaskType.FISH]: 'agility',
   [TaskType.BUILD]: 'building',
 };
 
@@ -112,6 +114,7 @@ const WORK_STATE = {
   [TaskType.WATER]: 'working',
   [TaskType.WEED]: 'weeding',
   [TaskType.HUNT]: 'hunting',
+  [TaskType.FISH]: 'fishing',
   [TaskType.BUILD]: 'building',
   [TaskType.COOK]: 'cooking',
   [TaskType.STORE]: 'hauling',
@@ -120,6 +123,30 @@ const WORK_STATE = {
   [TaskType.REST]: 'resting',
   [TaskType.SLEEP]: 'sleeping',
 };
+
+// α33: pick the nearest land tile in the 8-neighbourhood of (wx, wy)
+// that isn't a structure / water / unreachable from the colonist. Used
+// to place a fisher at the shoreline next to their target water tile.
+function _nearestLandNeighbor(map, wx, wy, colonist) {
+  const dirs = [[0,-1],[1,0],[0,1],[-1,0],[-1,-1],[1,-1],[-1,1],[1,1]];
+  let best = null;
+  let bestD = Infinity;
+  for (const [dx, dy] of dirs) {
+    const x = wx + dx;
+    const y = wy + dy;
+    const tile = map.tiles[y]?.[x];
+    if (!tile || tile.type !== TileType.LAND) continue;
+    // A standing colonist sitting on the tile is fine — they share space
+    // briefly. Only structures that block movement disqualify the spot.
+    if (tile.structure === 'hut' || tile.structure === 'hut_med' || tile.structure === 'hut_large'
+        || tile.structure === 'stockpile' || tile.structure === 'stockpile_med' || tile.structure === 'stockpile_large'
+        || tile.structure === 'workshop') continue;
+    if (colonist?.isUnreachable?.(x, y, 0)) continue;
+    const d = Math.hypot(x - colonist.tileX, y - colonist.tileY);
+    if (d < bestD) { bestD = d; best = { x, y }; }
+  }
+  return best;
+}
 
 export class Colonist {
   constructor(x, y, name, groupId = 0) {
@@ -316,10 +343,27 @@ export class Colonist {
       if (tile.structure !== 'hearth' && tile.structure !== 'workshop') return this._fail(task, 'noHearth');
     } else if (task.type === TaskType.MOVE) {
       if (tile.type === TileType.WATER) return this._fail(task, 'onWater');
+    } else if (task.type === TaskType.FISH) {
+      // α33: fish at a water tile from an adjacent land tile. Validate
+      // that the target is water carrying a seafood marker, then re-route
+      // the path so the colonist stops at the nearest accessible land
+      // tile next to the water — colonists never walk into the water.
+      if (tile.type !== TileType.WATER) return this._fail(task, 'onLand');
+      const p = tile.plant;
+      if (!p || p.kind !== 'seafood') return this._fail(task, 'noSeafood');
+      const standOn = _nearestLandNeighbor(map, task.x, task.y, this);
+      if (!standOn) return this._fail(task, 'unreachable');
+      // Rewrite the goal to the chosen land tile; the path search
+      // below still runs normally with this overridden goal.
+      task._fishGoal = standOn;
     }
 
     const anchor = this._anchor();
-    const goal = { x: task.x, y: task.y };
+    // α33: FISH tasks reroute to the adjacent land tile picked above —
+    // the path search itself can't reach a water tile.
+    const goal = task._fishGoal
+      ? { x: task._fishGoal.x, y: task._fishGoal.y }
+      : { x: task.x, y: task.y };
     // Path search uses the colony's per-frame cache when available so
     // four colonists heading to the same hearth or stockpile in the
     // same tick share one A* result. Long routes are split through a

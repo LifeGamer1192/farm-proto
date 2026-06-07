@@ -9,6 +9,15 @@ export const TileType = {
   WATER: 'water',
 };
 
+// α33: water tiles get a sub-kind set during map generation. Used by the
+// seafood spawn step + the renderer (different tints) + autonomy (which
+// fish species each body yields).
+export const WaterKind = {
+  OCEAN: 'ocean',   // large + touches map edge — yields saltwater fish + clams
+  RIVER: 'river',   // long / narrow body — yields river fish
+  LAKE:  'lake',    // enclosed / round body — yields lake fish + clams
+};
+
 /**
  * @typedef {object} Tile
  * @property {number} x          column index
@@ -39,5 +48,8 @@ export function createTile({ x, y, type, elevation, fertility, moisture, sunligh
     plant: null,
     tilled: false,
     structure: null,
+    // α33: water-tile subtype (ocean / river / lake). null for land tiles.
+    // Set by classifyWaterBodies() during map generation.
+    waterKind: null,
   };
 }

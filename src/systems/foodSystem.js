@@ -18,7 +18,11 @@ import { t } from '../i18n.js';
 // own food entry; 'meat' comes from hunting. Dishes are kept separately
 // in the items map (DISH_IDS) so a stockpile can carry both raw and
 // cooked items side by side.
-export const FOOD_TYPES = ['forage', ...CROP_IDS, 'meat'];
+// α33: seafood (saltFish / riverFish / lakeFish / clam) joins the food
+// roster alongside meat and forage. Stored, hauled, eaten and cooked
+// like any other raw ingredient.
+import { SEAFOOD_IDS, SEAFOOD_NUTRIENTS } from '../seafood.js';
+export const FOOD_TYPES = ['forage', ...CROP_IDS, 'meat', ...SEAFOOD_IDS];
 // Everything a stockpile can hold: raw food + the legacy 'meal' bucket
 // (used pre-α24 as a catch-all cooked entry, still kept for back-compat)
 // + every Tier-1/Tier-2 dish defined in recipes.js.
@@ -40,6 +44,11 @@ const DEFAULT_NUTRIENTS = {
   forage: { carb: 0.2, protein: 0.05, fat: 0.0, vitamin: 0.75 },
   meat:   { carb: 0.0, protein: 0.85, fat: 0.225, vitamin: 0.0 },
   meal:   { carb: 0.45, protein: 0.2, fat: 0.15, vitamin: 0.25 },
+  // α33: seafood profiles. Fish are protein-dominant (saltFish carries
+  // the most fat — deep-water catch), clams add a vitamin lean. Each id
+  // is also a FOOD_TYPE so it surfaces in the standard cook / store /
+  // eat pipelines unchanged.
+  ...SEAFOOD_NUTRIENTS,
 };
 const CATEGORY_NUTRIENTS = {
   grain:    { carb: 0.85, protein: 0.05, fat: 0.05, vitamin: 0.05 },
@@ -146,6 +155,8 @@ export function isEdibleRaw(foodId) {
   if (foodId === 'meal' || isDish(foodId)) return true;
   if (foodId === 'forage') return true;
   if (foodId === 'meat') return false; // raw meat is inedible
+  // α33: raw fish / shellfish are inedible — must be cooked at a hearth.
+  if (SEAFOOD_IDS.includes(foodId)) return false;
   const crop = getCrop(foodId);
   return crop ? crop.edibleRaw !== false : true;
 }

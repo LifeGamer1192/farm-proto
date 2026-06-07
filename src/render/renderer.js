@@ -70,10 +70,23 @@ function mix(c1, c2, t) {
   return `rgb(${r},${g},${b})`;
 }
 
+// α33: per water-kind tint. Ocean stays the deep blue of the original;
+// lakes are a slightly greener teal; rivers lean toward grey-blue.
+const WATER_TINT = {
+  ocean: { shallow: [92, 152, 200], deep: [28, 66, 122] },
+  lake:  { shallow: [110, 168, 178], deep: [40, 90, 110] },
+  river: { shallow: [120, 156, 180], deep: [50, 80, 110] },
+};
+function waterColor(tile) {
+  const kind = tile.waterKind || 'ocean';
+  const tint = WATER_TINT[kind] || WATER_TINT.ocean;
+  return mix(tint.shallow, tint.deep, 1 - tile.elevation);
+}
+
 const VIEW_MODES = {
   terrain(tile) {
     if (tile.type === TileType.WATER) {
-      return mix([92, 152, 200], [28, 66, 122], 1 - tile.elevation);
+      return waterColor(tile);
     }
     return mix([196, 184, 132], [70, 130, 55], tile.fertility);
   },
@@ -556,8 +569,60 @@ export class Renderer {
       this._drawTree(plant, cx, cy);
     } else if (plant.kind === PlantKind.STUMP) {
       this._drawStump(cx, cy);
+    } else if (plant.kind === PlantKind.SEAFOOD) {
+      this._drawSeafood(cx, cy, plant.seafoodId);
     } else {
       this._drawCrop(plant, cx, cy, watered);
+    }
+  }
+
+  // α33: a small fish / clam silhouette shown on a fishable water tile.
+  // Sub-pixel ripples around it sell the "something living here" cue.
+  _drawSeafood(cx, cy, seafoodId) {
+    const ctx = this.ctx;
+    const ts = this.ts;
+    const isClam = seafoodId === 'clam';
+    if (isClam) {
+      // Shellfish — paired ovoid halves.
+      ctx.fillStyle = '#d8c89a';
+      ctx.strokeStyle = '#6f5e34';
+      ctx.lineWidth = 0.8;
+      ctx.beginPath();
+      ctx.ellipse(cx, cy, ts * 0.18, ts * 0.12, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(cx - ts * 0.18, cy);
+      ctx.lineTo(cx + ts * 0.18, cy);
+      ctx.stroke();
+      ctx.beginPath();
+      for (let i = -2; i <= 2; i++) {
+        ctx.moveTo(cx + i * ts * 0.05, cy - ts * 0.02);
+        ctx.lineTo(cx + i * ts * 0.05, cy - ts * 0.10);
+      }
+      ctx.stroke();
+    } else {
+      // Fish — body, tail fin, eye.
+      const tint = seafoodId === 'saltFish' ? '#7fb8d2'
+        : seafoodId === 'riverFish' ? '#a8c4a8' : '#9ab6c2';
+      ctx.fillStyle = tint;
+      ctx.strokeStyle = '#2c3a4a';
+      ctx.lineWidth = 0.6;
+      ctx.beginPath();
+      ctx.ellipse(cx, cy, ts * 0.18, ts * 0.10, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(cx + ts * 0.18, cy);
+      ctx.lineTo(cx + ts * 0.28, cy - ts * 0.08);
+      ctx.lineTo(cx + ts * 0.28, cy + ts * 0.08);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+      ctx.fillStyle = '#2c3a4a';
+      ctx.beginPath();
+      ctx.arc(cx - ts * 0.08, cy - ts * 0.02, ts * 0.018, 0, Math.PI * 2);
+      ctx.fill();
     }
   }
 

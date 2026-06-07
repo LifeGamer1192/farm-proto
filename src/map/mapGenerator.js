@@ -7,7 +7,7 @@
 //   - sunlight  : gentle noise, mostly bright
 
 import { mulberry32 } from '../core/rng.js';
-import { TileType, createTile } from './tile.js';
+import { TileType, WaterKind, createTile } from './tile.js';
 import { WATER_LEVEL, MIN_WATER_FRACTION, MOISTURE_RANGE } from '../config.js';
 
 const clamp01 = (v) => (v < 0 ? 0 : v > 1 ? 1 : v);
@@ -67,6 +67,74 @@ function percentile(values, p) {
   const sorted = Float64Array.from(values).sort();
   const idx = Math.min(sorted.length - 1, Math.floor(p * sorted.length));
   return sorted[idx];
+}
+
+/**
+ * α33: classify each water tile as ocean / river / lake.
+ *
+ * 1. Flood-fill all water tiles into connected bodies.
+ * 2. For each body, compute: tile count, touches map edge, bounding box.
+ * 3. Apply rules:
+ *    - touches edge AND size ≥ minOceanSize → ocean
+ *    - aspect ratio (longer axis / shorter axis) ≥ 3 → river
+ *    - otherwise → lake (default)
+ * Writes `tile.waterKind` for every water tile.
+ */
+function classifyWaterBodies(tiles, cols, rows, minOceanSize = 60) {
+  const bodyId = new Array(rows);
+  for (let y = 0; y < rows; y++) bodyId[y] = new Int32Array(cols).fill(-1);
+  const bodies = [];
+  const dirs = [1, 0, -1, 0, 0, 1, 0, -1];
+  for (let y = 0; y < rows; y++) {
+    for (let x = 0; x < cols; x++) {
+      if (tiles[y][x].type !== TileType.WATER) continue;
+      if (bodyId[y][x] !== -1) continue;
+      const id = bodies.length;
+      const body = { id, size: 0, touchesEdge: false, minX: x, maxX: x, minY: y, maxY: y };
+      const queue = [x, y];
+      bodyId[y][x] = id;
+      let head = 0;
+      while (head < queue.length) {
+        const cx = queue[head++];
+        const cy = queue[head++];
+        body.size++;
+        if (cx === 0 || cy === 0 || cx === cols - 1 || cy === rows - 1) body.touchesEdge = true;
+        if (cx < body.minX) body.minX = cx;
+        if (cx > body.maxX) body.maxX = cx;
+        if (cy < body.minY) body.minY = cy;
+        if (cy > body.maxY) body.maxY = cy;
+        for (let i = 0; i < 8; i += 2) {
+          const nx = cx + dirs[i];
+          const ny = cy + dirs[i + 1];
+          if (nx < 0 || ny < 0 || nx >= cols || ny >= rows) continue;
+          if (tiles[ny][nx].type !== TileType.WATER) continue;
+          if (bodyId[ny][nx] !== -1) continue;
+          bodyId[ny][nx] = id;
+          queue.push(nx, ny);
+        }
+      }
+      bodies.push(body);
+    }
+  }
+  // Classify each body.
+  for (const b of bodies) {
+    const w = b.maxX - b.minX + 1;
+    const h = b.maxY - b.minY + 1;
+    const longAxis = Math.max(w, h);
+    const shortAxis = Math.max(1, Math.min(w, h));
+    const aspect = longAxis / shortAxis;
+    if (b.touchesEdge && b.size >= minOceanSize) b.kind = WaterKind.OCEAN;
+    else if (aspect >= 3 || b.size <= 10) b.kind = WaterKind.RIVER;
+    else b.kind = WaterKind.LAKE;
+  }
+  // Write the kind onto each water tile.
+  for (let y = 0; y < rows; y++) {
+    for (let x = 0; x < cols; x++) {
+      if (tiles[y][x].type !== TileType.WATER) continue;
+      tiles[y][x].waterKind = bodies[bodyId[y][x]].kind;
+    }
+  }
+  return bodies;
 }
 
 // Multi-source BFS: distance (in tiles) from every tile to the nearest
@@ -157,6 +225,8 @@ export function generateMap(cols, rows, seed, biome = null) {
       }
     }
   }
+  // α33: tag each water tile as ocean / river / lake (flood-fill bodies).
+  classifyWaterBodies(tiles, cols, rows);
 
   // Second pass: moisture, fertility, sunlight.
   const dist = distanceToWater(tiles, cols, rows);

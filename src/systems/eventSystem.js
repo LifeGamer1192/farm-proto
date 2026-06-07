@@ -22,7 +22,11 @@ import {
   ANIMAL_SPAWN_MIX,
   ANIMAL_RESTOCK_THRESHOLD,
   ANIMAL_RESTOCK_AMOUNT,
+  SEAFOOD_REGROW_TIME,
 } from '../config.js';
+import { TileType } from '../map/tile.js';
+import { pickSeafoodFor } from '../seafood.js';
+import { mulberry32 } from '../core/rng.js';
 import { CROP_IDS, seedGenome } from '../crops.js';
 import { PlantKind } from '../world.js';
 import { Colonist } from '../entities/colonist.js';
@@ -380,6 +384,41 @@ export function updateForest(game, dt) {
       }
     }
   }
+}
+
+/**
+ * α33: refill fished-out water tiles. After a tile's seafood is caught,
+ * world.js stamps `tile.fishedAt` (sim-clock); after SEAFOOD_REGROW_TIME
+ * passes a fresh marker is dropped on the tile (species reseeded from
+ * the tile's waterKind so a river never spawns clams etc.). Visits only
+ * tiles that are currently waiting to repopulate, keeps the per-tick
+ * cost small even on the prototype's 100×100 map.
+ */
+export function updateSeafood(game, dt) {
+  if (!game._fishedTiles || game._fishedTiles.size === 0) return;
+  const ready = [];
+  for (const key of game._fishedTiles) {
+    const [x, y] = key.split(',').map(Number);
+    const tile = game.map.tiles[y]?.[x];
+    if (!tile || tile.type !== TileType.WATER) {
+      ready.push(key);
+      continue;
+    }
+    if (tile.plant) {
+      // Already restocked elsewhere — drop from the watch list.
+      ready.push(key);
+      continue;
+    }
+    if (game.clock >= tile.fishedAt + SEAFOOD_REGROW_TIME) {
+      // Deterministic re-seed by tile coords so successive regrows
+      // pull from the same pool the original spawn rolled from.
+      const rand = mulberry32(((tile.fishedAt * 1000) | 0) ^ (x * 73856093) ^ (y * 19349663));
+      const id = pickSeafoodFor(tile.waterKind, rand);
+      if (id) tile.plant = { kind: PlantKind.SEAFOOD, seafoodId: id };
+      ready.push(key);
+    }
+  }
+  for (const key of ready) game._fishedTiles.delete(key);
 }
 
 /** Fire the one-shot victory event when the colony has survived enough years. */

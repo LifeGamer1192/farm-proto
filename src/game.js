@@ -28,6 +28,7 @@ import {
   ANIMAL_COUNT,
   HUNT_RANGE,
   MEAT_YIELD,
+  SEAFOOD_YIELD,
   WILDGREENS_SEED_CHANCE,
   HUT_RANGE,
   HUT_MOOD_BONUS,
@@ -141,6 +142,7 @@ import {
   pestStrike as esPestStrike,
   updateFuel as esUpdateFuel,
   updateForest as esUpdateForest,
+  updateSeafood as esUpdateSeafood,
   checkVictory as esCheckVictory,
 } from './systems/eventSystem.js';
 import {
@@ -214,6 +216,10 @@ export class Game {
     this.fences = [];
     // α31: processing workshops (one building type, many recipe stations).
     this.workshops = [];
+    // α33: water tiles whose seafood marker was just caught. Stored as a
+    // "x,y" key set; updateSeafood checks each one against the regrow
+    // timer and re-seeds the tile when the timer elapses.
+    this._fishedTiles = new Set();
     // One colony-wide wall plan at a time. Every idle colonist serves the
     // same list of tiles, so the wall ends up a coherent row instead of a
     // scatter of one-tile detours that follow the animal step by step.
@@ -440,6 +446,8 @@ export class Game {
     this.fences = [];
     // α31: processing workshops (one building type, many recipe stations).
     this.workshops = [];
+    // α33: reset the fished-tile watch list on a fresh map.
+    this._fishedTiles = new Set();
     this.fencePlan = null;
     this.fencePlanAt = -Infinity;
     this.storage = this._freshStorage();
@@ -679,6 +687,42 @@ export class Game {
   _nearestAnimalToColony(range)   { return asNearestAnimalToColony(this, range); }
   _nearestTree(colonist, range)   { return asNearestTree(this, colonist, range); }
   _nearestWildPlant(colonist, range) { return asNearestWildPlant(this, colonist, range); }
+
+  /**
+   * α33: nearest water tile carrying a seafood marker within `range`
+   * (Chebyshev) of `colonist`, that also has at least one reachable
+   * land neighbour (since fishers stand on land). Used by the auto-
+   * fish autonomy path.
+   */
+  _nearestSeafoodFor(colonist, range) {
+    const cx = colonist.tileX;
+    const cy = colonist.tileY;
+    let best = null;
+    let bestD = range;
+    const r = Math.ceil(range);
+    for (let dy = -r; dy <= r; dy++) {
+      for (let dx = -r; dx <= r; dx++) {
+        const x = cx + dx;
+        const y = cy + dy;
+        const tile = this.map.tiles[y]?.[x];
+        if (!tile) continue;
+        const p = tile.plant;
+        if (!p || p.kind !== 'seafood') continue;
+        if (colonist.isUnreachable?.(x, y, this.clock)) continue;
+        // Need a land neighbour to actually stand on.
+        let hasLand = false;
+        for (let ddy = -1; ddy <= 1 && !hasLand; ddy++) for (let ddx = -1; ddx <= 1 && !hasLand; ddx++) {
+          if (ddy === 0 && ddx === 0) continue;
+          const lt = this.map.tiles[y + ddy]?.[x + ddx];
+          if (lt && lt.type === 'land' && !lt.structure) hasLand = true;
+        }
+        if (!hasLand) continue;
+        const d = Math.hypot(dx, dy);
+        if (d < bestD) { bestD = d; best = { x, y }; }
+      }
+    }
+    return best;
+  }
 
   /**
    * Queue a work task at a tile, if it makes sense there.
@@ -986,6 +1030,22 @@ export class Game {
         task.outcomeData = { animal: species, n: meat };
       } else {
         task.outcome = 'gotAway';
+      }
+    } else if (task.type === TaskType.FISH) {
+      // α33: fishing — the colonist worked on a land tile adjacent to a
+      // water tile (assigned in colonist.assignTask). Catch is whatever
+      // species the marker carries; the tile gets its fishedAt stamp so
+      // updateSeafood (eventSystem) repopulates it after SEAFOOD_REGROW_TIME.
+      const p = tile.plant;
+      if (p && p.kind === 'seafood' && p.seafoodId) {
+        storageAdd(this, colonist?.groupId, p.seafoodId, SEAFOOD_YIELD);
+        tile.plant = null;
+        tile.fishedAt = this.clock;
+        this._fishedTiles?.add(`${task.x},${task.y}`);
+        task.outcome = 'fished';
+        task.outcomeData = { species: p.seafoodId, n: SEAFOOD_YIELD };
+      } else {
+        task.outcome = 'noSeafood';
       }
     } else if (task.type === TaskType.BUILD) {
       if (tile.type !== TileType.WATER && !tile.plant && !tile.structure) {
@@ -1767,6 +1827,7 @@ export class Game {
   _pestStrike()           { return esPestStrike(this); }
   _updateFuel(dt)         { return esUpdateFuel(this, dt); }
   _updateForest(dt)       { return esUpdateForest(this, dt); }
+  _updateSeafood(dt)      { return esUpdateSeafood(this, dt); }
   _onSeasonChange(season) { return esOnSeasonChange(this, season); }
   _runSelectiveBreedingCulls() { return runSelectiveBreedingCulls(this); }
 
@@ -1804,6 +1865,7 @@ export class Game {
     }
     this._updateFuel(simDt);
     this._updateForest(simDt);
+    this._updateSeafood(simDt);
     this._updateColonists(simDt);
     this._updateAnimals(simDt);
     this._growCrops(simDt);

@@ -692,6 +692,14 @@ export function pickAutonomousTask(game, colonist) {
       if (a && !game._tileClaimed(a.tileX, a.tileY)) {
         return createTask(TaskType.HUNT, a.tileX, a.tileY, { animalId: a.id });
       }
+      // α33: if no animal is in range, scan for a nearby seafood tile
+      // (water tile with a seafood marker, reachable from a land neighbour).
+      // Fishing pairs naturally with hunting as the "go get protein when
+      // crops aren't enough" path.
+      const sf = game._nearestSeafoodFor?.(colonist, AUTO_HUNT_RANGE);
+      if (sf && !game._tileClaimed(sf.x, sf.y)) {
+        return createTask(TaskType.FISH, sf.x, sf.y);
+      }
     }
   }
   // 8. Chop the nearest tree when wood reserve has fallen below the

@@ -7,7 +7,7 @@ import { generateMap } from '../src/map/mapGenerator.js';
 import { scatterPlants } from '../src/world.js';
 import { TileType } from '../src/map/tile.js';
 
-test('scatterPlants places plants only on land', () => {
+test('scatterPlants places land plants only on land (seafood on water)', () => {
   const map = generateMap(40, 40, 4321);
   const placed = scatterPlants(map);
   assert.ok(placed.wild > 0, 'expected some wild bushes to be placed');
@@ -15,8 +15,15 @@ test('scatterPlants places plants only on land', () => {
   let trees = 0;
   for (const row of map.tiles) {
     for (const t of row) {
-      if (t.plant) assert.equal(t.type, TileType.LAND);
-      if (t.plant && t.plant.kind === 'tree') trees++;
+      if (!t.plant) continue;
+      // α33: seafood plants live on water tiles; every other plant kind
+      // (wild / tree / stump / crop) must still sit on land.
+      if (t.plant.kind === 'seafood') {
+        assert.equal(t.type, TileType.WATER, 'seafood must sit on a water tile');
+      } else {
+        assert.equal(t.type, TileType.LAND, 'land plants must sit on land');
+      }
+      if (t.plant.kind === 'tree') trees++;
     }
   }
   assert.equal(trees, placed.trees, 'tree count matches return value');

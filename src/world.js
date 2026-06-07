@@ -3,14 +3,18 @@
 
 import { TileType } from './map/tile.js';
 import { mulberry32 } from './core/rng.js';
-import { WILD_PLANT_CHANCE, TREE_CHANCE } from './config.js';
+import { WILD_PLANT_CHANCE, TREE_CHANCE, SEAFOOD_SPAWN_CHANCE } from './config.js';
 import { WILD_CROP_IDS } from './crops.js';
+import { pickSeafoodFor } from './seafood.js';
 
 export const PlantKind = {
   WILD: 'wild', // small bush; harvested for a bite of forage
   CROP: 'crop', // planted by a colonist
   TREE: 'tree', // a tree — chopped for wood, leaves a stump
   STUMP: 'stump', // freshly chopped tree; regrows after a while
+  // α33: a water tile carrying a fishable resource. `seafoodId` names the
+  // species (saltFish / riverFish / lakeFish / clam).
+  SEAFOOD: 'seafood',
 };
 
 /**
@@ -30,10 +34,27 @@ export function scatterPlants(map, biome = null) {
   const wildChance = biome?.wildPlantChance ?? WILD_PLANT_CHANCE;
   let wild = 0;
   let trees = 0;
+  let seafood = 0;
+  // α33: seafood spawn chance. A small fraction of water tiles get a
+  // catch waiting on them at map start (regrows over time, see
+  // updateSeafood in eventSystem). Skipped for land tiles.
+  const seafoodChance = SEAFOOD_SPAWN_CHANCE;
   for (let y = 0; y < map.rows; y++) {
     for (let x = 0; x < map.cols; x++) {
       const tile = map.tiles[y][x];
       tile.plant = null;
+      if (tile.type === TileType.WATER) {
+        // α33: water tiles can carry a seafood marker. Adjacent-from-land
+        // harvesting drops fish / clams into colony storage.
+        if (rand() < seafoodChance) {
+          const seafoodId = pickSeafoodFor(tile.waterKind, rand);
+          if (seafoodId) {
+            tile.plant = { kind: PlantKind.SEAFOOD, seafoodId };
+            seafood++;
+          }
+        }
+        continue;
+      }
       if (tile.type !== TileType.LAND) continue;
       const roll = rand();
       if (roll < treeChance) {
@@ -50,5 +71,5 @@ export function scatterPlants(map, biome = null) {
       }
     }
   }
-  return { wild, trees };
+  return { wild, trees, seafood };
 }
