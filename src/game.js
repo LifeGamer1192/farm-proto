@@ -28,7 +28,6 @@ import {
   ANIMAL_COUNT,
   HUNT_RANGE,
   MEAT_YIELD,
-  SEAFOOD_YIELD,
   WILDGREENS_SEED_CHANCE,
   HUT_RANGE,
   HUT_MOOD_BONUS,
@@ -52,6 +51,7 @@ import {
 } from './config.js';
 import { generateMap, mapStats } from './map/mapGenerator.js';
 import { TileType } from './map/tile.js';
+import { seafoodYield } from './seafood.js';
 import { Camera } from './render/camera.js';
 import { Renderer } from './render/renderer.js';
 import { Colonist } from './entities/colonist.js';
@@ -1036,14 +1036,19 @@ export class Game {
       // water tile (assigned in colonist.assignTask). Catch is whatever
       // species the marker carries; the tile gets its fishedAt stamp so
       // updateSeafood (eventSystem) repopulates it after SEAFOOD_REGROW_TIME.
+      //
+      // α34: yield is per-species (baseYield) × seasonal multiplier.
+      // Fish peak in spring/summer, eel in autumn, seaweed in summer,
+      // clams stable — see SEAFOOD_TYPES in seafood.js.
       const p = tile.plant;
       if (p && p.kind === 'seafood' && p.seafoodId) {
-        storageAdd(this, colonist?.groupId, p.seafoodId, SEAFOOD_YIELD);
+        const n = seafoodYield(p.seafoodId, this.environment.season);
+        storageAdd(this, colonist?.groupId, p.seafoodId, n);
         tile.plant = null;
         tile.fishedAt = this.clock;
         this._fishedTiles?.add(`${task.x},${task.y}`);
         task.outcome = 'fished';
-        task.outcomeData = { species: p.seafoodId, n: SEAFOOD_YIELD };
+        task.outcomeData = { species: p.seafoodId, n };
       } else {
         task.outcome = 'noSeafood';
       }

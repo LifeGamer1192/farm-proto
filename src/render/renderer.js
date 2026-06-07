@@ -576,54 +576,176 @@ export class Renderer {
     }
   }
 
-  // α33: a small fish / clam silhouette shown on a fishable water tile.
-  // Sub-pixel ripples around it sell the "something living here" cue.
+  // α33–α34: silhouette of a fishable resource on a water tile.
+  // Dispatch on species id so adding new ones is just a new case here.
   _drawSeafood(cx, cy, seafoodId) {
+    switch (seafoodId) {
+      case 'clam':       return this._drawClam(cx, cy);
+      case 'shrimp':
+      case 'lakeShrimp': return this._drawShrimp(cx, cy, seafoodId);
+      case 'crab':       return this._drawCrab(cx, cy);
+      case 'seaweed':    return this._drawSeaweed(cx, cy);
+      case 'eel':        return this._drawEel(cx, cy);
+      default:           return this._drawFish(cx, cy, seafoodId);
+    }
+  }
+
+  _drawFish(cx, cy, seafoodId) {
     const ctx = this.ctx;
     const ts = this.ts;
-    const isClam = seafoodId === 'clam';
-    if (isClam) {
-      // Shellfish — paired ovoid halves.
-      ctx.fillStyle = '#d8c89a';
-      ctx.strokeStyle = '#6f5e34';
-      ctx.lineWidth = 0.8;
+    const tint = seafoodId === 'saltFish' ? '#7fb8d2'
+      : seafoodId === 'riverFish' ? '#a8c4a8' : '#9ab6c2';
+    ctx.fillStyle = tint;
+    ctx.strokeStyle = '#2c3a4a';
+    ctx.lineWidth = 0.6;
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, ts * 0.18, ts * 0.10, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(cx + ts * 0.18, cy);
+    ctx.lineTo(cx + ts * 0.28, cy - ts * 0.08);
+    ctx.lineTo(cx + ts * 0.28, cy + ts * 0.08);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = '#2c3a4a';
+    ctx.beginPath();
+    ctx.arc(cx - ts * 0.08, cy - ts * 0.02, ts * 0.018, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  _drawClam(cx, cy) {
+    const ctx = this.ctx;
+    const ts = this.ts;
+    ctx.fillStyle = '#d8c89a';
+    ctx.strokeStyle = '#6f5e34';
+    ctx.lineWidth = 0.8;
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, ts * 0.18, ts * 0.12, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(cx - ts * 0.18, cy);
+    ctx.lineTo(cx + ts * 0.18, cy);
+    ctx.stroke();
+    ctx.beginPath();
+    for (let i = -2; i <= 2; i++) {
+      ctx.moveTo(cx + i * ts * 0.05, cy - ts * 0.02);
+      ctx.lineTo(cx + i * ts * 0.05, cy - ts * 0.10);
+    }
+    ctx.stroke();
+  }
+
+  // α34: shrimp — curled body, antennae. lakeShrimp is paler.
+  _drawShrimp(cx, cy, id) {
+    const ctx = this.ctx;
+    const ts = this.ts;
+    const tint = id === 'lakeShrimp' ? '#c8a890' : '#e8a890';
+    ctx.fillStyle = tint;
+    ctx.strokeStyle = '#7a3a30';
+    ctx.lineWidth = 0.6;
+    ctx.beginPath();
+    ctx.arc(cx, cy + ts * 0.02, ts * 0.13, Math.PI * 0.15, Math.PI * 1.85, false);
+    ctx.lineTo(cx + ts * 0.16, cy - ts * 0.04);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    ctx.beginPath();
+    for (let i = 1; i <= 3; i++) {
+      const a = Math.PI * (0.25 + i * 0.18);
+      const r = ts * 0.13;
+      ctx.moveTo(cx + Math.cos(a) * (r - ts * 0.03), cy + Math.sin(a) * (r - ts * 0.03) + ts * 0.02);
+      ctx.lineTo(cx + Math.cos(a) * (r + ts * 0.01), cy + Math.sin(a) * (r + ts * 0.01) + ts * 0.02);
+    }
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(cx + ts * 0.14, cy - ts * 0.05);
+    ctx.lineTo(cx + ts * 0.26, cy - ts * 0.14);
+    ctx.moveTo(cx + ts * 0.14, cy - ts * 0.05);
+    ctx.lineTo(cx + ts * 0.26, cy - ts * 0.02);
+    ctx.stroke();
+  }
+
+  // α34: crab — round shell, two claws, side legs.
+  _drawCrab(cx, cy) {
+    const ctx = this.ctx;
+    const ts = this.ts;
+    ctx.fillStyle = '#d4665a';
+    ctx.strokeStyle = '#5c2620';
+    ctx.lineWidth = 0.7;
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, ts * 0.16, ts * 0.11, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = '#1a0a08';
+    ctx.beginPath();
+    ctx.arc(cx - ts * 0.05, cy - ts * 0.06, ts * 0.015, 0, Math.PI * 2);
+    ctx.arc(cx + ts * 0.05, cy - ts * 0.06, ts * 0.015, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = '#5c2620';
+    ctx.fillStyle = '#d4665a';
+    ctx.lineWidth = 0.6;
+    for (const sx of [-1, 1]) {
       ctx.beginPath();
-      ctx.ellipse(cx, cy, ts * 0.18, ts * 0.12, 0, 0, Math.PI * 2);
+      ctx.moveTo(cx + sx * ts * 0.15, cy);
+      ctx.lineTo(cx + sx * ts * 0.24, cy - ts * 0.10);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(cx + sx * ts * 0.26, cy - ts * 0.10, ts * 0.035, 0, Math.PI * 2);
       ctx.fill();
       ctx.stroke();
+    }
+    for (const sx of [-1, 1]) {
       ctx.beginPath();
-      ctx.moveTo(cx - ts * 0.18, cy);
-      ctx.lineTo(cx + ts * 0.18, cy);
-      ctx.stroke();
-      ctx.beginPath();
-      for (let i = -2; i <= 2; i++) {
-        ctx.moveTo(cx + i * ts * 0.05, cy - ts * 0.02);
-        ctx.lineTo(cx + i * ts * 0.05, cy - ts * 0.10);
+      for (let i = 0; i < 3; i++) {
+        const yOff = (i - 1) * ts * 0.04;
+        ctx.moveTo(cx + sx * ts * 0.13, cy + yOff);
+        ctx.lineTo(cx + sx * ts * 0.22, cy + yOff + ts * 0.04);
       }
       ctx.stroke();
-    } else {
-      // Fish — body, tail fin, eye.
-      const tint = seafoodId === 'saltFish' ? '#7fb8d2'
-        : seafoodId === 'riverFish' ? '#a8c4a8' : '#9ab6c2';
-      ctx.fillStyle = tint;
-      ctx.strokeStyle = '#2c3a4a';
-      ctx.lineWidth = 0.6;
-      ctx.beginPath();
-      ctx.ellipse(cx, cy, ts * 0.18, ts * 0.10, 0, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.stroke();
-      ctx.beginPath();
-      ctx.moveTo(cx + ts * 0.18, cy);
-      ctx.lineTo(cx + ts * 0.28, cy - ts * 0.08);
-      ctx.lineTo(cx + ts * 0.28, cy + ts * 0.08);
-      ctx.closePath();
-      ctx.fill();
-      ctx.stroke();
-      ctx.fillStyle = '#2c3a4a';
-      ctx.beginPath();
-      ctx.arc(cx - ts * 0.08, cy - ts * 0.02, ts * 0.018, 0, Math.PI * 2);
-      ctx.fill();
     }
+  }
+
+  // α34: seaweed — three swaying strands.
+  _drawSeaweed(cx, cy) {
+    const ctx = this.ctx;
+    const ts = this.ts;
+    ctx.strokeStyle = '#3a7a4a';
+    ctx.fillStyle = '#4d9a5e';
+    ctx.lineWidth = 1.4;
+    const base = cy + ts * 0.18;
+    for (const ox of [-ts * 0.10, 0, ts * 0.10]) {
+      ctx.beginPath();
+      ctx.moveTo(cx + ox, base);
+      ctx.quadraticCurveTo(cx + ox + ts * 0.04, cy + ts * 0.04, cx + ox - ts * 0.02, cy - ts * 0.10);
+      ctx.stroke();
+    }
+    ctx.lineWidth = 0.7;
+    for (const ox of [-ts * 0.10, 0, ts * 0.10]) {
+      ctx.beginPath();
+      ctx.ellipse(cx + ox - ts * 0.02, cy - ts * 0.10, ts * 0.04, ts * 0.025, -0.3, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+    }
+  }
+
+  // α34: eel — long sinuous body, single eye.
+  _drawEel(cx, cy) {
+    const ctx = this.ctx;
+    const ts = this.ts;
+    ctx.strokeStyle = '#2a3b2c';
+    ctx.fillStyle = '#5a6b3a';
+    ctx.lineWidth = 1.6;
+    ctx.beginPath();
+    ctx.moveTo(cx - ts * 0.24, cy + ts * 0.04);
+    ctx.quadraticCurveTo(cx - ts * 0.04, cy - ts * 0.10, cx + ts * 0.10, cy + ts * 0.02);
+    ctx.quadraticCurveTo(cx + ts * 0.22, cy + ts * 0.10, cx + ts * 0.28, cy + ts * 0.02);
+    ctx.stroke();
+    ctx.fillStyle = '#1a2a18';
+    ctx.beginPath();
+    ctx.arc(cx - ts * 0.21, cy + ts * 0.02, ts * 0.015, 0, Math.PI * 2);
+    ctx.fill();
   }
 
   // α27: wild plants come in five ancestor species. Branches keep the

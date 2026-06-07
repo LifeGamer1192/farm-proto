@@ -149,12 +149,40 @@ export const RECIPES = [
   // a touch and adds fat from frying.
   { id: 'falafel',     tier: 1, station: 'hearth', kind: 'cook', ingredients: { chickpeaFlour: 2, onion: 1 }, out: 2, nutrition: 0.60, processBias: bias({ mul: { vitamin: 0.7 }, add: { fat: 0.10 } }) },
 
+  // --- α34: seafood hearth dishes -----------------------------------------
+  // Single-raw dishes — fast / cheap, fish-only.
+  { id: 'grilledFish',  tier: 1, station: 'hearth', kind: 'cook', ingredients: { saltFish: 2 },                 out: 3, nutrition: 0.65, processBias: bias({ mul: { vitamin: 0.85 }, add: { fat: 0.05 } }) },
+  // Mixed seafood pairings — protein + vegetable to round nutrient profile.
+  { id: 'fishStew',     tier: 1, station: 'hearth', kind: 'cook', ingredients: { saltFish: 1, riverFish: 1, carrot: 1 }, out: 3, nutrition: 0.70, processBias: bias({ mul: { vitamin: 0.85 } }) },
+  { id: 'clamChowder',  tier: 1, station: 'hearth', kind: 'cook', ingredients: { clam: 2, potato: 1, onion: 1 }, out: 4, nutrition: 0.70, processBias: bias({ mul: { vitamin: 0.85 }, add: { fat: 0.05 } }) },
+  { id: 'shrimpTempura',tier: 1, station: 'hearth', kind: 'cook', ingredients: { shrimp: 2, wheat: 1 },         out: 3, nutrition: 0.65, processBias: bias({ mul: { vitamin: 0.75 }, add: { fat: 0.10 } }) },
+  { id: 'crabBoil',     tier: 1, station: 'hearth', kind: 'cook', ingredients: { crab: 2, garlic: 1 },          out: 3, nutrition: 0.75, processBias: bias({ mul: { vitamin: 0.85 } }) },
+  { id: 'eelKabayaki',  tier: 1, station: 'hearth', kind: 'cook', ingredients: { eel: 2, soybean: 1 },          out: 3, nutrition: 0.80, processBias: bias({ mul: { vitamin: 0.85 }, add: { fat: 0.10 } }) },
+  // Seaweed salad — vegetable-dominant; the early coastal "vitamin
+  // patch" before fields produce greens.
+  { id: 'seaweedSalad', tier: 1, station: 'hearth', kind: 'cook', ingredients: { seaweed: 2, sesame: 1 },       out: 3, nutrition: 0.45, processBias: bias({ mul: { vitamin: 1.10 } }) },
+  // Sushi — rice + lake or river fish. Premium dish; high nutrition.
+  { id: 'sushi',        tier: 1, station: 'hearth', kind: 'cook', ingredients: { riverFish: 1, lakeFish: 1, rice: 2 }, out: 4, nutrition: 0.75, processBias: bias({ mul: { vitamin: 0.90 } }) },
+
+  // --- α34: seafood workshop preservation (drying / salting) -------------
+  // Dried fish — 3 raw → 5 servings. Output > input, model preservation
+  // and the long-term storage advantage that lets coastal colonies
+  // build a winter buffer when fishing is at its peak.
+  { id: 'driedFish',    tier: 1, station: 'workshop', kind: 'dry', ingredients: { saltFish: 3 },                out: 5, nutrition: 0.65, processBias: bias({ mul: { protein: 1.6, fat: 1.6 }, add: { fat: 0.08 } }) },
+  { id: 'driedSeaweed', tier: 1, station: 'workshop', kind: 'dry', ingredients: { seaweed: 3 },                 out: 5, nutrition: 0.50, processBias: bias({ mul: { vitamin: 1.8, carb: 1.6 }, add: { vitamin: 0.10 } }) },
+  // Salted clams — pickle station. 3 → 5.
+  { id: 'saltedClams',  tier: 1, station: 'workshop', kind: 'pickle', ingredients: { clam: 3 },                 out: 5, nutrition: 0.55, processBias: bias({ mul: { protein: 1.4, vitamin: 1.3 }, add: { protein: 0.10 } }) },
+
   // --- Tier 2 banquet (composite of Tier 1 dishes, hearth) ----------------
   { id: 'banquet',      tier: 2, station: 'hearth', kind: 'cook', ingredients: { roastMeat: 1, mashedPotato: 1, gardenSalad: 1 }, out: 3, nutrition: 0.90, processBias: noBias },
   { id: 'harvestFeast', tier: 2, station: 'hearth', kind: 'cook', ingredients: { porridge: 1, lentilCurry: 1, roastRoot: 1 }, out: 3, nutrition: 0.85, processBias: noBias },
   { id: 'soupCombo',    tier: 2, station: 'hearth', kind: 'cook', ingredients: { beanSoup: 1, celerySoup: 1, sweetPotPie: 1 }, out: 3, nutrition: 0.80, processBias: noBias },
   { id: 'meatBanquet',  tier: 2, station: 'hearth', kind: 'cook', ingredients: { meatStew: 1, meatPie: 1, broccoliBake: 1 }, out: 3, nutrition: 0.90, processBias: noBias },
   { id: 'dessertPlate', tier: 2, station: 'hearth', kind: 'cook', ingredients: { almondCake: 1, oatmeal: 1, hummus: 1 }, out: 3, nutrition: 0.80, processBias: noBias },
+  // α34: seafood banquet — combines three seafood Tier 1 dishes for the
+  // coastal end-game spread. Same scheme as the other Tier 2 plates:
+  // 1+1+1 → 3 servings at high nutrition.
+  { id: 'seafoodFeast', tier: 2, station: 'hearth', kind: 'cook', ingredients: { sushi: 1, clamChowder: 1, seaweedSalad: 1 }, out: 3, nutrition: 0.90, processBias: noBias },
 ];
 
 /** Look up a recipe by id (null if unknown). */
