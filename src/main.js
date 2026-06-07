@@ -94,10 +94,36 @@ let tool = 'move';
 let cropId = null; // picked from this run's starting crops after newMap
 let structure = 'fence';
 
-const archiveLink = $('archive-link');
+const archiveLink = $('prototype-link');
 if (archiveLink && location.pathname.includes('/versions/')) {
   archiveLink.href = '../';
 }
+
+// α32: post-prototype welcome banner. Shown above the canvas until the
+// player dismisses it. The dismissal is persisted in localStorage so
+// returning players don't see it again. Skipped entirely when running
+// inside the prototype archive (location.pathname under /versions/).
+const ALPHA_WELCOME_KEY = 'farm-proto:alphaWelcomeDismissed-v32';
+const alphaWelcomeBanner = $('alpha-welcome-banner');
+const alphaWelcomeClose = $('alpha-welcome-close');
+function dismissAlphaWelcome() {
+  if (!alphaWelcomeBanner) return;
+  alphaWelcomeBanner.hidden = true;
+  try { localStorage.setItem(ALPHA_WELCOME_KEY, '1'); } catch { /* private mode */ }
+}
+function showAlphaWelcomeIfNeeded() {
+  if (!alphaWelcomeBanner) return;
+  if (location.pathname.includes('/versions/')) return;
+  let dismissed = false;
+  try { dismissed = localStorage.getItem(ALPHA_WELCOME_KEY) === '1'; } catch { /* private mode */ }
+  if (dismissed) return;
+  alphaWelcomeBanner.hidden = false;
+}
+if (alphaWelcomeClose) alphaWelcomeClose.addEventListener('click', dismissAlphaWelcome);
+// Clicking the "prototype" link also implicitly dismisses (the player
+// has acknowledged the transition by visiting the prototype archive).
+if (archiveLink) archiveLink.addEventListener('click', dismissAlphaWelcome);
+showAlphaWelcomeIfNeeded();
 
 // --- transient hint popups (toast) ---------------------------------------
 

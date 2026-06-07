@@ -5,6 +5,10 @@
 const STRINGS = {
   en: {
     'app.tagline': 'A colony of farmers — seasons, crops, genetics and autonomous workers',
+    'app.prototypeLink': 'Try the prototype (α4–α31)',
+    'app.version': 'alpha 32',
+    'welcome.alphaEra': 'Farm Proto has graduated from the prototype era — α32 onwards is the proper α version. Earlier builds (α4–α31) remain playable from the prototype link in the header.',
+    'welcome.dismiss': 'Dismiss',
 
     'panel.season': 'Season',
     'panel.speedZoom': 'Speed & zoom',
@@ -640,6 +644,10 @@ const STRINGS = {
 
   ja: {
     'app.tagline': '農民のコロニー — 季節・作物・遺伝・自律して働く仲間たち',
+    'app.prototypeLink': 'プロトタイプ（α4〜α31）を試す',
+    'app.version': 'alpha 32',
+    'welcome.alphaEra': 'Farm Proto はプロトタイプ期を卒業し、α32 から本格的な α バージョンになりました。これまでの α4〜α31 は「プロトタイプ」リンクからいつでも遊べます。',
+    'welcome.dismiss': '閉じる',
 
     'panel.season': '季節',
     'panel.speedZoom': '速度・ズーム',

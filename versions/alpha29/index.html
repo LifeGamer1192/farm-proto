@@ -10,7 +10,9 @@
       rel="icon"
       href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%235fae6b'/><rect x='14.5' y='6' width='3' height='10' rx='1.5' fill='%2311240f'/><circle cx='16' cy='19' r='6.5' fill='%2311240f'/></svg>"
     />
-    <title>Farm Proto — Alpha 30</title>
+    <title>Farm Proto — Alpha 29</title>
+    <script type="module" crossorigin src="./assets/index-D02JCDE5.js"></script>
+    <link rel="stylesheet" crossorigin href="./assets/index-DtYmKy20.css">
   </head>
   <body>
     <!-- Start screen overlay (alpha 25). Hidden once the player clicks
@@ -70,22 +72,14 @@
 
     <div id="app">
       <header class="app-header">
-        <h1>Farm Proto <span class="version" data-i18n="app.version">alpha 32</span></h1>
+        <h1>Farm Proto <span class="version">alpha 29</span></h1>
         <p class="tagline">
           <span data-i18n="app.tagline">A colony of farmers</span> ·
-          <a id="prototype-link" href="./versions/" data-i18n="app.prototypeLink">Try the prototype (α4–α31)</a>
+          <a id="archive-link" href="./versions/">all versions</a>
         </p>
       </header>
 
       <main class="layout">
-        <!-- α32: post-prototype welcome banner, dismissed after first close
-             (state stored in localStorage so it does not nag returning
-             players). The prototype-link click below also dismisses it. -->
-        <div id="alpha-welcome-banner" class="alpha-welcome-banner" hidden>
-          <span class="awb-icon">✨</span>
-          <span class="awb-text" data-i18n="welcome.alphaEra">Farm Proto has graduated from the prototype era — α32 onwards is the proper α version. Earlier builds (α4–α31) remain playable from the prototype link in the header.</span>
-          <button id="alpha-welcome-close" class="awb-close" type="button" data-i18n-title="welcome.dismiss" title="Dismiss" aria-label="Dismiss">×</button>
-        </div>
         <section class="canvas-panel">
           <div class="canvas-wrap">
             <canvas id="map"></canvas>
@@ -130,18 +124,6 @@
                 </div>
               </div>
             </div>
-            <!-- D10: confirmation before regenerating the world (prevents
-                 accidental loss of the current run). -->
-            <div id="confirm-regen" class="gameover" hidden>
-              <div class="gameover-box">
-                <h2 data-i18n="confirm.regen.title">Regenerate the world?</h2>
-                <p data-i18n="confirm.regen.body">This abandons the current colony and starts over from the setup screen.</p>
-                <div class="victory-actions">
-                  <button id="confirm-regen-ok" type="button" class="primary" data-i18n="confirm.regen.ok">Regenerate</button>
-                  <button id="confirm-regen-cancel" type="button" data-i18n="confirm.regen.cancel">Cancel</button>
-                </div>
-              </div>
-            </div>
             <!-- α28-P2: full-screen pedigree overlay. Built by main.js
                  when the player clicks the "pedigree" link in a codex row. -->
             <div id="pedigree-overlay" class="pedigree-overlay" hidden>
@@ -166,7 +148,6 @@
           <details class="control-group" open>
             <summary class="label" data-i18n="panel.colony">Colony</summary>
             <div id="group-tabs" class="group-tabs"></div>
-            <div id="group-script-row" class="group-script-row"></div>
             <dl id="colony-stats" class="stats"></dl>
             <details class="sub-group">
               <summary class="sub-label" data-i18n="label.foodBreakdown">Food on hand · breakdown</summary>
@@ -237,7 +218,6 @@
               <button type="button" data-structure="stockpile_med" data-i18n="structure.stockpile_med">Medium warehouse</button>
               <button type="button" data-structure="stockpile_large" data-i18n="structure.stockpile_large">Large warehouse</button>
               <button type="button" data-structure="hearth" data-i18n="structure.hearth">Hearth</button>
-              <button type="button" data-structure="workshop" data-i18n="structure.workshop">Workshop</button>
             </div>
           </details>
 
@@ -291,19 +271,31 @@
           </details>
 
           <details class="control-group">
-            <summary class="label" data-i18n="panel.viewLegend">View &amp; legend</summary>
+            <summary class="label" data-i18n="panel.tasks">Tasks</summary>
+            <dl id="task-stats" class="stats"></dl>
+            <p class="reason-label" data-i18n="label.whyThisTask">Why this task</p>
+            <p id="task-reason" class="reason"></p>
+            <button id="clear-tasks" type="button" data-i18n="btn.clearQueue">Clear queue</button>
+          </details>
+
+          <details class="control-group">
+            <summary class="label" data-i18n="panel.view">View</summary>
             <div class="view-modes" id="view-modes">
               <button type="button" data-mode="terrain" data-i18n="view.terrain" class="active">Terrain</button>
               <button type="button" data-mode="fertility" data-i18n="view.fertility">Fertility</button>
               <button type="button" data-mode="moisture" data-i18n="view.moisture">Moisture</button>
               <button type="button" data-mode="sunlight" data-i18n="view.sunlight">Sunlight</button>
             </div>
-            <div id="legend" class="legend"></div>
           </details>
 
           <details class="control-group">
             <summary class="label" data-i18n="panel.mapStats">Map stats</summary>
             <dl id="map-stats" class="stats"></dl>
+          </details>
+
+          <details class="control-group">
+            <summary class="label" data-i18n="panel.legend">Legend</summary>
+            <div id="legend" class="legend"></div>
           </details>
 
           <details class="control-group">
@@ -321,16 +313,10 @@
             <button id="regenerate" type="button" class="primary" data-i18n="btn.regenerate">
               Regenerate (random)
             </button>
-            <p class="reason-label" data-i18n="label.exportLog">Summary log</p>
-            <button id="export-log" type="button" data-i18n="btn.exportLog">
-              Download summary log
-            </button>
-            <p class="reason" data-i18n="hint.exportLog">JSON snapshot for tracking extinctions, time-series stats, and mutations.</p>
           </details>
         </aside>
       </main>
     </div>
 
-    <script type="module" src="/src/main.js"></script>
   </body>
 </html>

@@ -4,7 +4,10 @@
 // "alpha N..." commit on main. The summary-log exporter and any other
 // UI surface that prints the version should read this constant rather
 // than hard-coding the string — bumping one place propagates everywhere.
-export const ALPHA_VERSION = 'alpha 31';
+// α32 begins the post-prototype "α-version era". Versions alpha 4 through
+// alpha 31 (the prototype era) are preserved under /versions/ and remain
+// playable via the link in the header.
+export const ALPHA_VERSION = 'alpha 32';
 
 // Full map size in tiles. Alpha 2+ uses a 100×100 grid.
 export const GRID_COLS = 100;

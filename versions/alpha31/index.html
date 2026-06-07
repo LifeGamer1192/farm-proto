@@ -11,6 +11,8 @@
       href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%235fae6b'/><rect x='14.5' y='6' width='3' height='10' rx='1.5' fill='%2311240f'/><circle cx='16' cy='19' r='6.5' fill='%2311240f'/></svg>"
     />
     <title>Farm Proto — Alpha 30</title>
+    <script type="module" crossorigin src="./assets/index-Di0ZouQN.js"></script>
+    <link rel="stylesheet" crossorigin href="./assets/index-CsJAfiQT.css">
   </head>
   <body>
     <!-- Start screen overlay (alpha 25). Hidden once the player clicks
@@ -70,22 +72,14 @@
 
     <div id="app">
       <header class="app-header">
-        <h1>Farm Proto <span class="version" data-i18n="app.version">alpha 32</span></h1>
+        <h1>Farm Proto <span class="version">alpha 30</span></h1>
         <p class="tagline">
           <span data-i18n="app.tagline">A colony of farmers</span> ·
-          <a id="prototype-link" href="./versions/" data-i18n="app.prototypeLink">Try the prototype (α4–α31)</a>
+          <a id="archive-link" href="./versions/">all versions</a>
         </p>
       </header>
 
       <main class="layout">
-        <!-- α32: post-prototype welcome banner, dismissed after first close
-             (state stored in localStorage so it does not nag returning
-             players). The prototype-link click below also dismisses it. -->
-        <div id="alpha-welcome-banner" class="alpha-welcome-banner" hidden>
-          <span class="awb-icon">✨</span>
-          <span class="awb-text" data-i18n="welcome.alphaEra">Farm Proto has graduated from the prototype era — α32 onwards is the proper α version. Earlier builds (α4–α31) remain playable from the prototype link in the header.</span>
-          <button id="alpha-welcome-close" class="awb-close" type="button" data-i18n-title="welcome.dismiss" title="Dismiss" aria-label="Dismiss">×</button>
-        </div>
         <section class="canvas-panel">
           <div class="canvas-wrap">
             <canvas id="map"></canvas>
@@ -331,6 +325,5 @@
       </main>
     </div>
 
-    <script type="module" src="/src/main.js"></script>
   </body>
 </html>

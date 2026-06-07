@@ -1662,6 +1662,43 @@ button.primary:hover {
   display: none;
 }
 
+/* α32 welcome banner shown above the canvas until dismissed. Lives in
+   the main layout so it doesn't disturb the canvas / side panels. */
+.alpha-welcome-banner {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 8px;
+  padding: 10px 14px;
+  background: linear-gradient(90deg, rgba(95,174,107,0.12), rgba(216,178,90,0.12));
+  border: 1px solid rgba(95,174,107,0.45);
+  border-radius: 6px;
+  color: #d6e3d4;
+  font-size: 0.88rem;
+  line-height: 1.4;
+}
+.alpha-welcome-banner[hidden] { display: none; }
+.alpha-welcome-banner .awb-icon { font-size: 1.1rem; flex: 0 0 auto; }
+.alpha-welcome-banner .awb-text { flex: 1 1 auto; }
+.alpha-welcome-banner .awb-close {
+  flex: 0 0 auto;
+  background: transparent;
+  border: 1px solid rgba(214,227,212,0.4);
+  border-radius: 4px;
+  color: inherit;
+  width: 24px;
+  height: 24px;
+  cursor: pointer;
+  font-size: 1.1rem;
+  line-height: 1;
+  padding: 0;
+}
+.alpha-welcome-banner .awb-close:hover {
+  background: rgba(214,227,212,0.15);
+  border-color: rgba(214,227,212,0.7);
+}
+
 /* "All colonists" work-order target toggle. */
 .target-all {
   width: 100%;
