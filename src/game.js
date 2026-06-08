@@ -84,6 +84,7 @@ import {
   tempGrowthFactor,
   sunGrowthFactor,
   SEASON_TINT,
+  SEASON_LENGTH,
 } from './season.js';
 import { t } from './i18n.js';
 import { pickAutonomousTask, runSelectiveBreedingCulls } from './autonomy.js';
@@ -1773,6 +1774,15 @@ export class Game {
       for (const grp of this.groups) {
         grp.colonists = grp.colonists.filter((c) => !c.dead);
       }
+      // α34 followup: any group that just hit zero colonists starts its
+      // 1-year food spoilage timer. The per-tick _decayExtinctGroups
+      // pass below picks it up and clears the food once the year has
+      // elapsed. Groups that still have a survivor are left alone.
+      for (const grp of this.groups) {
+        if (grp.colonists.length === 0 && grp.extinctAt == null) {
+          grp.extinctAt = this.clock;
+        }
+      }
       if (this.colonists.length === 0) {
         // T9 (α27 followup): once every colonist has fallen, freeze
         // the simulation so the player can read the final stats /
@@ -1833,6 +1843,58 @@ export class Game {
   _updateFuel(dt)         { return esUpdateFuel(this, dt); }
   _updateForest(dt)       { return esUpdateForest(this, dt); }
   _updateSeafood(dt)      { return esUpdateSeafood(this, dt); }
+  /**
+   * α34 followup: spoil the food of any group that's been extinct (zero
+   * colonists) for at least one sim-year (SEASON_LENGTH * 4 sim-seconds).
+   *
+   * Safety guarantees:
+   *  - Groups with at least one living colonist are NEVER touched. extinctAt
+   *    is reset to null and foodSpoiled to false defensively if they
+   *    somehow re-populate (currently they cannot, but the reset prevents
+   *    a stale flag from clearing a future birth's food).
+   *  - Only entries in STOCKPILE_ITEMS are zeroed — wood, seeds, nutrient-
+   *    profile records (mealNutrients / dishNutrients) and quality data
+   *    are left intact so the post-game summary can still report them.
+   *  - Stockpiles owned by the extinct group also have their food entries
+   *    zeroed; piles owned by living groups are untouched even when they
+   *    share the same map.
+   *  - Idempotent: once foodSpoiled is true the group is skipped, so the
+   *    log line fires exactly once per extinction.
+   */
+  _decayExtinctGroups() {
+    const SPOILAGE_TIME = SEASON_LENGTH * 4; // one sim-year
+    for (const grp of this.groups) {
+      if (grp.colonists.length > 0) {
+        // Living colony — never touch.
+        if (grp.extinctAt != null) grp.extinctAt = null;
+        if (grp.foodSpoiled) grp.foodSpoiled = false;
+        continue;
+      }
+      if (grp.extinctAt == null) continue;     // not yet recorded
+      if (grp.foodSpoiled) continue;            // already cleared
+      if (this.clock - grp.extinctAt < SPOILAGE_TIME) continue;
+      // Time's up — clear every edible entry in on-hand storage AND in
+      // each stockpile this group owns. STOCKPILE_ITEMS excludes wood
+      // and seeds; the nutrient bookkeeping objects are skipped by id.
+      for (const id of STOCKPILE_ITEMS) {
+        if (id === 'wood') continue;
+        if (grp.storage[id] != null) grp.storage[id] = 0;
+      }
+      for (const sp of this.stockpiles) {
+        if (sp.ownerId !== grp.id) continue;
+        for (const id of STOCKPILE_ITEMS) {
+          if (id === 'wood') continue;
+          if (sp.items[id] != null) sp.items[id] = 0;
+        }
+      }
+      grp.foodSpoiled = true;
+      this._pushLog({
+        icon: 'skull',
+        text: t('log.foodSpoiled', { letter: String.fromCharCode(65 + grp.id) }),
+        cls: 'log-warn',
+      });
+    }
+  }
   _onSeasonChange(season) { return esOnSeasonChange(this, season); }
   _runSelectiveBreedingCulls() { return runSelectiveBreedingCulls(this); }
 
@@ -1871,6 +1933,7 @@ export class Game {
     this._updateFuel(simDt);
     this._updateForest(simDt);
     this._updateSeafood(simDt);
+    this._decayExtinctGroups();
     this._updateColonists(simDt);
     this._updateAnimals(simDt);
     this._growCrops(simDt);

@@ -242,5 +242,12 @@ export function createGroup(id, setup = {}) {
     // task count is mirrored into game.taskQueue for UI / pendingSows
     // accounting.
     taskQueue: [],
+    // α34 followup: extinction bookkeeping for the food-spoilage timer.
+    // extinctAt is set to game.clock the tick this group transitions to
+    // colonists.length === 0; foodSpoiled goes true once the 1-year
+    // spoilage pass has cleared the group's edible storage. Both reset
+    // to defaults whenever the group has at least one colonist again.
+    extinctAt: null,
+    foodSpoiled: false,
   };
 }

@@ -207,6 +207,43 @@ function statBar(key, value) {
   );
 }
 
+// α34 followup: HP bar with a richer hover tooltip explaining why the
+// colonist is recovering, blocked from recovering, or losing HP — plus
+// what the player can do to unblock it. The four states match the
+// recovery gates in colonist._decay (entities/colonist.js):
+//   - hunger >= 1                 → starving (losing HP)
+//   - hunger >= HEALTH_REGEN_HUNGER → too hungry to heal
+//   - malnutritionStage > 0       → MALNUTRITION_HP_REGEN_MULT = 0
+//   - health >= 1                 → already full, nothing to do
+//   - otherwise                   → recovering normally
+function healthStatBar(c) {
+  const pct = Math.max(0, Math.min(100, Math.round(c.health * 100)));
+  const cls = c.health > 0.5 ? 'good' : c.health > 0.25 ? 'mid' : 'low';
+  let tip = `${t('stat.health')} ${pct}%`;
+  if (c.hunger >= 1) {
+    tip += `\n${t('hp.starving')}\n${t('hp.fixStarving')}`;
+  } else if (c.hunger >= 0.4) {
+    // 0.4 mirrors HEALTH_REGEN_HUNGER (config.js).
+    tip += `\n${t('hp.blockedHunger')}\n${t('hp.fixHunger')}`;
+  } else {
+    const stage = c.malnutritionStage ? c.malnutritionStage() : 0;
+    if (stage > 0) {
+      const missing = (c.missingNutrients ? c.missingNutrients() : [])
+        .map((k) => t('nut.' + k))
+        .join(', ');
+      tip += `\n${t('hp.blockedMalnutrition', { list: missing || '?' })}\n${t('hp.fixMalnutrition')}`;
+    } else if (c.health >= 1) {
+      tip += `\n${t('hp.full')}`;
+    } else {
+      tip += `\n${t('hp.recovering')}`;
+    }
+  }
+  return (
+    `<span class="cbar" title="${tip}">` +
+    `<b class="${cls}" style="width:${pct}%"></b></span>`
+  );
+}
+
 // Condition icons next to the colonist's name (alpha 21). Tooltip on
 // each icon explains the reason and the in-game penalty it carries.
 function colonistConditionIcons(c) {
@@ -436,7 +473,7 @@ function panCameraToColonists(list) {
 function colonistRowHtml(c) {
   const bars =
     statBar('stat.fed', 1 - c.hunger) +
-    statBar('stat.health', c.health) +
+    healthStatBar(c) +
     statBar('stat.mood', c.mood);
   const sel = c.name === game.selectedColonist ? ' selected' : '';
   const icons = colonistConditionIcons(c);
@@ -1067,6 +1104,17 @@ function updateCodexPanel() {
   // one thing on the row that legitimately changes every tick, and
   // updating it via textContent skips the innerHTML reassign that was
   // wiping each row's canvas just before the redraw loop redrew it.
+  updateCodexCounts();
+}
+
+// α34 followup: extracted from updateCodexPanel so the seeds/stock
+// chip text can also be refreshed by its own dedicated 1-second
+// interval. The original 150ms updateCodexPanel poll still calls
+// this, so chips also stay current at the panel's normal cadence;
+// the extra 1-sec interval is a guaranteed floor for the visible
+// number freshness when the codex panel is open during heavy gameplay.
+function updateCodexCounts() {
+  if (!codexEl) return;
   const seedLabel = t('label.codexSeed');
   const stockLabel = t('label.codexStock');
   for (const chip of codexEl.querySelectorAll('.codex-count')) {
@@ -3592,3 +3640,10 @@ setInterval(() => {
   if (mut) showMutationPopup(mut);
   if (game.consumeWinEvent()) showVictory();
 }, 150);
+
+// α34 followup: dedicated 1-second floor for the pedigree chip text.
+// The 150 ms poll above already calls updateCodexCounts() through
+// updateCodexPanel, but this second interval ensures the seeds/stock
+// numbers are refreshed at least once per second even if some future
+// caller throttles the larger panel updates.
+setInterval(updateCodexCounts, 1000);

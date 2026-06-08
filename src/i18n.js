@@ -393,6 +393,16 @@ const STRINGS = {
     'out.noFood': 'nothing to cook',
     'out.noHearth': 'no hearth here',
     'log.cold': 'Colonists are suffering in the cold',
+    'log.foodSpoiled': 'Colony {letter} — abandoned food has spoiled',
+    // α34 followup — HP-bar tooltip lines explaining the recovery state.
+    'hp.recovering': 'Recovering normally.',
+    'hp.full': 'Fully recovered.',
+    'hp.starving': 'Starving — losing HP every tick.',
+    'hp.fixStarving': 'Feed immediately, anything edible will do.',
+    'hp.blockedHunger': 'Too hungry to heal (HP recovery blocked).',
+    'hp.fixHunger': 'Eat until fed-meter is above 60%.',
+    'hp.blockedMalnutrition': 'Malnourished, missing: {list} (HP recovery blocked).',
+    'hp.fixMalnutrition': 'Eat foods that supply the missing nutrients.',
     'note.cold':
       'Colonists are cold! Keep a hearth lit — chop trees or harvest wild plants for wood.',
 
@@ -1068,6 +1078,16 @@ const STRINGS = {
     'out.noFood': '調理する食材がない',
     'out.noHearth': 'ここにかまどがない',
     'log.cold': 'コロニストが寒さに苦しんでいる',
+    'log.foodSpoiled': 'コロニー {letter} — 放置された食料が腐敗',
+    // α34 followup — HPバーのツールチップ詳細
+    'hp.recovering': '通常に回復中。',
+    'hp.full': '完全回復済み。',
+    'hp.starving': '飢餓状態 — HPが毎ティック減少。',
+    'hp.fixStarving': '直ちに食事を。何でもいいので食べさせる。',
+    'hp.blockedHunger': '空腹のため回復停止。',
+    'hp.fixHunger': '満腹度が60%以上になるまで食べる。',
+    'hp.blockedMalnutrition': '栄養失調のため回復停止。不足: {list}',
+    'hp.fixMalnutrition': '不足栄養素を含む食材を摂取する。',
     'note.cold':
       'コロニストが寒い！かまどの火を絶やさず、伐採や野生植物の収穫で材木を集めましょう。',
 
