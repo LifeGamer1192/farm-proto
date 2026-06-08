@@ -152,8 +152,13 @@ function _findColonistByName(game, name) {
 
 // ---------------------------------------------------------------------
 // pickWarEngagement — the high-priority autonomy branch. Returns an
-//                     ATTACK task targeting the nearest in-range enemy,
-//                     or null if not engaged / no target close enough.
+//                     ATTACK task targeting the nearest live enemy
+//                     whenever this colonist's group is at war, with NO
+//                     distance gate — tickAttack already handles
+//                     "too far → step closer" pathing. The old version
+//                     only fired inside BOW_RANGE × 2, so a colonist who
+//                     finished the initial MARCH but still saw enemies
+//                     beyond 8 tiles fell back to farming.
 // ---------------------------------------------------------------------
 
 export function pickWarEngagement(game, colonist) {
@@ -161,7 +166,6 @@ export function pickWarEngagement(game, colonist) {
   if (!myGrp || myGrp.warWith == null || myGrp.surrendered) return null;
   const enemy = nearestEnemyFor(game, colonist);
   if (!enemy) return null;
-  if (chebyshev(colonist, enemy) > BOW_RANGE * 2) return null;
   colonist.attackTargetName = enemy.name;
   const task = createTask(TaskType.ATTACK, enemy.tileX, enemy.tileY, {
     assignee: colonist.name,
