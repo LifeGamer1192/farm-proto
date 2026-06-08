@@ -36,7 +36,7 @@ import { icon } from './icons.js';
 import { Game, STOCKPILE_ITEMS } from './game.js';
 import { nutrientsOf, isEdibleRaw as foodIsEdibleRaw } from './systems/foodSystem.js';
 import { isDish as recipesIsDish } from './recipes.js';
-import { SEAFOOD_TYPES, seafoodYield } from './seafood.js';
+import { SEAFOOD_TYPES, SEAFOOD_IDS, seafoodYield } from './seafood.js';
 import { SEASONS } from './season.js';
 import { GROUP_COLORS } from './groups.js';
 import { TIPS, randomTipIndex } from './tips.js';
@@ -664,6 +664,19 @@ function updateColonyStats() {
   for (const id of CROP_IDS) {
     const n = ti(id);
     if (n > 0) breakdown.push([labelIcon('grain', t('crop.' + id)), n]);
+  }
+  // α34 followup: seafood breakdown rows. Only species the colony has
+  // any of show up — fish/salmon use the `fish` icon, clams use `clam`,
+  // crustaceans (shrimp/crab/lakeShrimp) reuse the clam silhouette,
+  // seaweed gets its own swaying-strand icon.
+  for (const id of SEAFOOD_IDS) {
+    const n = ti(id);
+    if (n <= 0) continue;
+    const kind = SEAFOOD_TYPES[id]?.kind;
+    const ic = kind === 'seaweed' ? 'seaweed'
+      : (kind === 'clam' || kind === 'shrimp' || kind === 'crab') ? 'clam'
+      : 'fish';
+    breakdown.push([labelIcon(ic, t('crop.' + id)), n]);
   }
   renderRows(foodBreakdownEl, breakdown);
   // T5: render the food-breakdown sparkline if the panel is in graph

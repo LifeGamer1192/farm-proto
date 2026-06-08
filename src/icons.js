@@ -44,6 +44,14 @@ const PARTS = {
   wilt: '<path d="M14.5 21c0-6.5-1.2-9.8-4.5-12"/><ellipse cx="8.5" cy="8" rx="3.2" ry="4.2" transform="rotate(40 8.5 8)"/><path d="M14.5 11.5c2.2-1 4.5-.8 4.5-.8"/>',
   pest: '<ellipse cx="12" cy="13" rx="5" ry="6"/><line x1="12" y1="7" x2="12" y2="3"/><line x1="7" y1="10" x2="3" y2="9"/><line x1="7" y1="13" x2="2.8" y2="13"/><line x1="7" y1="16" x2="3.3" y2="17.5"/><line x1="17" y1="10" x2="21" y2="9"/><line x1="17" y1="13" x2="21.2" y2="13"/><line x1="17" y1="16" x2="20.7" y2="17.5"/>',
   fork: '<path d="M7.5 3v5.5a2 2 0 002 2v10M7.5 3v4.5M9.5 3v4.5"/><path d="M16.5 3c-1.7 0-1.7 7.5 0 7.5s1.7-7.5 0-7.5zM16.5 10.5V21"/>',
+  // α34 followup: seafood icons used by the colony stats breakdown.
+  // fish — generic body + forked tail + eye. Stands in for any of the
+  // four fish species (saltFish / riverFish / lakeFish / salmon).
+  fish: '<ellipse cx="10" cy="12" rx="6" ry="3.5"/><path d="M16 12l4-3.5v7z"/><circle cx="7.5" cy="11" r="0.6" fill="currentColor"/>',
+  // clam — paired ovoid halves used for shellfish and crustacean rows.
+  clam: '<path d="M3.5 13.5c0-5 4-9 8.5-9s8.5 4 8.5 9z"/><line x1="3.5" y1="13.5" x2="20.5" y2="13.5"/><line x1="8" y1="13.5" x2="8" y2="9.5"/><line x1="12" y1="13.5" x2="12" y2="7"/><line x1="16" y1="13.5" x2="16" y2="9.5"/>',
+  // seaweed — three swaying strands rising from a base line.
+  seaweed: '<path d="M5 21V11c0-3 1-5 3-7"/><path d="M12 21V9c0-3 1.5-5 3-7"/><path d="M19 21V11c0-3-1-5-2-7"/>',
   // creatures / events
   deer: '<path d="M8 12.5a4 4 0 008 0c0-2.6-1.8-4.2-4-4.2s-4 1.6-4 4.2z"/><path d="M9 8.3L7 4M9.5 8l.6-4M15 8.3l2-4.3M14.5 8l-.6-4"/><circle cx="10.6" cy="12.4" r="0.5" fill="currentColor"/><circle cx="13.4" cy="12.4" r="0.5" fill="currentColor"/>',
   baby: '<circle cx="12" cy="12.5" r="7.5"/><circle cx="9.3" cy="12.5" r="0.6" fill="currentColor"/><circle cx="14.7" cy="12.5" r="0.6" fill="currentColor"/><path d="M9.6 15.5a4 4 0 004.8 0"/><path d="M12 4.2c2.2 0 2.2 2.4 0 2.4"/>',
