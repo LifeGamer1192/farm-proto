@@ -257,6 +257,10 @@ export class Game {
     this.paused = false;
     this.autoHunt = true; // idle colonists hunt boar when food runs low
     this.autoMode = true; // idle colonists till, sow and build on their own
+    // α37 followup: when off, the winter war-declaration check is skipped.
+    // Manual ATTACK orders still work — this gate is only for the auto-war
+    // logic, matching how autoHunt/autoMode gate their autonomy paths.
+    this.autoWar = true;
     // The colonist new work is addressed to, or null for the whole colony.
     this.selectedColonist = null;
 
@@ -1891,6 +1895,11 @@ export class Game {
     this._warDeclaration = null;
     return d;
   }
+  consumeWarSummary() {
+    const s = this._warSummary;
+    this._warSummary = null;
+    return s;
+  }
 
   /**
    * α34 followup: spoil the food of any group that's been extinct (zero
@@ -2078,6 +2087,9 @@ export class Game {
       // α37 — transient combat overlays.
       arrows: this._arrows,
       damageNumbers: this._damageNumbers,
+      // α37 followup — group IDs that are currently at war, so the
+      // renderer can swap their colonists' face to the angry variant.
+      warringGroupIds: this.groups.filter((g) => g.warWith != null).map((g) => g.id),
     });
   }
 

@@ -29,8 +29,10 @@ export const BOW_ACCURACY = 1.0;
 // over target. Elevation is 0..1 across the map, so a tile clearly atop
 // a ridge (e.g. 0.85) firing at a valley colonist (0.35) gets +5 damage.
 export const BOW_ELEVATION_BONUS_PER_UNIT = 10;
-// Slow march while engaged so colonists strafe rather than sprint.
-export const COMBAT_MOVE_SPEED_MULT = 0.2; // 1/5
+// α37 followup: half speed while actively engaged (attackTargetName set).
+// Marching to the front line stays at full speed; only the deliberate
+// strafing during target-locked combat is throttled.
+export const COMBAT_MOVE_SPEED_MULT = 0.5; // 1/2
 
 // War declaration: once a year, on the first frame of winter, the
 // largest colony declares war on the smallest if it has more than

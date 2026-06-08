@@ -493,10 +493,13 @@ export class Colonist {
         : task.type === TaskType.MARCH ? 'marching'
         : task.type === TaskType.ATTACK ? 'attacking'
         : 'walking';
-      // α37: marching is the standard speed; once engaged (ATTACK), the
-      // colonist moves at COMBAT_MOVE_SPEED_MULT (1/5) so they can
-      // strafe / reposition deliberately rather than sprint.
-      const speedMul = task.type === TaskType.ATTACK ? COMBAT_MOVE_SPEED_MULT : 1;
+      // α37 followup: only the target-locked phase of combat throttles
+      // movement (COMBAT_MOVE_SPEED_MULT = 0.5). MARCH (no target) AND
+      // the path-toward-target walk on an ATTACK task that just started
+      // (before attackTargetName is set) both run at full speed so the
+      // approach from base to the front line feels natural.
+      const engaged = task.type === TaskType.ATTACK && !!this.attackTargetName;
+      const speedMul = engaged ? COMBAT_MOVE_SPEED_MULT : 1;
       this._walk(dt, speedMul);
       return;
     }

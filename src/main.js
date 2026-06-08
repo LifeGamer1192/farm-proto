@@ -73,6 +73,7 @@ const victoryEl = $('victory');
 const victorySummaryEl = $('victory-summary');
 const autoHuntBtn = $('autohunt-btn');
 const autoModeBtn = $('automode-btn');
+const autoWarBtn = $('autowar-btn');
 const popupsBtn = $('popups-btn');
 const viewModesEl = $('view-modes');
 const toolsEl = $('tools');
@@ -1558,6 +1559,7 @@ function applyI18n() {
   updatePauseBtn();
   updateAutoHuntBtn();
   updateAutoModeBtn();
+  updateAutoWarBtn();
   updatePopupsBtn();
 }
 
@@ -3139,6 +3141,20 @@ autoModeBtn.addEventListener('click', () => {
   updateAutoModeBtn();
 });
 
+// α37 followup: Auto-war toggle. Default ON. Gates the winter auto-war
+// declaration only — manual ATTACK orders are always allowed.
+function updateAutoWarBtn() {
+  if (!autoWarBtn) return;
+  autoWarBtn.textContent = `${t('label.autoWar')}: ${t(game.autoWar ? 'val.on' : 'val.off')}`;
+  autoWarBtn.classList.toggle('on', game.autoWar);
+}
+if (autoWarBtn) {
+  autoWarBtn.addEventListener('click', () => {
+    game.autoWar = !game.autoWar;
+    updateAutoWarBtn();
+  });
+}
+
 // F1: big-popup on/off toggle. Default on. Persisted in localStorage so
 // a player who turns the disruption off stays off across reloads. When
 // disabled, events still log + show as a toast so info isn't lost.
@@ -3703,6 +3719,19 @@ setInterval(() => {
     showBigPopup('popup.war.title', 'popup.war.body', {
       attacker: war.attackerName,
       defender: war.defenderName,
+    });
+  }
+  // α37 followup: end-of-war summary popup with pop deltas + tribute.
+  const ws = game.consumeWarSummary?.();
+  if (ws) {
+    showBigPopup('popup.warEnd.title', 'popup.warEnd.body', {
+      winner: ws.winnerName,
+      loser: ws.loserName,
+      winnerStart: ws.winnerStartPop,
+      winnerEnd: ws.winnerEndPop,
+      loserStart: ws.loserStartPop,
+      loserEnd: ws.loserEndPop,
+      tribute: ws.tribute || 0,
     });
   }
 }, 150);

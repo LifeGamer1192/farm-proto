@@ -498,10 +498,16 @@ export class Renderer {
 
     // --- colonists ---
     const groupColors = scene.groupColors || [];
+    // α37 followup: swap to angry face for any colonist whose group is
+    // currently at war (both attacker AND defender). Cleared the moment
+    // the war ends — game.js stops including the group id here.
+    const warringIds = scene.warringGroupIds || [];
+    const warringSet = warringIds.length > 0 ? new Set(warringIds) : null;
     for (const c of colonists) {
       const color = groupColors[c.groupId || 0] || null;
       const p = proj(c.x + 0.5, c.y + 0.5, elevAt(c.x + 0.5, c.y + 0.5));
-      this._drawColonist(c, p.x, p.y, c.name === selectedColonist, color);
+      const atWar = warringSet ? warringSet.has(c.groupId) : false;
+      this._drawColonist(c, p.x, p.y, c.name === selectedColonist, color, atWar);
     }
 
     // --- α37 combat overlays (arrows + floating damage numbers) ---
@@ -2213,7 +2219,7 @@ export class Renderer {
 
   // A small top-down figure that faces the way it walks; a progress ring
   // while it works. `selected` marks the colonist work orders go to.
-  _drawColonist(colonist, cx, cy, selected, groupColor) {
+  _drawColonist(colonist, cx, cy, selected, groupColor, atWar) {
     const ctx = this.ctx;
     const r = this.ts * 0.33;
     // Alpha 23: per-group body palette. Defaults to the amber stand-in
@@ -2358,7 +2364,7 @@ export class Renderer {
         // a solid dark "bean" eye — the iconic simple Sanrio eye
         ctx.beginPath();
         ctx.ellipse(ex, ey, eyeR * sc, eyeR * 1.4 * sc, 0, 0, Math.PI * 2);
-        ctx.fillStyle = '#33240f';
+        ctx.fillStyle = atWar ? '#5a0d0d' : '#33240f';
         ctx.fill();
         // a tiny catch-light keeps the eye glossy and alive
         ctx.beginPath();
@@ -2366,21 +2372,52 @@ export class Renderer {
         ctx.fillStyle = 'rgba(255,255,255,0.92)';
         ctx.fill();
       }
-      // rosy cheeks just outside & below the eyes
-      ctx.fillStyle = 'rgba(244,150,150,0.5)';
-      for (const s of [-1, 1]) {
+      // α37 followup: angry brows + frown when this group is at war.
+      // Otherwise the original cheeks + soft smile.
+      if (atWar) {
+        // V-shaped angled brows over the eyes.
+        ctx.strokeStyle = '#3a0707';
+        ctx.lineWidth = Math.max(1.4, hr * 0.10);
+        ctx.lineCap = 'round';
+        for (const s of [-1, 1]) {
+          const bx = faceX + eyeSpace * s;
+          const by = faceY - eyeR * 1.05;
+          ctx.beginPath();
+          ctx.moveTo(bx - eyeR * 0.95 * s, by - eyeR * 0.20);
+          ctx.lineTo(bx + eyeR * 0.55 * s, by + eyeR * 0.55);
+          ctx.stroke();
+        }
+        // A small downward frown — same arc shape but flipped.
+        ctx.strokeStyle = 'rgba(80,30,30,0.95)';
+        ctx.lineWidth = Math.max(1, hr * 0.08);
         ctx.beginPath();
-        ctx.arc(faceX + eyeSpace * 1.55 * s, faceY + hr * 0.14, hr * 0.12, 0, Math.PI * 2);
-        ctx.fill();
+        ctx.arc(faceX, faceY + hr * 0.28, hr * 0.12, Math.PI * 1.10, Math.PI * 1.90);
+        ctx.stroke();
+        // Flush of red on the cheeks instead of rosy pink.
+        ctx.fillStyle = 'rgba(200, 60, 60, 0.55)';
+        for (const s of [-1, 1]) {
+          ctx.beginPath();
+          ctx.arc(faceX + eyeSpace * 1.55 * s, faceY + hr * 0.14, hr * 0.13, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.lineCap = 'butt';
+      } else {
+        // rosy cheeks just outside & below the eyes
+        ctx.fillStyle = 'rgba(244,150,150,0.5)';
+        for (const s of [-1, 1]) {
+          ctx.beginPath();
+          ctx.arc(faceX + eyeSpace * 1.55 * s, faceY + hr * 0.14, hr * 0.12, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        // tiny mouth — a small soft curve centred under the eyes
+        ctx.strokeStyle = 'rgba(120,70,50,0.85)';
+        ctx.lineWidth = Math.max(1, hr * 0.07);
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+        ctx.arc(faceX, faceY + hr * 0.18, hr * 0.1, Math.PI * 0.12, Math.PI * 0.88);
+        ctx.stroke();
+        ctx.lineCap = 'butt';
       }
-      // tiny mouth — a small soft curve centred under the eyes
-      ctx.strokeStyle = 'rgba(120,70,50,0.85)';
-      ctx.lineWidth = Math.max(1, hr * 0.07);
-      ctx.lineCap = 'round';
-      ctx.beginPath();
-      ctx.arc(faceX, faceY + hr * 0.18, hr * 0.1, Math.PI * 0.12, Math.PI * 0.88);
-      ctx.stroke();
-      ctx.lineCap = 'butt';
     }
 
     if (colonist.workProgress > 0) {

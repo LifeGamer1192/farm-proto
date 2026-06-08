@@ -52,6 +52,39 @@ import { STOCKPILE_ITEMS } from './foodSystem.js';
 import { findPathStaged } from '../core/pathfinder.js';
 import { t } from '../i18n.js';
 
+// α37 followup combat tuning
+// ---------------------------
+// ENGAGEMENT_RANGE: max distance at which a colonist switches from MARCH
+//   to ATTACK. Set to 3× bow range (= 12 tiles) so a marching squad
+//   commits to a fight as soon as enemies enter that horizon, instead
+//   of marching past them to the opposing center.
+// MARCH_CHUNK_TILES: distance (in tiles) of a single MARCH segment.
+//   After this many tiles the colonist re-enters autonomy and can
+//   switch to ATTACK if enemies have come into range. Short enough
+//   to react, long enough to keep the simulator cheap.
+// TARGET_COMMITMENT: sim-seconds a colonist stays locked on the chosen
+//   target before re-evaluating. 15 sim-sec ≈ 2.5 sim-days, matching
+//   the "every 2-3 days re-pick target" spec. Stops target-flickering
+//   when two enemies are at very similar distances.
+const ENGAGEMENT_RANGE = BOW_RANGE * 3;
+const MARCH_CHUNK_TILES = 8;
+const TARGET_COMMITMENT = 15;
+
+/** Pick the next MARCH waypoint when MARCH_CHUNK_TILES away from the
+ *  long-range goal. Returns the goal itself once we're within one
+ *  chunk's distance. */
+function _shortMarchTarget(colonist, goal) {
+  const dx = goal.x - colonist.tileX;
+  const dy = goal.y - colonist.tileY;
+  const dist = Math.max(Math.abs(dx), Math.abs(dy));
+  if (dist <= MARCH_CHUNK_TILES) return goal;
+  const t = MARCH_CHUNK_TILES / dist;
+  return {
+    x: Math.floor(colonist.tileX + dx * t),
+    y: Math.floor(colonist.tileY + dy * t),
+  };
+}
+
 // ---------------------------------------------------------------------
 // fireShot — emit one bow shot from attacker to target.
 // ---------------------------------------------------------------------
@@ -151,29 +184,69 @@ function _findColonistByName(game, name) {
 }
 
 // ---------------------------------------------------------------------
-// pickWarEngagement — the high-priority autonomy branch. Returns an
-//                     ATTACK task targeting the nearest live enemy
-//                     whenever this colonist's group is at war, with NO
-//                     distance gate — tickAttack already handles
-//                     "too far → step closer" pathing. The old version
-//                     only fired inside BOW_RANGE × 2, so a colonist who
-//                     finished the initial MARCH but still saw enemies
-//                     beyond 8 tiles fell back to farming.
+// pickWarEngagement — the high-priority autonomy branch.
+//
+// Two-phase combat:
+//   1. MARCH toward the opposing colony's center in MARCH_CHUNK_TILES
+//      segments. Each segment ends and the colonist re-enters
+//      autonomy, so enemies that come into ENGAGEMENT_RANGE flip the
+//      colonist into the attack phase mid-march. This is what makes
+//      the two armies meet in the middle instead of strolling past
+//      each other to empty bases.
+//   2. ATTACK the nearest enemy in range, committing to that target for
+//      TARGET_COMMITMENT sim-seconds (~2-3 sim-days) so colonists don't
+//      flicker between similarly-distant enemies every tick.
+//
+// Returns either an ATTACK task (committed target, drives tickAttack)
+// or a MARCH task (chunk waypoint toward opposing center), never null
+// while at war — defenders never fall back to farming during a war.
 // ---------------------------------------------------------------------
 
 export function pickWarEngagement(game, colonist) {
   const myGrp = game.groups?.[colonist.groupId];
   if (!myGrp || myGrp.warWith == null || myGrp.surrendered) return null;
+
+  // 1a. Honor an existing target commitment if still inside the window.
+  if (colonist.attackTargetName && game.clock < (colonist.combatTargetUntil || 0)) {
+    const heldTarget = game.colonists.find(
+      (c) => c.name === colonist.attackTargetName && !c.dead,
+    );
+    if (heldTarget) {
+      const task = createTask(TaskType.ATTACK, heldTarget.tileX, heldTarget.tileY, {
+        assignee: colonist.name,
+        groupId: colonist.groupId,
+        targetName: heldTarget.name,
+      });
+      task._target = heldTarget;
+      return task;
+    }
+    // Held target died — clear and re-evaluate below.
+    colonist.attackTargetName = null;
+  }
+
+  // 1b. Re-evaluate: nearest live enemy within engagement range?
   const enemy = nearestEnemyFor(game, colonist);
-  if (!enemy) return null;
-  colonist.attackTargetName = enemy.name;
-  const task = createTask(TaskType.ATTACK, enemy.tileX, enemy.tileY, {
+  if (enemy && chebyshev(colonist, enemy) <= ENGAGEMENT_RANGE) {
+    colonist.attackTargetName = enemy.name;
+    colonist.combatTargetUntil = game.clock + TARGET_COMMITMENT;
+    const task = createTask(TaskType.ATTACK, enemy.tileX, enemy.tileY, {
+      assignee: colonist.name,
+      groupId: colonist.groupId,
+      targetName: enemy.name,
+    });
+    task._target = enemy;
+    return task;
+  }
+
+  // 2. Too far — march one chunk toward the opposing colony's center.
+  const opposingCenter = colonyCenter(game, myGrp.warWith);
+  if (!opposingCenter) return null;
+  colonist.attackTargetName = null;
+  const next = _shortMarchTarget(colonist, opposingCenter);
+  return createTask(TaskType.MARCH, next.x, next.y, {
     assignee: colonist.name,
     groupId: colonist.groupId,
-    targetName: enemy.name,
   });
-  task._target = enemy;
-  return task;
 }
 
 // ---------------------------------------------------------------------
@@ -188,13 +261,16 @@ export function checkSurrender(game) {
     const lost = grp.warStartPop - grp.colonists.length;
     if (lost / grp.warStartPop < SURRENDER_LOSS_FRACTION) continue;
     const winner = game.groups[grp.warWith];
-    transferTribute(game, grp, winner);
+    const tributeTotal = transferTribute(game, grp, winner);
     endWar(game, grp, winner);
+    // Stamp the tribute onto the summary the endWar pass just created.
+    if (game._warSummary) game._warSummary.tribute = tributeTotal;
   }
 }
 
 export function transferTribute(game, loser, winner) {
-  if (!winner) return;
+  if (!winner) return 0;
+  let totalTribute = 0;
   for (const id of STOCKPILE_ITEMS) {
     if (id === 'wood') continue;
     let total = loser.storage?.[id] || 0;
@@ -225,10 +301,24 @@ export function transferTribute(game, loser, winner) {
       }
     }
     winner.storage[id] = (winner.storage[id] || 0) + give;
+    totalTribute += give;
   }
+  return totalTribute;
 }
 
 export function endWar(game, a, b) {
+  // α37 followup: capture the wartime stats for the big "war summary"
+  // popup BEFORE we reset war state on both sides.
+  const summary = (a && b) ? {
+    loser: a.id,
+    winner: b.id,
+    loserName: String.fromCharCode(65 + a.id),
+    winnerName: String.fromCharCode(65 + b.id),
+    loserStartPop: a.warStartPop,
+    loserEndPop: a.colonists.length,
+    winnerStartPop: b.warStartPop,
+    winnerEndPop: b.colonists.length,
+  } : null;
   for (const g of [a, b]) {
     if (!g) continue;
     g.warWith = null;
@@ -244,6 +334,7 @@ export function endWar(game, a, b) {
     for (const c of game.colonists) {
       if (c.groupId !== g.id) continue;
       c.attackTargetName = null;
+      c.combatTargetUntil = 0;
       if (c.currentTask) {
         c.currentTask.status = 'failed';
         c.currentTask = null;
@@ -266,6 +357,8 @@ export function endWar(game, a, b) {
       cls: 'log-warn',
     });
   }
+  // α37 followup: expose the summary so main.js can fire a big popup.
+  if (summary) game._warSummary = summary;
 }
 
 // ---------------------------------------------------------------------
@@ -298,25 +391,40 @@ export function declareWar(game, attacker, defender) {
     }),
     cls: 'log-warn',
   });
-  const target = colonyCenter(game, defender.id);
-  if (!target) return;
+  // α37 followup: both sides march toward the opposing colony center
+  // (not just the attacker). pickWarEngagement does the chunked walk +
+  // engagement-range switch every time autonomy fires, so the two
+  // squads naturally converge and engage at the midpoint instead of
+  // walking past each other to empty bases.
+  const attackerGoal = colonyCenter(game, defender.id);
+  const defenderGoal = colonyCenter(game, attacker.id);
   for (const c of game.colonists) {
-    if (c.groupId !== attacker.id) continue;
+    const myGoal = c.groupId === attacker.id ? attackerGoal
+      : c.groupId === defender.id ? defenderGoal
+      : null;
+    if (!myGoal) continue;
     if (c.currentTask) {
       c.currentTask.status = 'failed';
       c.currentTask = null;
     }
     c.state = 'idle';
     c.attackTargetName = null;
-    const task = createTask(TaskType.MARCH, target.x, target.y, {
+    c.combatTargetUntil = 0;
+    // First MARCH chunk — autonomy will queue more on arrival.
+    const next = _shortMarchTarget(c, myGoal);
+    const task = createTask(TaskType.MARCH, next.x, next.y, {
       assignee: c.name,
-      groupId: attacker.id,
+      groupId: c.groupId,
     });
     game.taskQueue.push(task);
   }
 }
 
 export function maybeDeclareWar(game) {
+  // α37 followup: respect the Auto-war toggle (default ON). Manual
+  // ATTACK orders bypass this gate — only the winter auto-pass is
+  // suppressed when the player turns it off.
+  if (game.autoWar === false) return;
   if (!game.groups || game.groups.length < 2) return;
   for (const g of game.groups) if (g.warWith != null) return;
   if (game._warCheckedYear === game.environment.year) return;
