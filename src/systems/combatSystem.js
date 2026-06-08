@@ -40,6 +40,7 @@ import {
   SURRENDER_LOSS_FRACTION,
   SURRENDER_FOOD_TRIBUTE,
   WAR_DECLARE_POP_THRESHOLD,
+  WAR_TIMEOUT_SEC,
 } from '../config.js';
 import {
   bowDamage,
@@ -257,14 +258,35 @@ export function checkSurrender(game) {
   for (const grp of game.groups) {
     if (grp.warWith == null) continue;
     if (grp.surrendered) continue;
-    if (grp.warStartPop <= 0) continue;
-    const lost = grp.warStartPop - grp.colonists.length;
-    if (lost / grp.warStartPop < SURRENDER_LOSS_FRACTION) continue;
-    const winner = game.groups[grp.warWith];
-    const tributeTotal = transferTribute(game, grp, winner);
-    endWar(game, grp, winner);
-    // Stamp the tribute onto the summary the endWar pass just created.
-    if (game._warSummary) game._warSummary.tribute = tributeTotal;
+
+    const other = game.groups[grp.warWith];
+    if (!other) continue;
+
+    // 1. Normal surrender path — one side lost SURRENDER_LOSS_FRACTION
+    //    of its at-war-start population. Pays tribute.
+    if (grp.warStartPop > 0) {
+      const lost = grp.warStartPop - grp.colonists.length;
+      if (lost / grp.warStartPop >= SURRENDER_LOSS_FRACTION) {
+        const tributeTotal = transferTribute(game, grp, other);
+        endWar(game, grp, other);
+        if (game._warSummary) game._warSummary.tribute = tributeTotal;
+        continue;
+      }
+    }
+
+    // 2. α37 followup: stalemate timeout — half a sim-year has passed
+    //    since the declaration and nobody crossed the surrender
+    //    threshold. Force-end as a stalemate. NO tribute (distinct
+    //    from surrender). Both sides still march home via endWar's
+    //    queued MARCH tasks. The summary carries timeout: true so the
+    //    popup picks a different message.
+    if (game.clock - grp.warDeclaredAt >= WAR_TIMEOUT_SEC) {
+      endWar(game, grp, other);
+      if (game._warSummary) {
+        game._warSummary.timeout = true;
+        game._warSummary.tribute = 0;
+      }
+    }
   }
 }
 

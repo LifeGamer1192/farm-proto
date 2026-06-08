@@ -44,6 +44,12 @@ export const SURRENDER_LOSS_FRACTION = 0.25;
 // On surrender, the loser hands this fraction of every edible storage
 // item (FOOD_TYPES + meal + DISH_IDS) to the victor.
 export const SURRENDER_FOOD_TRIBUTE = 0.5;
+// α37 followup: war timeout — half a sim-year (= 2 seasons = 120 sim-sec
+// since SEASON_LENGTH = 60). If neither side surrenders by then, the
+// war is force-ended as a stalemate. NO tribute exchanged — distinct
+// from surrender. Catches stalled wars where the two armies never
+// converge enough to fire shots and natural casualties never reach 25%.
+export const WAR_TIMEOUT_SEC = 120;
 
 // α33: seafood (fish / clams) on water tiles. Fraction of water tiles
 // that start with a fishable catch on them; regrows over time so the

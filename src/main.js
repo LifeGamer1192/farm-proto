@@ -3721,18 +3721,34 @@ setInterval(() => {
       defender: war.defenderName,
     });
   }
-  // α37 followup: end-of-war summary popup with pop deltas + tribute.
+  // α37 followup: end-of-war summary popup. Two variants — a surrender
+  // (one side gave up, paid food tribute) and a timeout (half-year
+  // stalemate, no tribute). The summary carries `timeout: true` in the
+  // stalemate case; otherwise it's a surrender.
   const ws = game.consumeWarSummary?.();
   if (ws) {
-    showBigPopup('popup.warEnd.title', 'popup.warEnd.body', {
-      winner: ws.winnerName,
-      loser: ws.loserName,
-      winnerStart: ws.winnerStartPop,
-      winnerEnd: ws.winnerEndPop,
-      loserStart: ws.loserStartPop,
-      loserEnd: ws.loserEndPop,
-      tribute: ws.tribute || 0,
-    });
+    if (ws.timeout) {
+      // For a stalemate the "loser/winner" naming on the summary is
+      // just iteration order; show both as neutral A/B for the popup.
+      showBigPopup('popup.warTimeout.title', 'popup.warTimeout.body', {
+        groupA: ws.loserName,
+        groupB: ws.winnerName,
+        aStart: ws.loserStartPop,
+        aEnd: ws.loserEndPop,
+        bStart: ws.winnerStartPop,
+        bEnd: ws.winnerEndPop,
+      });
+    } else {
+      showBigPopup('popup.warEnd.title', 'popup.warEnd.body', {
+        winner: ws.winnerName,
+        loser: ws.loserName,
+        winnerStart: ws.winnerStartPop,
+        winnerEnd: ws.winnerEndPop,
+        loserStart: ws.loserStartPop,
+        loserEnd: ws.loserEndPop,
+        tribute: ws.tribute || 0,
+      });
+    }
   }
 }, 150);
 
