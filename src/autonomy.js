@@ -13,10 +13,9 @@
 // that delegates here, so existing call sites and tests still work.
 
 import { TaskType, createTask } from './tasks.js';
-// α37 combat — engagement branch lives in systems/combatSystem.js so
-// the war-priority autonomy stays consistent with all other combat
-// orchestration.
-import { pickWarEngagement } from './systems/combatSystem.js';
+// α37 combat — war engagement is applied at the dispatcher level
+// (game._autonomousTask) so every script engages enemies, not just the
+// balanced fallback. autonomy.js no longer needs combatSystem itself.
 import { isRipe, CROP_IDS, cropSuitability, getCrop } from './crops.js';
 import { tileBlocksCrop } from './systems/cropSystem.js';
 import {
@@ -456,12 +455,9 @@ export function urgentInfraBuild(game, colonist) {
  * @returns {?object} a task created via createTask, or null
  */
 export function pickAutonomousTask(game, colonist) {
-  // α37 combat: war engagement is the top-priority branch — if this
-  // colonist's group is at war and an enemy is in engagement radius,
-  // return an ATTACK task instead of doing farm / build / hunt work.
-  // Combat orchestration lives in systems/combatSystem.js.
-  const warTask = pickWarEngagement(game, colonist);
-  if (warTask) return warTask;
+  // α37 combat: war-engagement is universal — applied by game._autonomousTask
+  // BEFORE the per-script picker so every script engages enemies. This
+  // function no longer has to check warWith itself.
   // Alpha 24: at 95% warehouse utilization the colony hits CRITICAL —
   // every colonist drops harvest / hunt / forage work and rushes to
   // build another warehouse (or chop wood for it). Otherwise the

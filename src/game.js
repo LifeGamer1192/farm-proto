@@ -60,6 +60,7 @@ import {
   updateCombatEffects as csUpdateCombatEffects,
   checkSurrender as csCheckSurrender,
   enqueueAttackTask as csEnqueueAttackTask,
+  pickWarEngagement as csPickWarEngagement,
 } from './systems/combatSystem.js';
 import { Camera } from './render/camera.js';
 import { Renderer } from './render/renderer.js';
@@ -1628,6 +1629,14 @@ export class Game {
   // lives in src/autonomy.js so future versions can swap it out without
   // touching the rest of the engine. This shim keeps the call site stable.
   _autonomousTask(colonist) {
+    // α37 followup: war engagement is the universal top priority — applied
+    // BEFORE the per-script picker so farmer / scout / temperate / builder
+    // / farmer_breed all engage enemies, not just balanced (which routes
+    // through pickAutonomousTask). When the colonist's group isn't at
+    // war (or no enemy is in range) this returns null and the script's
+    // own picker runs as before.
+    const warTask = csPickWarEngagement(this, colonist);
+    if (warTask) return warTask;
     // Dispatch by the colonist's group's autonomy script (alpha 23).
     // Falls back to the legacy balanced script for ungrouped colonists.
     const g = this.groups[colonist.groupId];
