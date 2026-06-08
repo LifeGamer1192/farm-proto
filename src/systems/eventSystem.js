@@ -23,13 +23,13 @@ import {
   ANIMAL_RESTOCK_THRESHOLD,
   ANIMAL_RESTOCK_AMOUNT,
   SEAFOOD_REGROW_TIME,
-  WAR_DECLARE_POP_THRESHOLD,
 } from '../config.js';
 import { TileType } from '../map/tile.js';
 import { pickSeafoodFor } from '../seafood.js';
 import { mulberry32 } from '../core/rng.js';
-import { colonyCenter } from '../combat.js';
-import { TaskType, createTask } from '../tasks.js';
+// α37 combat — war declaration moved into systems/combatSystem.js. The
+// winter onSeasonChange path just calls maybeDeclareWar from there.
+import { maybeDeclareWar } from './combatSystem.js';
 import { CROP_IDS, seedGenome } from '../crops.js';
 import { PlantKind } from '../world.js';
 import { Colonist } from '../entities/colonist.js';
@@ -82,87 +82,6 @@ export function onSeasonChange(game, season) {
   // the map and starves. Restock only fires when the population has
   // dropped below the threshold, so a healthy map isn't over-stuffed.
   if (season === 'spring') maybeRestockAnimals(game);
-}
-
-/**
- * α37 combat — winter war-declaration check. Called from onSeasonChange
- * when winter begins. Once per game-year:
- *  - Skip if any group is already at war (one war at a time for now).
- *  - Find the largest and smallest colony groups (by colonist count).
- *  - If the largest crosses WAR_DECLARE_POP_THRESHOLD AND a distinct
- *    smallest exists, the largest declares war on the smallest.
- *  - On declaration: both sides flip into war state, the attacker's
- *    colonists drop their current tasks and queue a MARCH toward the
- *    defender's residential center, and game._warDeclaration is set
- *    so main.js can show the big popup.
- */
-function maybeDeclareWar(game) {
-  if (!game.groups || game.groups.length < 2) return;
-  // Only one war at a time (current scope; multi-front wars come later).
-  for (const g of game.groups) if (g.warWith != null) return;
-  // Skip if we already checked this year (defensive — onSeasonChange
-  // should only fire once per season but make this idempotent anyway).
-  if (game._warCheckedYear === game.environment.year) return;
-  game._warCheckedYear = game.environment.year;
-  let largest = null;
-  let smallest = null;
-  for (const g of game.groups) {
-    const n = g.colonists.length;
-    if (n === 0) continue;
-    if (!largest || n > largest.colonists.length) largest = g;
-    if (!smallest || n < smallest.colonists.length) smallest = g;
-  }
-  if (!largest || !smallest) return;
-  if (largest.id === smallest.id) return;
-  if (largest.colonists.length <= WAR_DECLARE_POP_THRESHOLD) return;
-  declareWar(game, largest, smallest);
-}
-
-function declareWar(game, attacker, defender) {
-  attacker.warWith = defender.id;
-  attacker.warDeclaredAt = game.clock;
-  attacker.warStartPop = attacker.colonists.length;
-  attacker.warRole = 'attacker';
-  attacker.surrendered = false;
-  defender.warWith = attacker.id;
-  defender.warDeclaredAt = game.clock;
-  defender.warStartPop = defender.colonists.length;
-  defender.warRole = 'defender';
-  defender.surrendered = false;
-  // Big popup payload — main.js consumes it.
-  game._warDeclaration = {
-    attacker: attacker.id,
-    defender: defender.id,
-    attackerName: String.fromCharCode(65 + attacker.id),
-    defenderName: String.fromCharCode(65 + defender.id),
-    at: game.clock,
-  };
-  // Activity log.
-  game._pushLog?.({
-    icon: 'swords',
-    text: t('log.warDeclared', {
-      attacker: String.fromCharCode(65 + attacker.id),
-      defender: String.fromCharCode(65 + defender.id),
-    }),
-    cls: 'log-warn',
-  });
-  // Attacker cancels all current tasks and marches toward the defender's
-  // residential center. Defenders keep their normal autonomy until a
-  // hostile gets in range; the engagement autonomy in autonomy.js
-  // picks targets opportunistically.
-  const target = colonyCenter(game, defender.id);
-  if (!target) return;
-  for (const c of game.colonists) {
-    if (c.groupId !== attacker.id) continue;
-    if (c.currentTask) {
-      c.currentTask.status = 'failed';
-      c.currentTask = null;
-    }
-    c.state = 'idle';
-    c.attackTargetName = null;
-    const task = createTask(TaskType.MARCH, target.x, target.y, { assignee: c.name, groupId: attacker.id });
-    game.taskQueue.push(task);
-  }
 }
 
 function maybeRestockAnimals(game) {

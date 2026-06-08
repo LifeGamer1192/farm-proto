@@ -41,11 +41,12 @@ import {
   MALNUTRITION_MOOD_DROP,
   MALNUTRITION_SKILL_XP_MULT,
   MALNUTRITION_HP_REGEN_MULT,
-  BOW_RANGE,
-  BOW_FIRE_INTERVAL,
   COMBAT_MOVE_SPEED_MULT,
 } from '../config.js';
-import { canShoot, bowDamage, chebyshev, nearestEnemyFor } from '../combat.js';
+// α37 combat — the per-tick ATTACK driver moved to systems/combatSystem
+// so all combat logic grows in one module. Colonist.update just calls
+// tickAttack when the task is ATTACK and the path has been walked.
+import { tickAttack as csTickAttack } from '../systems/combatSystem.js';
 
 // α30: nutrient bucket keys, kept in this fixed order so the UI and the
 // stage-detection helper agree on iteration.
@@ -162,71 +163,6 @@ function _nearestLandNeighbor(map, wx, wy, colonist) {
     if (d < bestD) { bestD = d; best = { x, y }; }
   }
   return best;
-}
-
-// α37: ATTACK task tick. Called when the colonist has arrived at the
-// attack waypoint (path empty) and is ready to either fire or reposition.
-//
-// Flow:
-//   1. Resolve the named target. Missing / dead → end task.
-//   2. If our group's war ended → end task (autonomy will route us home).
-//   3. If target moved out of BOW_RANGE → reroute path one tile closer
-//      to the target; the next tick walks down it (at COMBAT_MOVE_SPEED_MULT
-//      speed since the state is still attacking).
-//   4. If in range AND cooldown elapsed → fire one shot via game.fireShot,
-//      which emits the arrow effect, applies damage, and stamps lastShotAt.
-//   5. Otherwise idle — wait out the BOW_FIRE_INTERVAL.
-function _tickAttack(c, task, game) {
-  const target = task._target || _findColonistByName(game, c.attackTargetName);
-  if (!target || target.dead) {
-    c.attackTargetName = null;
-    task.status = 'done';
-    c.state = 'idle';
-    return;
-  }
-  // Re-bind in case the original task pointer drifted.
-  task._target = target;
-
-  const myGrp = game.groups?.[c.groupId];
-  if (!myGrp || myGrp.warWith == null || myGrp.warWith !== target.groupId) {
-    // War ended or target switched group somehow — drop the engagement.
-    c.attackTargetName = null;
-    task.status = 'done';
-    c.state = 'idle';
-    return;
-  }
-
-  c.state = 'attacking';
-  const range = chebyshev(c, target);
-  if (range > BOW_RANGE) {
-    // Step one tile closer to the target. Routing through findPathStaged
-    // keeps the colonist on walkable land. The next tick walks the new
-    // path. If unreachable, the colonist fails the task gracefully.
-    const anchor = c._anchor();
-    const goal = { x: target.tileX, y: target.tileY };
-    const cache = game.map?.pathCache;
-    const path = cache
-      ? cache.findCached(game.map, anchor, goal, true /* fallback ok */)
-      : findPathStaged(game.map, anchor, goal);
-    if (path && path.length > 0) {
-      c.path = [anchor, ...path];
-    } else {
-      task.status = 'failed';
-      c.state = 'idle';
-    }
-    return;
-  }
-  // In range — fire if cooldown elapsed.
-  if (game.clock - c.lastShotAt >= BOW_FIRE_INTERVAL) {
-    game.fireShot?.(c, target);
-    c.lastShotAt = game.clock;
-  }
-}
-
-function _findColonistByName(game, name) {
-  if (!name) return null;
-  for (const c of game.colonists) if (c.name === name && !c.dead) return c;
-  return null;
 }
 
 export class Colonist {
@@ -566,7 +502,7 @@ export class Colonist {
     }
     // α37: ATTACK task — driven by BOW_FIRE_INTERVAL, not WORK_PHASE.
     if (task.type === TaskType.ATTACK && game) {
-      _tickAttack(this, task, game);
+      csTickAttack(game, this, task);
       return;
     }
     const baseDur = WORK_PHASE[task.type] || 0;

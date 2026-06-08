@@ -52,8 +52,15 @@ import {
 import { generateMap, mapStats } from './map/mapGenerator.js';
 import { TileType } from './map/tile.js';
 import { seafoodYield } from './seafood.js';
-import { bowDamage, colonyCenter } from './combat.js';
-import { SURRENDER_LOSS_FRACTION, SURRENDER_FOOD_TRIBUTE } from './config.js';
+// α37 combat orchestration lives in systems/combatSystem.js; game.js
+// only forwards to it so combat features can grow without touching
+// the main game class.
+import {
+  fireShot as csFireShot,
+  updateCombatEffects as csUpdateCombatEffects,
+  checkSurrender as csCheckSurrender,
+  enqueueAttackTask as csEnqueueAttackTask,
+} from './systems/combatSystem.js';
 import { Camera } from './render/camera.js';
 import { Renderer } from './render/renderer.js';
 import { Colonist } from './entities/colonist.js';
@@ -784,56 +791,9 @@ export class Game {
       }
       return null;
     }
-    // α37: manual ATTACK order — the player clicked a tile containing
-    // an enemy colonist. Validate target, declare mutual war between
-    // the attacker group and the target's group, and queue an ATTACK
-    // task for every colonist of the attacker group.
+    // α37: manual ATTACK order — delegated entirely to combatSystem.
     if (type === TaskType.ATTACK) {
-      const target = this.colonists.find((c) => !c.dead && c.tileX === x && c.tileY === y);
-      if (!target) return 'err.noTarget';
-      const attackerGid = assignee
-        ? this.colonists.find((c) => c.name === assignee)?.groupId
-        : scopeGid;
-      if (attackerGid == null) return 'err.noGroup';
-      if (target.groupId === attackerGid) return 'err.friendlyFire';
-      const aGrp = this.groups[attackerGid];
-      const dGrp = this.groups[target.groupId];
-      if (!aGrp || !dGrp) return 'err.noGroup';
-      // Mutual war declaration (idempotent — if already at war it just
-      // refreshes the engagement against this specific target).
-      if (aGrp.warWith !== dGrp.id || dGrp.warWith !== aGrp.id) {
-        aGrp.warWith = dGrp.id;
-        aGrp.warDeclaredAt = this.clock;
-        aGrp.warStartPop = aGrp.colonists.length;
-        aGrp.warRole = 'attacker';
-        aGrp.surrendered = false;
-        dGrp.warWith = aGrp.id;
-        dGrp.warDeclaredAt = this.clock;
-        dGrp.warStartPop = dGrp.colonists.length;
-        dGrp.warRole = 'defender';
-        dGrp.surrendered = false;
-        this._warDeclaration = {
-          attacker: aGrp.id, defender: dGrp.id,
-          attackerName: String.fromCharCode(65 + aGrp.id),
-          defenderName: String.fromCharCode(65 + dGrp.id),
-          at: this.clock,
-        };
-      }
-      const attackers = assignee
-        ? [this.colonists.find((c) => c.name === assignee)]
-        : this.colonists.filter((c) => c.groupId === attackerGid);
-      for (const c of attackers) {
-        if (!c || c.dead) continue;
-        c.attackTargetName = target.name;
-        const t = createTask(TaskType.ATTACK, x, y, {
-          assignee: c.name,
-          targetName: target.name,
-        });
-        t.groupId = c.groupId;
-        t._target = target;
-        this.taskQueue.push(t);
-      }
-      return null;
+      return csEnqueueAttackTask(this, x, y, { assignee, scopeGid });
     }
     if (type === TaskType.HARVEST && !tile.plant) return 'err.noPlant';
     if (type === TaskType.SOW) {
@@ -1911,154 +1871,12 @@ export class Game {
   _updateForest(dt)       { return esUpdateForest(this, dt); }
   _updateSeafood(dt)      { return esUpdateSeafood(this, dt); }
 
-  /**
-   * α37 combat — apply a single bow shot from `attacker` to `target`.
-   * Emits the arrow effect, applies HP damage, stamps lastDamage so the
-   * post-mortem can attribute the kill, and triggers a surrender check
-   * on the target's side if the kill changes the loss ratio.
-   */
-  fireShot(attacker, target) {
-    if (!attacker || !target || target.dead) return;
-    const dmg = bowDamage(this, attacker, target);
-    target.health = Math.max(0, target.health - dmg);
-    target.lastDamage = 'combat';
-    // Visual effects — the renderer drains these over time.
-    this._arrows.push({
-      fromX: attacker.x, fromY: attacker.y,
-      toX: target.x, toY: target.y,
-      bornAt: this.clock,
-    });
-    this._damageNumbers.push({
-      x: target.x, y: target.y,
-      n: Math.round(dmg * 100),
-      bornAt: this.clock,
-    });
-    // Activity-log line, attributed to the attacker's group.
-    this._pushLog({
-      icon: 'swords',
-      text: t('log.bowHit', { attacker: attacker.name, target: target.name, n: Math.round(dmg * 100) }),
-      groupId: attacker.groupId,
-      cls: 'log-warn',
-    });
-  }
-
-  /**
-   * α37 combat — decay the transient effect lists every tick. Arrows
-   * fade after 0.4 sec, damage numbers after 1.2 sec.
-   */
-  _updateCombatEffects() {
-    const now = this.clock;
-    if (this._arrows.length > 0) {
-      this._arrows = this._arrows.filter((a) => now - a.bornAt < 0.4);
-    }
-    if (this._damageNumbers.length > 0) {
-      this._damageNumbers = this._damageNumbers.filter((d) => now - d.bornAt < 1.2);
-    }
-  }
-
-  /**
-   * α37 combat — surrender check. Walks every group at war and ends the
-   * war as soon as one side has lost SURRENDER_LOSS_FRACTION of its
-   * at-war-start population. The loser hands SURRENDER_FOOD_TRIBUTE of
-   * each edible storage item to the victor, then both sides return home
-   * via MARCH tasks.
-   */
-  _checkSurrender() {
-    for (const grp of this.groups) {
-      if (grp.warWith == null) continue;
-      if (grp.surrendered) continue;
-      if (grp.warStartPop <= 0) continue;
-      const lost = grp.warStartPop - grp.colonists.length;
-      if (lost / grp.warStartPop < SURRENDER_LOSS_FRACTION) continue;
-      // This side gives up. Transfer tribute + close out both groups.
-      const winner = this.groups[grp.warWith];
-      this._transferTribute(grp, winner);
-      this._endWar(grp, winner, /* winnerId */ winner?.id ?? null);
-    }
-  }
-
-  _transferTribute(loser, winner) {
-    if (!winner) return;
-    for (const id of STOCKPILE_ITEMS) {
-      if (id === 'wood') continue;
-      let total = loser.storage?.[id] || 0;
-      for (const sp of this.stockpiles) {
-        if (sp.ownerId !== loser.id) continue;
-        total += sp.items?.[id] || 0;
-      }
-      if (total <= 0) continue;
-      const give = Math.floor(total * SURRENDER_FOOD_TRIBUTE);
-      if (give <= 0) continue;
-      // Drain proportionally from each source.
-      let remaining = give;
-      const sourceOnHand = loser.storage?.[id] || 0;
-      const takeFromOnHand = Math.min(remaining, sourceOnHand);
-      if (takeFromOnHand > 0) {
-        loser.storage[id] -= takeFromOnHand;
-        remaining -= takeFromOnHand;
-      }
-      if (remaining > 0) {
-        for (const sp of this.stockpiles) {
-          if (sp.ownerId !== loser.id) continue;
-          const have = sp.items?.[id] || 0;
-          const take = Math.min(remaining, have);
-          if (take > 0) {
-            sp.items[id] -= take;
-            remaining -= take;
-            if (remaining <= 0) break;
-          }
-        }
-      }
-      // Deposit to the winner's on-hand store. Hauler tasks will move
-      // it into warehouses later via the standard STORE autonomy.
-      winner.storage[id] = (winner.storage[id] || 0) + give;
-    }
-  }
-
-  _endWar(loserOrAny, otherOrAny) {
-    // Symmetrically clear war state on both groups, regardless of who
-    // surrendered (the surrender call passes the loser first).
-    const a = loserOrAny;
-    const b = otherOrAny;
-    for (const g of [a, b]) {
-      if (!g) continue;
-      g.warWith = null;
-      g.warDeclaredAt = -1;
-      g.warStartPop = 0;
-      g.warRole = null;
-      g.surrendered = false;
-    }
-    // Send everyone home: cancel current tasks, push a MARCH task
-    // toward the group's residential center.
-    for (const g of [a, b]) {
-      if (!g) continue;
-      const center = colonyCenter(this, g.id);
-      if (!center) continue;
-      for (const c of this.colonists) {
-        if (c.groupId !== g.id) continue;
-        c.attackTargetName = null;
-        if (c.currentTask) {
-          c.currentTask.status = 'failed';
-          c.currentTask = null;
-          c.state = 'idle';
-        }
-        const task = createTask(TaskType.MARCH, center.x, center.y, { assignee: c.name, groupId: g.id });
-        this.taskQueue.push(task);
-      }
-    }
-    // Activity-log: report the outcome with named groups.
-    if (a && b) {
-      this._pushLog({
-        icon: 'trophy',
-        text: t('log.surrendered', {
-          loser: String.fromCharCode(65 + a.id),
-          winner: String.fromCharCode(65 + b.id),
-        }),
-        cls: 'log-warn',
-      });
-    }
-  }
-
+  // α37 combat — every mutation lives in systems/combatSystem.js. These
+  // tiny forwarders keep Game's existing public surface intact while
+  // the actual logic grows in one place.
+  fireShot(attacker, target)  { return csFireShot(this, attacker, target); }
+  _updateCombatEffects()      { return csUpdateCombatEffects(this); }
+  _checkSurrender()           { return csCheckSurrender(this); }
   consumeWarDeclaration() {
     const d = this._warDeclaration;
     this._warDeclaration = null;
