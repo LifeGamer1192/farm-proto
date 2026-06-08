@@ -69,6 +69,33 @@ function shadeRGB(str, mul) {
   return `rgb(${c[0]},${c[1]},${c[2]})`;
 }
 
+// α36 perf: parse-once / multiply / format hot path for the per-tile
+// slope shade. Caches by (color, shade-bucket) so a 100×100 map's
+// per-tile fill stops reparsing the same "rgb(120,140,80)" 10,000
+// times a frame.
+const _shadeCache = new Map();
+function fastShade(color, mul) {
+  // Bucket shade to 0.02 steps so we share cache entries between tiles
+  // with near-identical slopes.
+  const mulBucket = Math.round(mul * 50) / 50;
+  const key = color + '|' + mulBucket;
+  let v = _shadeCache.get(key);
+  if (v !== undefined) return v;
+  // Parse "rgb(r,g,b)" once.
+  const open = color.indexOf('(');
+  const close = color.indexOf(')');
+  if (open < 0 || close < 0) { _shadeCache.set(key, color); return color; }
+  const parts = color.slice(open + 1, close).split(',');
+  const r = Math.max(0, Math.min(255, (parseInt(parts[0], 10) * mulBucket) | 0));
+  const g = Math.max(0, Math.min(255, (parseInt(parts[1], 10) * mulBucket) | 0));
+  const b = Math.max(0, Math.min(255, (parseInt(parts[2], 10) * mulBucket) | 0));
+  v = `rgb(${r},${g},${b})`;
+  // Stop the cache from growing forever on long sessions / many seeds.
+  if (_shadeCache.size > 4096) _shadeCache.clear();
+  _shadeCache.set(key, v);
+  return v;
+}
+
 function mix(c1, c2, t) {
   const r = Math.round(lerp(c1[0], c2[0], t));
   const g = Math.round(lerp(c1[1], c2[1], t));
@@ -175,117 +202,122 @@ export class Renderer {
     this._visMinY = minY;
     this._visMaxY = maxY;
 
-    // --- tiles (with terrain texture and tilled-soil furrows) ---
-    // α35: tiles draw as 2:1 iso diamonds. Iteration stays row-major
-    // (mapY outer, mapX inner) — this naturally gives back-to-front order
-    // in iso so further tiles get covered by closer ones. Each tile's
-    // four diamond corners come from projecting its world corners.
+    // α36 perf: pre-compute corner projection + slope shade ONCE for the
+    // visible region into typed arrays, then loop without re-doing any
+    // of that work. Killed the redundant second pass for grid lines
+    // (they were a barely-visible rgba(0,0,0,0.10) overlay anyway), and
+    // collapsed shadeRGB (regex-based!) to direct integer math.
     //
-    // Phase 2: each corner's lift uses the *average elevation of the four
-    // tiles that share it* (clamped at the map edge). Adjacent diamonds
-    // therefore agree on shared corner positions — terrain looks like a
-    // continuous heightmap instead of mismatched plates.
-    const cornerElev = (cx, cy) => {
-      let sum = 0;
-      let n = 0;
-      for (const [dx, dy] of [[-1, -1], [0, -1], [-1, 0], [0, 0]]) {
-        const nx = cx + dx, ny = cy + dy;
-        if (nx >= 0 && nx < map.cols && ny >= 0 && ny < map.rows) {
-          sum += map.tiles[ny][nx].elevation || 0;
-          n++;
+    // The corner grid is one wider/taller than the tile grid so every
+    // tile can index its four corners directly.
+    const cxN = maxX - minX + 2; // corners per row
+    const ryN = maxY - minY + 2; // corner rows
+    const cornerX = new Float32Array(cxN * ryN);
+    const cornerY = new Float32Array(cxN * ryN);
+    const camCx = camera.x + camera.viewCols / 2;
+    const camCy = camera.y + camera.viewRows / 2;
+    const projTW2 = ts * ISO_TILE_W_RATIO * 0.5;
+    const projTH2 = ts * ISO_TILE_H_RATIO * 0.5;
+    const elevPx = ts * 1.0; // ISO_ELEV_RATIO inline (1.0)
+    const halfW = cw * 0.5;
+    const halfH = ch * 0.5;
+    // Corner elevation: average of the 4 tiles meeting at (wx, wy).
+    const tilesArr = map.tiles;
+    const mapCols = map.cols;
+    const mapRows = map.rows;
+    for (let cy = 0; cy < ryN; cy++) {
+      const wy = minY + cy;
+      for (let cx = 0; cx < cxN; cx++) {
+        const wx = minX + cx;
+        let sum = 0, n = 0;
+        // 4 tiles sharing corner (wx, wy): (wx-1,wy-1), (wx,wy-1), (wx-1,wy), (wx,wy)
+        if (wx - 1 >= 0 && wy - 1 >= 0 && wx - 1 < mapCols && wy - 1 < mapRows) {
+          sum += tilesArr[wy - 1][wx - 1].elevation || 0; n++;
         }
+        if (wx >= 0 && wy - 1 >= 0 && wx < mapCols && wy - 1 < mapRows) {
+          sum += tilesArr[wy - 1][wx].elevation || 0; n++;
+        }
+        if (wx - 1 >= 0 && wy >= 0 && wx - 1 < mapCols && wy < mapRows) {
+          sum += tilesArr[wy][wx - 1].elevation || 0; n++;
+        }
+        if (wx >= 0 && wy >= 0 && wx < mapCols && wy < mapRows) {
+          sum += tilesArr[wy][wx].elevation || 0; n++;
+        }
+        const elev = n > 0 ? sum / n : 0;
+        // Inlined worldToScreen.
+        const dx = wx - camCx;
+        const dy = wy - camCy;
+        const idx = cy * cxN + cx;
+        cornerX[idx] = (dx - dy) * projTW2 + halfW;
+        cornerY[idx] = (dx + dy) * projTH2 + halfH - elev * elevPx;
       }
-      return n > 0 ? sum / n : 0;
-    };
-    // Phase 2: lit-vs-shaded multiplier from neighbour slope. Treat each
-    // tile as having a tilt deduced from (east − west) and (south − north)
-    // elevation deltas, dotted with a sunlight vector pointing into the
-    // upper-left. Multiplier clamped to [0.65, 1.15] to avoid flattening
-    // the palette in either direction.
-    const slopeShade = (mx, my) => {
-      const here = map.tiles[my][mx].elevation || 0;
-      const elev = (x, y) => {
-        if (x < 0 || x >= map.cols || y < 0 || y >= map.rows) return here;
-        return map.tiles[y][x].elevation || 0;
-      };
-      const dEdgeX = elev(mx + 1, my) - elev(mx - 1, my);
-      const dEdgeY = elev(mx, my + 1) - elev(mx, my - 1);
-      // Light from upper-left → favours tiles whose slope rises toward
-      // upper-left (negative dx, negative dy in world → "uphill toward
-      // viewer-upper-left"). Sign chosen so a north-west-facing slope
-      // brightens.
-      const slope = (-dEdgeX - dEdgeY) * 1.5;
-      return Math.max(0.65, Math.min(1.15, 1.0 + slope * 0.6));
-    };
+    }
+    // Pre-compute slopeShade per tile too (single pass over visible
+    // tiles, looking at +-1 neighbour elevations).
+    const tileN = (maxX - minX + 1) * (maxY - minY + 1);
+    const shadeArr = new Float32Array(tileN);
+    for (let ty = minY; ty <= maxY; ty++) {
+      for (let tx = minX; tx <= maxX; tx++) {
+        const here = tilesArr[ty][tx].elevation || 0;
+        const eW = tx - 1 >= 0      ? (tilesArr[ty][tx - 1].elevation || 0) : here;
+        const eE = tx + 1 < mapCols ? (tilesArr[ty][tx + 1].elevation || 0) : here;
+        const eN = ty - 1 >= 0      ? (tilesArr[ty - 1][tx].elevation || 0) : here;
+        const eS = ty + 1 < mapRows ? (tilesArr[ty + 1][tx].elevation || 0) : here;
+        const slope = (-(eE - eW) - (eS - eN)) * 1.5;
+        const shade = Math.max(0.65, Math.min(1.15, 1.0 + slope * 0.6));
+        shadeArr[(ty - minY) * (maxX - minX + 1) + (tx - minX)] = shade;
+      }
+    }
+    // Tile fill loop: indexes into precomputed cornerX/Y arrays.
+    const xSpan = maxX - minX + 1;
     for (let mapY = minY; mapY <= maxY; mapY++) {
+      const cyTop = mapY - minY;
+      const cyBot = cyTop + 1;
       for (let mapX = minX; mapX <= maxX; mapX++) {
-        const tile = map.tiles[mapY][mapX];
-        const eTop    = cornerElev(mapX,     mapY);
-        const eRight  = cornerElev(mapX + 1, mapY);
-        const eBottom = cornerElev(mapX + 1, mapY + 1);
-        const eLeft   = cornerElev(mapX,     mapY + 1);
-        const top    = proj(mapX,     mapY,     eTop);
-        const right  = proj(mapX + 1, mapY,     eRight);
-        const bottom = proj(mapX + 1, mapY + 1, eBottom);
-        const left   = proj(mapX,     mapY + 1, eLeft);
-        const shade = slopeShade(mapX, mapY);
-        ctx.fillStyle = shade === 1.0 ? colorOf(tile) : shadeRGB(colorOf(tile), shade);
+        const tile = tilesArr[mapY][mapX];
+        const cxL = mapX - minX;
+        const cxR = cxL + 1;
+        const iTop    = cyTop * cxN + cxL;
+        const iRight  = cyTop * cxN + cxR;
+        const iBottom = cyBot * cxN + cxR;
+        const iLeft   = cyBot * cxN + cxL;
+        const topX = cornerX[iTop],    topY = cornerY[iTop];
+        const rgtX = cornerX[iRight],  rgtY = cornerY[iRight];
+        const botX = cornerX[iBottom], botY = cornerY[iBottom];
+        const lftX = cornerX[iLeft],   lftY = cornerY[iLeft];
+        const shade = shadeArr[(mapY - minY) * xSpan + (mapX - minX)];
+        const baseColor = colorOf(tile);
+        ctx.fillStyle = shade === 1.0 ? baseColor : fastShade(baseColor, shade);
         ctx.beginPath();
-        ctx.moveTo(top.x, top.y);
-        ctx.lineTo(right.x, right.y);
-        ctx.lineTo(bottom.x, bottom.y);
-        ctx.lineTo(left.x, left.y);
+        ctx.moveTo(topX, topY);
+        ctx.lineTo(rgtX, rgtY);
+        ctx.lineTo(botX, botY);
+        ctx.lineTo(lftX, lftY);
         ctx.closePath();
         ctx.fill();
         if (detailed) {
-          // α35: feed the texture overlay a square anchor at the tile
-          // centre so its fillRect features sit roughly inside the diamond.
-          // Some pixels may extend slightly past the diamond outline — an
-          // acceptable trade-off for Phase 1 (proper iso-clipped textures
-          // are a Phase-3 polish item if needed).
-          const c = proj(mapX + 0.5, mapY + 0.5);
-          this._terrainDetail(tile, map, mapX, mapY, c.x - ts / 2, c.y - ts / 2);
+          // Diamond centre = average of 4 corners (free at this point).
+          const ccx = (topX + rgtX + botX + lftX) * 0.25;
+          const ccy = (topY + rgtY + botY + lftY) * 0.25;
+          this._terrainDetail(tile, map, mapX, mapY, ccx - ts / 2, ccy - ts / 2);
         }
         if (tile.tilled && tile.type === TileType.LAND) {
-          // Tilled-soil furrows: 3 parallel iso-aligned lines inside the
-          // diamond, running along the (mapX) world axis.
           ctx.strokeStyle = 'rgba(60,40,20,0.45)';
           ctx.lineWidth = 1;
           ctx.beginPath();
           for (let f = 1; f <= 3; f++) {
-            const t = f / 4;
-            const aL = { x: lerp(left.x, top.x, t), y: lerp(left.y, top.y, t) };
-            const aR = { x: lerp(bottom.x, right.x, t), y: lerp(bottom.y, right.y, t) };
-            ctx.moveTo(aL.x, aL.y);
-            ctx.lineTo(aR.x, aR.y);
+            const t = f * 0.25;
+            ctx.moveTo(lftX + (topX - lftX) * t, lftY + (topY - lftY) * t);
+            ctx.lineTo(botX + (rgtX - botX) * t, botY + (rgtY - botY) * t);
           }
           ctx.stroke();
         }
       }
     }
-
-    // --- grid lines (iso diamond outlines) ---
-    // α35: thin diamond outlines, drawn after fills so they overlay all
-    // tiles uniformly. Pulled into a separate loop so the fill phase can
-    // stay a tight inner loop. Corners lift with the same elevation
-    // averaging so grid lines hug the terrain instead of floating.
-    ctx.strokeStyle = 'rgba(0,0,0,0.10)';
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    for (let mapY = minY; mapY <= maxY; mapY++) {
-      for (let mapX = minX; mapX <= maxX; mapX++) {
-        const top    = proj(mapX,     mapY,     cornerElev(mapX,     mapY));
-        const right  = proj(mapX + 1, mapY,     cornerElev(mapX + 1, mapY));
-        const bottom = proj(mapX + 1, mapY + 1, cornerElev(mapX + 1, mapY + 1));
-        const left   = proj(mapX,     mapY + 1, cornerElev(mapX,     mapY + 1));
-        ctx.moveTo(top.x, top.y);
-        ctx.lineTo(right.x, right.y);
-        ctx.lineTo(bottom.x, bottom.y);
-        ctx.lineTo(left.x, left.y);
-        ctx.closePath();
-      }
-    }
-    ctx.stroke();
+    // α36 perf: grid-line pass dropped entirely. The diamond fills
+    // already define their boundaries cleanly because adjacent tiles
+    // share their corner positions exactly; the old rgba(0,0,0,0.10)
+    // overlay was barely visible and cost a whole second iteration.
 
     // --- seasonal + biome tint (alpha 22) ---
     if (scene.seasonTint) {
@@ -392,11 +424,28 @@ export class Renderer {
     }
 
     // --- hovered tile (diamond outline, honouring corner elevations) ---
+    // α36: cornerElev is now precomputed into cornerX/Y above, but the
+    // hover tile is only known per-frame in main and may be outside
+    // the precomputed visible region after a fast pan, so we do the
+    // four corner averages inline here too — cheap, four neighbours
+    // each, and only ever runs once per frame.
     if (hover) {
-      const top    = proj(hover.x,     hover.y,     cornerElev(hover.x,     hover.y));
-      const right  = proj(hover.x + 1, hover.y,     cornerElev(hover.x + 1, hover.y));
-      const bottom = proj(hover.x + 1, hover.y + 1, cornerElev(hover.x + 1, hover.y + 1));
-      const left   = proj(hover.x,     hover.y + 1, cornerElev(hover.x,     hover.y + 1));
+      const _ce = (cx2, cy2) => {
+        let sum = 0, n = 0;
+        for (let dy = -1; dy <= 0; dy++) {
+          for (let dx = -1; dx <= 0; dx++) {
+            const nx = cx2 + dx, ny = cy2 + dy;
+            if (nx >= 0 && nx < map.cols && ny >= 0 && ny < map.rows) {
+              sum += map.tiles[ny][nx].elevation || 0; n++;
+            }
+          }
+        }
+        return n > 0 ? sum / n : 0;
+      };
+      const top    = proj(hover.x,     hover.y,     _ce(hover.x,     hover.y));
+      const right  = proj(hover.x + 1, hover.y,     _ce(hover.x + 1, hover.y));
+      const bottom = proj(hover.x + 1, hover.y + 1, _ce(hover.x + 1, hover.y + 1));
+      const left   = proj(hover.x,     hover.y + 1, _ce(hover.x,     hover.y + 1));
       ctx.strokeStyle = 'rgba(255,255,255,0.85)';
       ctx.lineWidth = 2;
       ctx.beginPath();
@@ -680,28 +729,37 @@ export class Renderer {
         ctx.lineTo(aR.x, aR.y);
         ctx.stroke();
       }
-      // Double door on the SW (front-left) wall — a vertical rectangle.
+      // α36 followup: double door on the SW (front-left) wall, drawn as
+      // a parallelogram that lies flat on the wall plane. The earlier
+      // version used hard-coded (±0.6, ∓0.3) offsets that pointed the
+      // door away from the wall — visually it looked rotated wrong.
+      // The fix uses the wall's actual unit vector (left → front).
       const doorH = wallPx * 0.7;
       const doorBaseX = lerp(pts.left.x, pts.front.x, 0.55);
       const doorBaseY = lerp(pts.left.y, pts.front.y, 0.55);
-      const doorTopX = doorBaseX;
-      const doorTopY = doorBaseY - doorH;
       const doorHalfW = ts * 0.15 * sizeMul;
+      const wDx = pts.front.x - pts.left.x;
+      const wDy = pts.front.y - pts.left.y;
+      const wLen = Math.sqrt(wDx * wDx + wDy * wDy);
+      const wuX = wDx / wLen;
+      const wuY = wDy / wLen;
+      const dx0 = -doorHalfW * wuX, dy0 = -doorHalfW * wuY;
+      const dx1 = +doorHalfW * wuX, dy1 = +doorHalfW * wuY;
       ctx.fillStyle = '#5d3a14';
       ctx.beginPath();
-      ctx.moveTo(doorBaseX - doorHalfW * 0.6, doorBaseY + doorHalfW * 0.3);
-      ctx.lineTo(doorBaseX + doorHalfW * 0.6, doorBaseY - doorHalfW * 0.3);
-      ctx.lineTo(doorTopX + doorHalfW * 0.6, doorTopY - doorHalfW * 0.3);
-      ctx.lineTo(doorTopX - doorHalfW * 0.6, doorTopY + doorHalfW * 0.3);
+      ctx.moveTo(doorBaseX + dx0, doorBaseY + dy0);
+      ctx.lineTo(doorBaseX + dx1, doorBaseY + dy1);
+      ctx.lineTo(doorBaseX + dx1, doorBaseY + dy1 - doorH);
+      ctx.lineTo(doorBaseX + dx0, doorBaseY + dy0 - doorH);
       ctx.closePath();
       ctx.fill();
       ctx.strokeStyle = '#3f2a12';
       ctx.lineWidth = 1;
       ctx.stroke();
-      // Vertical centre split on the door.
+      // Vertical centre split (parallel to the door's height axis).
       ctx.beginPath();
       ctx.moveTo(doorBaseX, doorBaseY);
-      ctx.lineTo(doorTopX, doorTopY);
+      ctx.lineTo(doorBaseX, doorBaseY - doorH);
       ctx.stroke();
       // Pennant on the apex for med / large.
       if (structure !== 'stockpile') {
@@ -740,57 +798,64 @@ export class Renderer {
         roofLit:    '#a05a30',
         roofShaded: '#7a4220',
       });
-      // Door on the SW wall (front-left), centred on the lower edge.
+      // α36 followup: door on the SW wall, drawn as a parallelogram in
+      // the wall plane. Uses the wall's unit vector (left → front)
+      // instead of hard-coded offsets so it lies flat against the wall.
       const doorH = wallPx * 0.7;
       const doorBaseX = lerp(pts.left.x, pts.front.x, 0.55);
       const doorBaseY = lerp(pts.left.y, pts.front.y, 0.55);
-      const doorHalfW = ts * 0.06 * sizeMul;
-      const doorTopX = doorBaseX;
-      const doorTopY = doorBaseY - doorH;
+      const doorHalfW = ts * 0.07 * sizeMul;
+      const swDx = pts.front.x - pts.left.x;
+      const swDy = pts.front.y - pts.left.y;
+      const swLen = Math.sqrt(swDx * swDx + swDy * swDy);
+      const swUx = swDx / swLen, swUy = swDy / swLen;
       ctx.fillStyle = '#4a3018';
       ctx.beginPath();
-      ctx.moveTo(doorBaseX - doorHalfW * 0.6, doorBaseY + doorHalfW * 0.3);
-      ctx.lineTo(doorBaseX + doorHalfW * 0.6, doorBaseY - doorHalfW * 0.3);
-      ctx.lineTo(doorTopX + doorHalfW * 0.6, doorTopY - doorHalfW * 0.3);
-      ctx.lineTo(doorTopX - doorHalfW * 0.6, doorTopY + doorHalfW * 0.3);
+      ctx.moveTo(doorBaseX - doorHalfW * swUx,         doorBaseY - doorHalfW * swUy);
+      ctx.lineTo(doorBaseX + doorHalfW * swUx,         doorBaseY + doorHalfW * swUy);
+      ctx.lineTo(doorBaseX + doorHalfW * swUx,         doorBaseY + doorHalfW * swUy - doorH);
+      ctx.lineTo(doorBaseX - doorHalfW * swUx,         doorBaseY - doorHalfW * swUy - doorH);
       ctx.closePath();
       ctx.fill();
       ctx.strokeStyle = '#2a1808';
       ctx.lineWidth = 1;
       ctx.stroke();
-      // Lit window on the SE (front-right) wall.
-      const winFracX = 0.5; // mid of the wall edge from front to right
-      const winBaseX = lerp(pts.front.x, pts.right.x, winFracX);
-      const winBaseY = lerp(pts.front.y, pts.right.y, winFracX);
-      const winHalf = ts * 0.05 * sizeMul;
-      const winTopX = winBaseX;
-      const winTopY = winBaseY - wallPx * 0.55;
+      // Lit window on the SE (front-right) wall, similarly anchored to
+      // that wall's plane using the (front → right) unit vector.
+      const seDx = pts.right.x - pts.front.x;
+      const seDy = pts.right.y - pts.front.y;
+      const seLen = Math.sqrt(seDx * seDx + seDy * seDy);
+      const seUx = seDx / seLen, seUy = seDy / seLen;
+      const winBaseX = lerp(pts.front.x, pts.right.x, 0.5);
+      const winBaseY = lerp(pts.front.y, pts.right.y, 0.5);
+      const winHalf = ts * 0.06 * sizeMul;
+      const winH = wallPx * 0.5;
       ctx.fillStyle = '#e8c873';
       ctx.beginPath();
-      ctx.moveTo(winBaseX - winHalf * 0.6, winBaseY - winHalf);
-      ctx.lineTo(winBaseX + winHalf * 0.6, winBaseY - winHalf * 0.3);
-      ctx.lineTo(winTopX + winHalf * 0.6, winTopY - winHalf * 0.3);
-      ctx.lineTo(winTopX - winHalf * 0.6, winTopY - winHalf);
+      ctx.moveTo(winBaseX - winHalf * seUx, winBaseY - winHalf * seUy - winH * 0.2);
+      ctx.lineTo(winBaseX + winHalf * seUx, winBaseY + winHalf * seUy - winH * 0.2);
+      ctx.lineTo(winBaseX + winHalf * seUx, winBaseY + winHalf * seUy - winH);
+      ctx.lineTo(winBaseX - winHalf * seUx, winBaseY - winHalf * seUy - winH);
       ctx.closePath();
       ctx.fill();
       ctx.strokeStyle = '#5a3a1e';
       ctx.stroke();
-      // Extra windows under the eave on the SW wall (med + large).
+      // Extra windows along the SW wall eave for med / large variants.
       if (structure !== 'hut') {
         const dots = structure === 'hut_large' ? 3 : 2;
+        const wH = wallPx * 0.35;
+        const wHalf = ts * 0.045 * sizeMul;
         for (let i = 0; i < dots; i++) {
           const t = (i + 1) / (dots + 1);
           const wBaseX = lerp(pts.left.x, pts.front.x, t);
           const wBaseY = lerp(pts.left.y, pts.front.y, t);
-          const wTopX = wBaseX;
-          const wTopY = wBaseY - wallPx * 0.4;
-          const halfW = ts * 0.04 * sizeMul;
+          const eaveOffsetY = wallPx * 0.15; // tuck under the eave
           ctx.fillStyle = '#e8c873';
           ctx.beginPath();
-          ctx.moveTo(wBaseX - halfW * 0.6, wBaseY - halfW);
-          ctx.lineTo(wBaseX + halfW * 0.6, wBaseY - halfW * 0.3);
-          ctx.lineTo(wTopX + halfW * 0.6, wTopY - halfW * 0.3);
-          ctx.lineTo(wTopX - halfW * 0.6, wTopY - halfW);
+          ctx.moveTo(wBaseX - wHalf * swUx, wBaseY - wHalf * swUy - eaveOffsetY - wH);
+          ctx.lineTo(wBaseX + wHalf * swUx, wBaseY + wHalf * swUy - eaveOffsetY - wH);
+          ctx.lineTo(wBaseX + wHalf * swUx, wBaseY + wHalf * swUy - eaveOffsetY);
+          ctx.lineTo(wBaseX - wHalf * swUx, wBaseY - wHalf * swUy - eaveOffsetY);
           ctx.closePath();
           ctx.fill();
           ctx.stroke();

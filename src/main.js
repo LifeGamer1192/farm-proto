@@ -2023,14 +2023,37 @@ function tileAt(clientX, clientY) {
   const { rect, scaleX, scaleY } = canvasMetrics();
   const px = (clientX - rect.left) * scaleX;
   const py = (clientY - rect.top) * scaleY;
-  // α35: inverse of the iso projection in src/render/camera.js#worldToScreen.
-  // Ignores elevation — a click on a lifted tile resolves to the flat
-  // ground tile under it, which is intentional (cheap + predictable).
-  const w = screenToWorld(px, py, game.camera, game.tileSize, canvas.width, canvas.height);
-  const x = Math.floor(w.x);
-  const y = Math.floor(w.y);
-  if (x < 0 || y < 0 || x >= GRID_COLS || y >= GRID_ROWS) return null;
-  return { x, y };
+  // α36 followup: elevation-aware inverse. The plain inverse maps the
+  // click as if the ground were flat — fine on flat plains, but on a
+  // lifted mountain tile the visible diamond sits high on screen, so
+  // the flat inverse resolves to the tile BEHIND it. We fix by
+  // iterating: start with the flat guess, look up that tile's
+  // elevation, add the elevation lift to the click's effective screen
+  // Y, re-do the flat inverse, repeat. Converges in a handful of
+  // iterations even with the most aggressive peaks.
+  const cam = game.camera;
+  const ts = game.tileSize;
+  const elevPx = ts * 1.0; // matches ISO_ELEV_RATIO in camera.js
+  let lastX = -999, lastY = -999;
+  let adjY = py;
+  for (let i = 0; i < 6; i++) {
+    const w = screenToWorld(px, adjY, cam, ts, canvas.width, canvas.height);
+    const x = Math.floor(w.x);
+    const y = Math.floor(w.y);
+    if (x === lastX && y === lastY) break;
+    lastX = x;
+    lastY = y;
+    // Look up the elevation of the candidate tile (clamped to map).
+    const cx = Math.max(0, Math.min(GRID_COLS - 1, x));
+    const cy = Math.max(0, Math.min(GRID_ROWS - 1, y));
+    const elev = game.map?.tiles?.[cy]?.[cx]?.elevation || 0;
+    // Compensate: the click was at the LIFTED screen Y; to find the
+    // ground tile the click visually points to, re-project as if the
+    // click were at (px, py + elev * elevPx).
+    adjY = py + elev * elevPx;
+  }
+  if (lastX < 0 || lastY < 0 || lastX >= GRID_COLS || lastY >= GRID_ROWS) return null;
+  return { x: lastX, y: lastY };
 }
 
 function describePlant(plant) {
