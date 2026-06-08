@@ -292,7 +292,7 @@ const STRINGS = {
     'crop.shrimp': 'Shrimp',
     'crop.crab': 'Crab',
     'crop.seaweed': 'Seaweed',
-    'crop.eel': 'Eel',
+    'crop.salmon': 'Salmon',
     'crop.lakeShrimp': 'Lake shrimp',
     // α34 — seafood dishes (hearth)
     'crop.grilledFish': 'Grilled fish',
@@ -300,11 +300,12 @@ const STRINGS = {
     'crop.clamChowder': 'Clam chowder',
     'crop.shrimpTempura': 'Shrimp tempura',
     'crop.crabBoil': 'Crab boil',
-    'crop.eelKabayaki': 'Glazed eel',
+    'crop.grilledSalmon': 'Grilled salmon',
     'crop.seaweedSalad': 'Seaweed salad',
     'crop.sushi': 'Sushi',
     // α34 — seafood workshop preservation
     'crop.driedFish': 'Dried fish',
+    'crop.smokedSalmon': 'Smoked salmon',
     'crop.driedSeaweed': 'Dried seaweed',
     'crop.saltedClams': 'Salted clams',
     // α34 — tier 2 seafood banquet
@@ -964,7 +965,7 @@ const STRINGS = {
     'crop.shrimp': 'エビ',
     'crop.crab': 'カニ',
     'crop.seaweed': '海藻',
-    'crop.eel': 'うなぎ',
+    'crop.salmon': 'サーモン',
     'crop.lakeShrimp': 'テナガエビ',
     // α34 — 海産料理（かまど）
     'crop.grilledFish': '焼き魚',
@@ -972,11 +973,12 @@ const STRINGS = {
     'crop.clamChowder': 'クラムチャウダー',
     'crop.shrimpTempura': 'エビの天ぷら',
     'crop.crabBoil': 'カニ茹で',
-    'crop.eelKabayaki': 'うなぎの蒲焼き',
+    'crop.grilledSalmon': 'サーモンのグリル',
     'crop.seaweedSalad': '海藻サラダ',
     'crop.sushi': '寿司',
     // α34 — 海産保存食（工房）
     'crop.driedFish': '干物',
+    'crop.smokedSalmon': 'スモークサーモン',
     'crop.driedSeaweed': '乾燥海藻',
     'crop.saltedClams': '塩漬け貝',
     // α34 — 海鮮宴会

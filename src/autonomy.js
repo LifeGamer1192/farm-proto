@@ -678,7 +678,22 @@ export function pickAutonomousTask(game, colonist) {
       }
     }
   }
-  // 7. Hunt first when this colony's own stores run low (I2). Done
+  // 7a. α34 followup: FISH whenever there's a catchable water tile
+  // nearby. The previous "only when food is low" gate almost never
+  // fired in survival tests because by the time food/head dropped
+  // below the hunt threshold, the colony was already in a death
+  // spiral. Instead we treat the shoreline as a standing opportunity:
+  // if water with a catch is within AUTO_HUNT_RANGE and the
+  // colonist's on-hand isn't already full, go fish. Other priorities
+  // (harvest / sow / cook) still run before this branch, so fishing
+  // never starves the farm or the kitchen.
+  if (game.autoHunt && !onHandFull) {
+    const sf = game._nearestSeafoodFor?.(colonist, AUTO_HUNT_RANGE);
+    if (sf && !game._tileClaimed(sf.x, sf.y)) {
+      return createTask(TaskType.FISH, sf.x, sf.y);
+    }
+  }
+  // 7b. Hunt next when this colony's own stores run low (I2). Done
   // before infra and farm work so colonists don't build themselves
   // into starvation. The food/head check is per-group — a Colony C
   // sitting on 4.8 food/head no longer gets masked by Colony B's
@@ -691,14 +706,6 @@ export function pickAutonomousTask(game, colonist) {
       const a = game._animalNear(colonist.tileX, colonist.tileY, AUTO_HUNT_RANGE, colonist);
       if (a && !game._tileClaimed(a.tileX, a.tileY)) {
         return createTask(TaskType.HUNT, a.tileX, a.tileY, { animalId: a.id });
-      }
-      // α33: if no animal is in range, scan for a nearby seafood tile
-      // (water tile with a seafood marker, reachable from a land neighbour).
-      // Fishing pairs naturally with hunting as the "go get protein when
-      // crops aren't enough" path.
-      const sf = game._nearestSeafoodFor?.(colonist, AUTO_HUNT_RANGE);
-      if (sf && !game._tileClaimed(sf.x, sf.y)) {
-        return createTask(TaskType.FISH, sf.x, sf.y);
       }
     }
   }

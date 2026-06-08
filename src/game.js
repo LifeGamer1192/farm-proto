@@ -1038,7 +1038,7 @@ export class Game {
       // updateSeafood (eventSystem) repopulates it after SEAFOOD_REGROW_TIME.
       //
       // α34: yield is per-species (baseYield) × seasonal multiplier.
-      // Fish peak in spring/summer, eel in autumn, seaweed in summer,
+      // Fish peak in spring/summer, salmon in spring + autumn, seaweed in summer,
       // clams stable — see SEAFOOD_TYPES in seafood.js.
       const p = tile.plant;
       if (p && p.kind === 'seafood' && p.seafoodId) {

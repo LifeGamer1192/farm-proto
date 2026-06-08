@@ -157,7 +157,9 @@ export const RECIPES = [
   { id: 'clamChowder',  tier: 1, station: 'hearth', kind: 'cook', ingredients: { clam: 2, potato: 1, onion: 1 }, out: 4, nutrition: 0.70, processBias: bias({ mul: { vitamin: 0.85 }, add: { fat: 0.05 } }) },
   { id: 'shrimpTempura',tier: 1, station: 'hearth', kind: 'cook', ingredients: { shrimp: 2, wheat: 1 },         out: 3, nutrition: 0.65, processBias: bias({ mul: { vitamin: 0.75 }, add: { fat: 0.10 } }) },
   { id: 'crabBoil',     tier: 1, station: 'hearth', kind: 'cook', ingredients: { crab: 2, garlic: 1 },          out: 3, nutrition: 0.75, processBias: bias({ mul: { vitamin: 0.85 } }) },
-  { id: 'eelKabayaki',  tier: 1, station: 'hearth', kind: 'cook', ingredients: { eel: 2, soybean: 1 },          out: 3, nutrition: 0.80, processBias: bias({ mul: { vitamin: 0.85 }, add: { fat: 0.10 } }) },
+  // α34 followup: grilled salmon replaces the eel kabayaki — same role
+  // (fatty river-fish entrée) with the more globally recognised species.
+  { id: 'grilledSalmon',tier: 1, station: 'hearth', kind: 'cook', ingredients: { salmon: 2, onion: 1 },         out: 3, nutrition: 0.80, processBias: bias({ mul: { vitamin: 0.85 }, add: { fat: 0.10 } }) },
   // Seaweed salad — vegetable-dominant; the early coastal "vitamin
   // patch" before fields produce greens.
   { id: 'seaweedSalad', tier: 1, station: 'hearth', kind: 'cook', ingredients: { seaweed: 2, sesame: 1 },       out: 3, nutrition: 0.45, processBias: bias({ mul: { vitamin: 1.10 } }) },
@@ -169,6 +171,10 @@ export const RECIPES = [
   // and the long-term storage advantage that lets coastal colonies
   // build a winter buffer when fishing is at its peak.
   { id: 'driedFish',    tier: 1, station: 'workshop', kind: 'dry', ingredients: { saltFish: 3 },                out: 5, nutrition: 0.65, processBias: bias({ mul: { protein: 1.6, fat: 1.6 }, add: { fat: 0.08 } }) },
+  // α34 followup: smoked salmon — drying station, 3 → 5 servings. The
+  // signature preserved-salmon dish; gives the river-adjacent colony a
+  // long-shelf-life protein bank for winter.
+  { id: 'smokedSalmon', tier: 1, station: 'workshop', kind: 'dry', ingredients: { salmon: 3 },                  out: 5, nutrition: 0.70, processBias: bias({ mul: { protein: 1.6, fat: 1.8 }, add: { fat: 0.12 } }) },
   { id: 'driedSeaweed', tier: 1, station: 'workshop', kind: 'dry', ingredients: { seaweed: 3 },                 out: 5, nutrition: 0.50, processBias: bias({ mul: { vitamin: 1.8, carb: 1.6 }, add: { vitamin: 0.10 } }) },
   // Salted clams — pickle station. 3 → 5.
   { id: 'saltedClams',  tier: 1, station: 'workshop', kind: 'pickle', ingredients: { clam: 3 },                 out: 5, nutrition: 0.55, processBias: bias({ mul: { protein: 1.4, vitamin: 1.3 }, add: { protein: 0.10 } }) },

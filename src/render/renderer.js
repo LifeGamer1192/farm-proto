@@ -585,7 +585,7 @@ export class Renderer {
       case 'lakeShrimp': return this._drawShrimp(cx, cy, seafoodId);
       case 'crab':       return this._drawCrab(cx, cy);
       case 'seaweed':    return this._drawSeaweed(cx, cy);
-      case 'eel':        return this._drawEel(cx, cy);
+      case 'salmon':     return this._drawSalmon(cx, cy);
       default:           return this._drawFish(cx, cy, seafoodId);
     }
   }
@@ -730,21 +730,48 @@ export class Renderer {
     }
   }
 
-  // α34: eel — long sinuous body, single eye.
-  _drawEel(cx, cy) {
+  // α34 followup: salmon — fatter than the generic riverFish, with a
+  // pink-orange body, dark back stripe, distinctive forked tail and
+  // pronounced upturned snout. Replaces the eel silhouette.
+  _drawSalmon(cx, cy) {
     const ctx = this.ctx;
     const ts = this.ts;
-    ctx.strokeStyle = '#2a3b2c';
-    ctx.fillStyle = '#5a6b3a';
-    ctx.lineWidth = 1.6;
+    // Body — pink-orange salmon flesh tone.
+    ctx.fillStyle = '#e08770';
+    ctx.strokeStyle = '#7a3520';
+    ctx.lineWidth = 0.7;
     ctx.beginPath();
-    ctx.moveTo(cx - ts * 0.24, cy + ts * 0.04);
-    ctx.quadraticCurveTo(cx - ts * 0.04, cy - ts * 0.10, cx + ts * 0.10, cy + ts * 0.02);
-    ctx.quadraticCurveTo(cx + ts * 0.22, cy + ts * 0.10, cx + ts * 0.28, cy + ts * 0.02);
+    ctx.ellipse(cx, cy, ts * 0.20, ts * 0.11, 0, 0, Math.PI * 2);
+    ctx.fill();
     ctx.stroke();
-    ctx.fillStyle = '#1a2a18';
+    // Darker back stripe.
+    ctx.fillStyle = '#7a3520';
     ctx.beginPath();
-    ctx.arc(cx - ts * 0.21, cy + ts * 0.02, ts * 0.015, 0, Math.PI * 2);
+    ctx.ellipse(cx, cy - ts * 0.05, ts * 0.18, ts * 0.035, 0, 0, Math.PI * 2);
+    ctx.fill();
+    // Forked tail (two triangles fanning out from the body).
+    ctx.fillStyle = '#e08770';
+    ctx.strokeStyle = '#7a3520';
+    ctx.beginPath();
+    ctx.moveTo(cx + ts * 0.20, cy);
+    ctx.lineTo(cx + ts * 0.30, cy - ts * 0.10);
+    ctx.lineTo(cx + ts * 0.26, cy);
+    ctx.lineTo(cx + ts * 0.30, cy + ts * 0.10);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    // Upturned snout — a small wedge poking forward and down.
+    ctx.beginPath();
+    ctx.moveTo(cx - ts * 0.20, cy - ts * 0.01);
+    ctx.lineTo(cx - ts * 0.28, cy + ts * 0.02);
+    ctx.lineTo(cx - ts * 0.20, cy + ts * 0.04);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    // Eye.
+    ctx.fillStyle = '#1a0a08';
+    ctx.beginPath();
+    ctx.arc(cx - ts * 0.10, cy - ts * 0.02, ts * 0.018, 0, Math.PI * 2);
     ctx.fill();
   }
 

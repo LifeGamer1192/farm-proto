@@ -19,7 +19,7 @@ import { WaterKind } from './map/tile.js';
 //  - true fish peak when waters warm (spring/summer), winter is lean
 //  - clams / shellfish are far more stable year-round
 //  - seaweed peaks in summer (long days) and crashes in winter
-//  - eel migrates downstream in autumn — sharp autumn spike
+//  - salmon runs upriver in spring + autumn — twin yearly peaks
 //  - crustaceans peak in late summer/autumn molt cycles
 export const SEAFOOD_TYPES = {
   saltFish:   { id: 'saltFish',   label: 'Saltwater fish', edibleRaw: false, nutrition: 0.22, kind: 'fish',     baseYield: 3,
@@ -37,8 +37,11 @@ export const SEAFOOD_TYPES = {
     seasonalYield: { spring: 0.70, summer: 1.10, autumn: 1.50, winter: 0.80 } },
   seaweed:    { id: 'seaweed',    label: 'Seaweed',        edibleRaw: false, nutrition: 0.12, kind: 'seaweed',  baseYield: 4,
     seasonalYield: { spring: 1.30, summer: 1.60, autumn: 0.90, winter: 0.20 } },
-  eel:        { id: 'eel',        label: 'Eel',            edibleRaw: false, nutrition: 0.28, kind: 'eel',      baseYield: 2,
-    seasonalYield: { spring: 0.60, summer: 0.90, autumn: 1.70, winter: 0.50 } },
+  // α34 followup: salmon replaces eel as the second river species.
+  // Globally iconic freshwater catch — spring + autumn spawning runs
+  // give it two yearly peaks instead of eel's single autumn one.
+  salmon:     { id: 'salmon',     label: 'Salmon',         edibleRaw: false, nutrition: 0.28, kind: 'salmon',   baseYield: 3,
+    seasonalYield: { spring: 1.60, summer: 0.80, autumn: 1.80, winter: 0.40 } },
   lakeShrimp: { id: 'lakeShrimp', label: 'Lake shrimp',    edibleRaw: false, nutrition: 0.14, kind: 'shrimp',   baseYield: 3,
     seasonalYield: { spring: 1.00, summer: 1.30, autumn: 1.20, winter: 0.50 } },
 };
@@ -59,7 +62,8 @@ export const SEAFOOD_NUTRIENTS = {
   // water table. Gives the early coastal pre-farm colony a way to push
   // back malnutrition's vitamin track before fields exist.
   seaweed:    { carb: 0.30, protein: 0.20, fat: 0.05, vitamin: 0.70 },
-  eel:        { carb: 0.05, protein: 0.65, fat: 0.50, vitamin: 0.10 },
+  // Salmon — protein + fat heavy (omega-rich flesh), the river prize.
+  salmon:     { carb: 0.05, protein: 0.70, fat: 0.45, vitamin: 0.10 },
   lakeShrimp: { carb: 0.05, protein: 0.70, fat: 0.10, vitamin: 0.20 },
 };
 
@@ -81,8 +85,8 @@ export const SEAFOOD_FOR_WATER = {
     ['seaweed',  20],
   ],
   [WaterKind.RIVER]: [
-    ['riverFish', 70],
-    ['eel',       30],
+    ['riverFish', 65],
+    ['salmon',    35],
   ],
   [WaterKind.LAKE]: [
     ['lakeFish',   45],
