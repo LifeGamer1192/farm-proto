@@ -60,15 +60,20 @@ export function bowDamage(game, attacker, target) {
 /** The "residential center" of a colony group — the average position
  *  of every hut the group owns. Used as the attacker's march waypoint
  *  during a declared war, and as the return target when combat ends.
- *  Falls back to the average colonist position if there are no huts. */
+ *  Falls back to the average colonist position if there are no huts.
+ *
+ *  α37 followup bug fix: huts in game.huts store their tile coords as
+ *  `x`/`y` (not `tileX`/`tileY` as I had originally assumed), so the
+ *  earlier version produced NaN waypoints that flooded the activity
+ *  log with "March (NaN, NaN) — off the map" and froze the frame. */
 export function colonyCenter(game, groupId) {
   let sx = 0;
   let sy = 0;
   let n = 0;
   for (const h of game.huts) {
     if (h.ownerId !== groupId) continue;
-    sx += h.tileX + 0.5;
-    sy += h.tileY + 0.5;
+    sx += h.x + 0.5;
+    sy += h.y + 0.5;
     n++;
   }
   if (n === 0) {
@@ -80,7 +85,14 @@ export function colonyCenter(game, groupId) {
     }
   }
   if (n === 0) return null;
-  return { x: Math.floor(sx / n), y: Math.floor(sy / n) };
+  // Defensive clamp: if anything still produced NaN, drop to null so
+  // callers (declareWar / endWar) skip the broken march push entirely
+  // instead of queuing an off-map task that the log would spam every
+  // tick.
+  const cx = Math.floor(sx / n);
+  const cy = Math.floor(sy / n);
+  if (!Number.isFinite(cx) || !Number.isFinite(cy)) return null;
+  return { x: cx, y: cy };
 }
 
 /** Find the closest enemy-engaged colonist `attacker` can target during
