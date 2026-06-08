@@ -35,7 +35,7 @@ import { t, setLang, getLang } from './i18n.js';
 import { icon } from './icons.js';
 import { Game, STOCKPILE_ITEMS } from './game.js';
 import { nutrientsOf, isEdibleRaw as foodIsEdibleRaw } from './systems/foodSystem.js';
-import { screenToWorld } from './render/camera.js';
+import { screenToWorld, ISO_ELEV_RATIO } from './render/camera.js';
 import { isDish as recipesIsDish } from './recipes.js';
 import { SEAFOOD_TYPES, SEAFOOD_IDS, seafoodYield } from './seafood.js';
 import { SEASONS } from './season.js';
@@ -2033,7 +2033,7 @@ function tileAt(clientX, clientY) {
   // iterations even with the most aggressive peaks.
   const cam = game.camera;
   const ts = game.tileSize;
-  const elevPx = ts * 1.0; // matches ISO_ELEV_RATIO in camera.js
+  const elevPx = ts * ISO_ELEV_RATIO;
   let lastX = -999, lastY = -999;
   let adjY = py;
   for (let i = 0; i < 6; i++) {

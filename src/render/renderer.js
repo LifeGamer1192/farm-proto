@@ -11,6 +11,7 @@ import {
   screenToWorld,
   ISO_TILE_W_RATIO,
   ISO_TILE_H_RATIO,
+  ISO_ELEV_RATIO,
 } from './camera.js';
 
 const lerp = (a, b, t) => a + (b - a) * t;
@@ -218,7 +219,7 @@ export class Renderer {
     const camCy = camera.y + camera.viewRows / 2;
     const projTW2 = ts * ISO_TILE_W_RATIO * 0.5;
     const projTH2 = ts * ISO_TILE_H_RATIO * 0.5;
-    const elevPx = ts * 1.0; // ISO_ELEV_RATIO inline (1.0)
+    const elevPx = ts * ISO_ELEV_RATIO;
     const halfW = cw * 0.5;
     const halfH = ch * 0.5;
     // Corner elevation: average of the 4 tiles meeting at (wx, wy).
@@ -252,9 +253,12 @@ export class Renderer {
         cornerY[idx] = (dx + dy) * projTH2 + halfH - elev * elevPx;
       }
     }
-    // Pre-compute slopeShade per tile too (single pass over visible
-    // tiles, looking at +-1 neighbour elevations).
-    const tileN = (maxX - minX + 1) * (maxY - minY + 1);
+    // α36: slope shading runs at every zoom level — bucketed fills keep
+    // it cheap even at XXS (10k tiles collapse to ~50-200 unique
+    // fillStyles). Without shading, small-zoom maps look flat and the
+    // new mountain layer is unreadable.
+    const xSpan = maxX - minX + 1;
+    const tileN = xSpan * (maxY - minY + 1);
     const shadeArr = new Float32Array(tileN);
     for (let ty = minY; ty <= maxY; ty++) {
       for (let tx = minX; tx <= maxX; tx++) {
@@ -264,12 +268,21 @@ export class Renderer {
         const eN = ty - 1 >= 0      ? (tilesArr[ty - 1][tx].elevation || 0) : here;
         const eS = ty + 1 < mapRows ? (tilesArr[ty + 1][tx].elevation || 0) : here;
         const slope = (-(eE - eW) - (eS - eN)) * 1.5;
-        const shade = Math.max(0.65, Math.min(1.15, 1.0 + slope * 0.6));
-        shadeArr[(ty - minY) * (maxX - minX + 1) + (tx - minX)] = shade;
+        // α36 followup: widened shade range (0.55..1.30) and stronger
+        // multiplier (0.9) so slopes pop visually now that the vertical
+        // lift is 3× — without the extra contrast the relief reads as
+        // a uniform green at distance.
+        const shade = Math.max(0.55, Math.min(1.30, 1.0 + slope * 0.9));
+        shadeArr[(ty - minY) * xSpan + (tx - minX)] = shade;
       }
     }
-    // Tile fill loop: indexes into precomputed cornerX/Y arrays.
-    const xSpan = maxX - minX + 1;
+    // α36 perf: tile fills batched by fillStyle into Path2D buckets.
+    // The old loop did 10 000 individual ctx.fill() calls at XXS zoom;
+    // most of them shared the same colour (and at small zoom they all
+    // share the unshaded base colour). Bucketing collapses the work
+    // into O(unique-fillStyle) fill calls, ~25-200× fewer state flushes.
+    const fillBuckets = new Map(); // fillStyle → Path2D
+    const tilled = []; // {topX, topY, rgtX, rgtY, botX, botY, lftX, lftY}
     for (let mapY = minY; mapY <= maxY; mapY++) {
       const cyTop = mapY - minY;
       const cyBot = cyTop + 1;
@@ -285,34 +298,48 @@ export class Renderer {
         const rgtX = cornerX[iRight],  rgtY = cornerY[iRight];
         const botX = cornerX[iBottom], botY = cornerY[iBottom];
         const lftX = cornerX[iLeft],   lftY = cornerY[iLeft];
-        const shade = shadeArr[(mapY - minY) * xSpan + (mapX - minX)];
         const baseColor = colorOf(tile);
-        ctx.fillStyle = shade === 1.0 ? baseColor : fastShade(baseColor, shade);
-        ctx.beginPath();
-        ctx.moveTo(topX, topY);
-        ctx.lineTo(rgtX, rgtY);
-        ctx.lineTo(botX, botY);
-        ctx.lineTo(lftX, lftY);
-        ctx.closePath();
-        ctx.fill();
+        const shade = shadeArr[(mapY - minY) * xSpan + (mapX - minX)];
+        const fillStyle = shade === 1.0 ? baseColor : fastShade(baseColor, shade);
+        let path = fillBuckets.get(fillStyle);
+        if (!path) { path = new Path2D(); fillBuckets.set(fillStyle, path); }
+        path.moveTo(topX, topY);
+        path.lineTo(rgtX, rgtY);
+        path.lineTo(botX, botY);
+        path.lineTo(lftX, lftY);
+        path.closePath();
         if (detailed) {
-          // Diamond centre = average of 4 corners (free at this point).
           const ccx = (topX + rgtX + botX + lftX) * 0.25;
           const ccy = (topY + rgtY + botY + lftY) * 0.25;
           this._terrainDetail(tile, map, mapX, mapY, ccx - ts / 2, ccy - ts / 2);
         }
-        if (tile.tilled && tile.type === TileType.LAND) {
-          ctx.strokeStyle = 'rgba(60,40,20,0.45)';
-          ctx.lineWidth = 1;
-          ctx.beginPath();
-          for (let f = 1; f <= 3; f++) {
-            const t = f * 0.25;
-            ctx.moveTo(lftX + (topX - lftX) * t, lftY + (topY - lftY) * t);
-            ctx.lineTo(botX + (rgtX - botX) * t, botY + (rgtY - botY) * t);
-          }
-          ctx.stroke();
+        if (detailed && tile.tilled && tile.type === TileType.LAND) {
+          tilled.push(topX, topY, rgtX, rgtY, botX, botY, lftX, lftY);
         }
       }
+    }
+    // Flush the bucketed tile fills (1 fill() per unique colour).
+    for (const [fillStyle, path] of fillBuckets) {
+      ctx.fillStyle = fillStyle;
+      ctx.fill(path);
+    }
+    // Tilled-soil furrows — drawn in one stroke pass after fills.
+    if (tilled.length > 0) {
+      ctx.strokeStyle = 'rgba(60,40,20,0.45)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      for (let i = 0; i < tilled.length; i += 8) {
+        const topX = tilled[i],     topY = tilled[i + 1];
+        const rgtX = tilled[i + 2], rgtY = tilled[i + 3];
+        const botX = tilled[i + 4], botY = tilled[i + 5];
+        const lftX = tilled[i + 6], lftY = tilled[i + 7];
+        for (let f = 1; f <= 3; f++) {
+          const t = f * 0.25;
+          ctx.moveTo(lftX + (topX - lftX) * t, lftY + (topY - lftY) * t);
+          ctx.lineTo(botX + (rgtX - botX) * t, botY + (rgtY - botY) * t);
+        }
+      }
+      ctx.stroke();
     }
     // α36 perf: grid-line pass dropped entirely. The diamond fills
     // already define their boundaries cleanly because adjacent tiles
@@ -512,6 +539,12 @@ export class Renderer {
     }
   }
 
+  // α36 perf flag: at Small zoom (ts < 20) the building outline strokes
+  // disappear into the fill anyway; setting strokeStyle to a no-op
+  // function would still touch state, so we just keep a getter for
+  // whether outlining is worthwhile.
+  get _strokeStructures() { return this.ts >= 20; }
+
   // α36 helper: an iso quarter-view building shell with hipped roof.
   // (cx, cy) is the iso ground centre. `w`/`d` are footprint in tile
   // units (1.0 = a full tile diamond). `wallPx`/`roofPx` are screen
@@ -540,6 +573,11 @@ export class Renderer {
       ctx.ellipse(cx + ts * 0.04, cy + ts * 0.04, hx * 1.0, hy * 1.05, 0, 0, Math.PI * 2);
       ctx.fill();
     }
+    const doStroke = this._strokeStructures;
+    if (doStroke) {
+      ctx.strokeStyle = palette.outline;
+      ctx.lineWidth = 1.1;
+    }
     // SW wall (front-left, lit).
     ctx.fillStyle = palette.wallLit;
     ctx.beginPath();
@@ -549,9 +587,7 @@ export class Renderer {
     ctx.lineTo(tleft.x, tleft.y);
     ctx.closePath();
     ctx.fill();
-    ctx.strokeStyle = palette.outline;
-    ctx.lineWidth = 1.1;
-    ctx.stroke();
+    if (doStroke) ctx.stroke();
     // SE wall (front-right, shaded).
     ctx.fillStyle = palette.wallShaded;
     ctx.beginPath();
@@ -561,7 +597,7 @@ export class Renderer {
     ctx.lineTo(tfront.x, tfront.y);
     ctx.closePath();
     ctx.fill();
-    ctx.stroke();
+    if (doStroke) ctx.stroke();
     // SW roof (lit triangle).
     ctx.fillStyle = palette.roofLit;
     ctx.beginPath();
@@ -570,7 +606,7 @@ export class Renderer {
     ctx.lineTo(apex.x, apex.y);
     ctx.closePath();
     ctx.fill();
-    ctx.stroke();
+    if (doStroke) ctx.stroke();
     // SE roof (shaded triangle).
     ctx.fillStyle = palette.roofShaded;
     ctx.beginPath();
@@ -579,7 +615,7 @@ export class Renderer {
     ctx.lineTo(apex.x, apex.y);
     ctx.closePath();
     ctx.fill();
-    ctx.stroke();
+    if (doStroke) ctx.stroke();
 
     return { back, right, front, left, tback, tright, tfront, tleft, apex };
   }
@@ -590,6 +626,32 @@ export class Renderer {
   _drawStructure(structure, cx, cy, hearthsLit) {
     const ctx = this.ctx;
     const ts = this.ts;
+
+    // α36 perf: at small zooms a hut / warehouse is only 5-12 px on
+    // screen — the dozens of beginPath / fill / stroke calls per
+    // building add up but the player can't read the detail anyway.
+    // Drop to a single coloured blob silhouette so we still see
+    // structures dotting the landscape but stop paying for their
+    // detail. Threshold matches the "detailed" terrain cutoff.
+    if (ts < 14) {
+      const isHut    = structure === 'hut' || structure === 'hut_med' || structure === 'hut_large';
+      const isStock  = structure === 'stockpile' || structure === 'stockpile_med' || structure === 'stockpile_large';
+      const isHearth = structure === 'hearth';
+      const isShop   = structure === 'workshop';
+      const isFence  = structure === 'fence';
+      ctx.fillStyle = isHut    ? '#a07a48'
+                    : isStock  ? '#b07840'
+                    : isHearth ? (hearthsLit ? '#e8590f' : '#3a2a1c')
+                    : isShop   ? '#6a4a20'
+                    : isFence  ? '#7a5530'
+                    : '#888';
+      const w = ts * 0.45;
+      const h = ts * 0.28;
+      ctx.beginPath();
+      ctx.ellipse(cx, cy, w, h, 0, 0, Math.PI * 2);
+      ctx.fill();
+      return;
+    }
 
     if (structure === 'hearth') {
       // Iso hearth: an elliptical ring of stones on the ground, a small
@@ -1259,6 +1321,16 @@ export class Renderer {
     const ctx = this.ctx;
     const ts = this.ts;
     const g = Math.max(0.25, Math.min(1, plant.growth || 1));
+    // α36 perf: at small zoom every tree dropped from ~25 canvas calls
+    // to one filled arc — they read as forest pixels and the FPS
+    // doubles. The 14 px cutoff matches the rest of the LOD threshold.
+    if (ts < 14) {
+      ctx.fillStyle = '#2f6b34';
+      ctx.beginPath();
+      ctx.arc(cx, cy - ts * 0.10, ts * 0.30 * g, 0, Math.PI * 2);
+      ctx.fill();
+      return;
+    }
     const trunkH = ts * 0.42 * g;
     const trunkW = Math.max(1.5, ts * 0.10 * g);
     const baseY = cy + ts * 0.06; // ground meet point
