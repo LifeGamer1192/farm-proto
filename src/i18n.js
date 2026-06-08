@@ -523,7 +523,6 @@ const STRINGS = {
     'log.mutation': '{crop} — a rare mutation appeared!',
 
     'panel.history': 'Run history',
-    'hint.history': 'Sampled every 10 sim-seconds; tracks the most recent ~1.4 years.',
     'hist.population': 'Population',
     'hist.food': 'Food',
     'hist.wood': 'Wood',
@@ -1224,7 +1223,6 @@ const STRINGS = {
     'log.mutation': '{crop} — 珍しい突然変異が現れた！',
 
     'panel.history': '経過グラフ',
-    'hint.history': '10シミュレーション秒ごとにサンプリング、直近約1.4年分を保持。',
     'hist.population': '人口',
     'hist.food': '食料',
     'hist.wood': '材木',
