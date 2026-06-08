@@ -17,6 +17,12 @@ export const TaskType = {
   HUNT: 'hunt',
   // α33: fish at a water tile adjacent to land. Yields fish / clams.
   FISH: 'fish',
+  // α37: ranged combat against a colonist of an enemy group.
+  ATTACK: 'attack',
+  // α37: march toward a target tile during war — used to move attackers
+  // to the enemy residential center, and to send everyone home once
+  // combat ends.
+  MARCH: 'march',
   BUILD: 'build',
   COOK: 'cook',
   WEED: 'weed', // clear a withered, dead crop (autonomous)
@@ -38,6 +44,8 @@ export const WORK_TYPES = [
   TaskType.WATER,
   TaskType.HUNT,
   TaskType.FISH,
+  TaskType.ATTACK,
+  TaskType.MARCH,
   TaskType.BUILD,
   TaskType.COOK,
   TaskType.WEED,

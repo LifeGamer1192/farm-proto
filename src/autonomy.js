@@ -13,6 +13,8 @@
 // that delegates here, so existing call sites and tests still work.
 
 import { TaskType, createTask } from './tasks.js';
+import { nearestEnemyFor, chebyshev } from './combat.js';
+import { BOW_RANGE } from './config.js';
 import { isRipe, CROP_IDS, cropSuitability, getCrop } from './crops.js';
 import { tileBlocksCrop } from './systems/cropSystem.js';
 import {
@@ -452,6 +454,26 @@ export function urgentInfraBuild(game, colonist) {
  * @returns {?object} a task created via createTask, or null
  */
 export function pickAutonomousTask(game, colonist) {
+  // α37 combat: if this colonist's group is at war, the engagement
+  // branch trumps everything else — pick the nearest enemy in range
+  // and queue an ATTACK task. If no enemy is in range, attackers keep
+  // marching to the enemy center via the MARCH task already on their
+  // queue (queued by declareWar). Defenders without a target in BOW_RANGE
+  // fall through to normal autonomy and continue farming until shot at.
+  const myGrp = game.groups?.[colonist.groupId];
+  if (myGrp && myGrp.warWith != null && !myGrp.surrendered) {
+    const enemy = nearestEnemyFor(game, colonist);
+    if (enemy && chebyshev(colonist, enemy) <= BOW_RANGE * 2) {
+      colonist.attackTargetName = enemy.name;
+      const task = createTask(TaskType.ATTACK, enemy.tileX, enemy.tileY, {
+        assignee: colonist.name,
+        groupId: colonist.groupId,
+        targetName: enemy.name,
+      });
+      task._target = enemy;
+      return task;
+    }
+  }
   // Alpha 24: at 95% warehouse utilization the colony hits CRITICAL —
   // every colonist drops harvest / hunt / forage work and rushes to
   // build another warehouse (or chop wood for it). Otherwise the

@@ -249,5 +249,19 @@ export function createGroup(id, setup = {}) {
     // to defaults whenever the group has at least one colonist again.
     extinctAt: null,
     foodSpoiled: false,
+    // α37 combat — per-group war state.
+    //   warWith        — id of the rival group currently engaged, or null.
+    //                    Both sides set this when war is declared.
+    //   warDeclaredAt  — sim-clock of the declaration (for UI / log).
+    //   warStartPop    — colonist count at the moment war began; the
+    //                    surrender check compares current count to this.
+    //   warRole        — 'attacker' or 'defender' on this side.
+    //   surrendered    — set to true the tick this side gives up; cleared
+    //                    when the war state ends.
+    warWith: null,
+    warDeclaredAt: -1,
+    warStartPop: 0,
+    warRole: null,
+    surrendered: false,
   };
 }

@@ -41,7 +41,11 @@ import {
   MALNUTRITION_MOOD_DROP,
   MALNUTRITION_SKILL_XP_MULT,
   MALNUTRITION_HP_REGEN_MULT,
+  BOW_RANGE,
+  BOW_FIRE_INTERVAL,
+  COMBAT_MOVE_SPEED_MULT,
 } from '../config.js';
+import { canShoot, bowDamage, chebyshev, nearestEnemyFor } from '../combat.js';
 
 // α30: nutrient bucket keys, kept in this fixed order so the UI and the
 // stage-detection helper agree on iteration.
@@ -78,6 +82,13 @@ const WORK_PHASE = {
   [TaskType.WEED]: WORK_DURATION,
   [TaskType.HUNT]: HUNT_DURATION,
   [TaskType.FISH]: HUNT_DURATION,
+  // α37: an ATTACK task doesn't have a single "work phase" duration —
+  // the colonist fires repeatedly until the target dies, war ends, or
+  // they move out of range. Set to 0 so the work-timer path never
+  // auto-completes it; the firing cadence is governed by BOW_FIRE_INTERVAL.
+  [TaskType.ATTACK]: 0,
+  // α37: MARCH is just "walk there and finish" — no work phase needed.
+  [TaskType.MARCH]: 0,
   [TaskType.BUILD]: BUILD_DURATION,
   [TaskType.COOK]: COOK_DURATION,
   [TaskType.STORE]: HAUL_DURATION,
@@ -97,6 +108,9 @@ const TASK_SKILL = {
   [TaskType.COOK]: 'farming',
   [TaskType.HUNT]: 'strength',
   [TaskType.FISH]: 'agility',
+  // α37: bow proficiency for now lives under the existing 'hunting' skill
+  // (closest analogue — ranged-prey skill carries over to ranged combat).
+  [TaskType.ATTACK]: 'hunting',
   [TaskType.BUILD]: 'building',
 };
 
@@ -115,6 +129,8 @@ const WORK_STATE = {
   [TaskType.WEED]: 'weeding',
   [TaskType.HUNT]: 'hunting',
   [TaskType.FISH]: 'fishing',
+  [TaskType.ATTACK]: 'attacking',
+  [TaskType.MARCH]: 'marching',
   [TaskType.BUILD]: 'building',
   [TaskType.COOK]: 'cooking',
   [TaskType.STORE]: 'hauling',
@@ -148,6 +164,71 @@ function _nearestLandNeighbor(map, wx, wy, colonist) {
   return best;
 }
 
+// α37: ATTACK task tick. Called when the colonist has arrived at the
+// attack waypoint (path empty) and is ready to either fire or reposition.
+//
+// Flow:
+//   1. Resolve the named target. Missing / dead → end task.
+//   2. If our group's war ended → end task (autonomy will route us home).
+//   3. If target moved out of BOW_RANGE → reroute path one tile closer
+//      to the target; the next tick walks down it (at COMBAT_MOVE_SPEED_MULT
+//      speed since the state is still attacking).
+//   4. If in range AND cooldown elapsed → fire one shot via game.fireShot,
+//      which emits the arrow effect, applies damage, and stamps lastShotAt.
+//   5. Otherwise idle — wait out the BOW_FIRE_INTERVAL.
+function _tickAttack(c, task, game) {
+  const target = task._target || _findColonistByName(game, c.attackTargetName);
+  if (!target || target.dead) {
+    c.attackTargetName = null;
+    task.status = 'done';
+    c.state = 'idle';
+    return;
+  }
+  // Re-bind in case the original task pointer drifted.
+  task._target = target;
+
+  const myGrp = game.groups?.[c.groupId];
+  if (!myGrp || myGrp.warWith == null || myGrp.warWith !== target.groupId) {
+    // War ended or target switched group somehow — drop the engagement.
+    c.attackTargetName = null;
+    task.status = 'done';
+    c.state = 'idle';
+    return;
+  }
+
+  c.state = 'attacking';
+  const range = chebyshev(c, target);
+  if (range > BOW_RANGE) {
+    // Step one tile closer to the target. Routing through findPathStaged
+    // keeps the colonist on walkable land. The next tick walks the new
+    // path. If unreachable, the colonist fails the task gracefully.
+    const anchor = c._anchor();
+    const goal = { x: target.tileX, y: target.tileY };
+    const cache = game.map?.pathCache;
+    const path = cache
+      ? cache.findCached(game.map, anchor, goal, true /* fallback ok */)
+      : findPathStaged(game.map, anchor, goal);
+    if (path && path.length > 0) {
+      c.path = [anchor, ...path];
+    } else {
+      task.status = 'failed';
+      c.state = 'idle';
+    }
+    return;
+  }
+  // In range — fire if cooldown elapsed.
+  if (game.clock - c.lastShotAt >= BOW_FIRE_INTERVAL) {
+    game.fireShot?.(c, target);
+    c.lastShotAt = game.clock;
+  }
+}
+
+function _findColonistByName(game, name) {
+  if (!name) return null;
+  for (const c of game.colonists) if (c.name === name && !c.dead) return c;
+  return null;
+}
+
 export class Colonist {
   constructor(x, y, name, groupId = 0) {
     this.x = x;
@@ -167,6 +248,15 @@ export class Colonist {
     this.eatCooldown = 0; // delay before seeking food again
     this.cold = false; // suffering from the cold (set by the game each tick)
     this.dead = false;
+
+    // α37 combat — every colonist starts with a single bow (no slot
+    // swapping yet; equipment crafting is a future feature). lastShotAt
+    // gates the BOW_FIRE_INTERVAL cooldown. attackTargetName is the
+    // currently-engaged enemy colonist, looked up by name each tick so
+    // a dead target frees the attacker without a stale pointer.
+    this.bow = { damage: 10, range: 4, accuracy: 1.0 };
+    this.lastShotAt = -Infinity;
+    this.attackTargetName = null;
 
     // Skills (alpha 21) — each 0..1 of experience. Multiplier scales
     // linearly from 1× at 0 up to MAX_SKILL_MULT× at 1. Starting values
@@ -356,6 +446,12 @@ export class Colonist {
       // Rewrite the goal to the chosen land tile; the path search
       // below still runs normally with this overridden goal.
       task._fishGoal = standOn;
+    } else if (task.type === TaskType.ATTACK || task.type === TaskType.MARCH) {
+      // α37: combat / march tasks have no tile-shape preconditions.
+      // ATTACK's target is a colonist (looked up by name in update); the
+      // tile (x, y) is just the target's last-known position used to
+      // route the path. MARCH treats (x, y) as a waypoint to walk to.
+      if (tile.type === TileType.WATER) return this._fail(task, 'onWater');
     }
 
     const anchor = this._anchor();
@@ -380,7 +476,10 @@ export class Colonist {
   _walk(dt) {
     // α30 (B5): movement speed × 0.5 while malnourished.
     const malMul = this.malnutritionStage() > 0 ? MALNUTRITION_SPEED_MULT : 1;
-    let budget = COLONIST_SPEED * this.skillMult('agility') * malMul * dt;
+    // α37: optional speed multiplier (e.g. 0.2 while in active ATTACK
+    // task) so combat strafing happens at a deliberate pace.
+    const extraMul = arguments[1] != null ? arguments[1] : 1;
+    let budget = COLONIST_SPEED * this.skillMult('agility') * malMul * extraMul * dt;
     // Walking practises agility a little.
     this.gainSkill('agility', dt);
     while (budget > 0 && this.path.length > 0) {
@@ -402,7 +501,7 @@ export class Colonist {
   }
 
   /** Advance survival stats and the current task by dt seconds. */
-  update(dt) {
+  update(dt, game) {
     // α30: nutrient buckets drain over time. Eating credits them via
     // foodSystem.feedNutrients; here we only deplete.
     if (this.nutrients) {
@@ -454,8 +553,20 @@ export class Colonist {
     if (task.status === 'done' || task.status === 'failed') return;
 
     if (this.path.length > 0) {
-      this.state = task.type === TaskType.LEISURE ? 'strolling' : 'walking';
-      this._walk(dt);
+      this.state = task.type === TaskType.LEISURE ? 'strolling'
+        : task.type === TaskType.MARCH ? 'marching'
+        : task.type === TaskType.ATTACK ? 'attacking'
+        : 'walking';
+      // α37: marching is the standard speed; once engaged (ATTACK), the
+      // colonist moves at COMBAT_MOVE_SPEED_MULT (1/5) so they can
+      // strafe / reposition deliberately rather than sprint.
+      const speedMul = task.type === TaskType.ATTACK ? COMBAT_MOVE_SPEED_MULT : 1;
+      this._walk(dt, speedMul);
+      return;
+    }
+    // α37: ATTACK task — driven by BOW_FIRE_INTERVAL, not WORK_PHASE.
+    if (task.type === TaskType.ATTACK && game) {
+      _tickAttack(this, task, game);
       return;
     }
     const baseDur = WORK_PHASE[task.type] || 0;

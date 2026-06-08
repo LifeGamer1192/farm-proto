@@ -3697,6 +3697,14 @@ setInterval(() => {
   const mut = game.consumeMutationEvent();
   if (mut) showMutationPopup(mut);
   if (game.consumeWinEvent()) showVictory();
+  // α37: war declaration big popup.
+  const war = game.consumeWarDeclaration?.();
+  if (war) {
+    showBigPopup('popup.war.title', 'popup.war.body', {
+      attacker: war.attackerName,
+      defender: war.defenderName,
+    });
+  }
 }, 150);
 
 // α34 followup: dedicated 1-second floor for the pedigree chip text.

@@ -7,7 +7,41 @@
 // α32 begins the post-prototype "α-version era". Versions alpha 4 through
 // alpha 31 (the prototype era) are preserved under /versions/ and remain
 // playable via the link in the header.
-export const ALPHA_VERSION = 'alpha 36';
+export const ALPHA_VERSION = 'alpha 37';
+
+// --- α37 combat ----------------------------------------------------------
+// Every colonist starts with one bow. Equipment swapping isn't in yet —
+// these constants are the fixed baseline. Future versions will let crafting
+// and skills modify damage / range / accuracy / fire rate.
+//
+// DAMAGE = flat hit damage (HP units; colonist HP is 0..1, see HEALTH_REGEN
+// notes — we scale damage by COMBAT_HP_SCALE so a "10 damage" hit removes
+// 10% of full HP).
+export const BOW_DAMAGE = 10;
+export const COMBAT_HP_SCALE = 0.01;  // damage 10 → 0.10 HP removed
+// RANGE in tiles (Chebyshev). 4 = generous so the engagement happens at
+// distance, not melee.
+export const BOW_RANGE = 4;
+// One day in sim-seconds = SEASON_LENGTH / DAYS_PER_SEASON = 60 / 10 = 6.
+export const BOW_FIRE_INTERVAL = 6;
+export const BOW_ACCURACY = 1.0;
+// High-ground bonus: +1 damage per 0.1 elevation advantage of attacker
+// over target. Elevation is 0..1 across the map, so a tile clearly atop
+// a ridge (e.g. 0.85) firing at a valley colonist (0.35) gets +5 damage.
+export const BOW_ELEVATION_BONUS_PER_UNIT = 10;
+// Slow march while engaged so colonists strafe rather than sprint.
+export const COMBAT_MOVE_SPEED_MULT = 0.2; // 1/5
+
+// War declaration: once a year, on the first frame of winter, the
+// largest colony declares war on the smallest if it has more than
+// this many colonists.
+export const WAR_DECLARE_POP_THRESHOLD = 10;
+// Surrender when this fraction of the side's at-war-start population
+// has been lost. 0.25 = 25%.
+export const SURRENDER_LOSS_FRACTION = 0.25;
+// On surrender, the loser hands this fraction of every edible storage
+// item (FOOD_TYPES + meal + DISH_IDS) to the victor.
+export const SURRENDER_FOOD_TRIBUTE = 0.5;
 
 // α33: seafood (fish / clams) on water tiles. Fraction of water tiles
 // that start with a fishable catch on them; regrows over time so the
