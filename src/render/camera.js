@@ -13,10 +13,11 @@
 // Isometric tile aspect — diamonds are twice as wide as they are tall.
 export const ISO_TILE_W_RATIO = 1.0;   // diamond half-width  = ts * 0.5
 export const ISO_TILE_H_RATIO = 0.5;   // diamond half-height = ts * 0.25
-// Pixels of vertical lift per 1.0 of elevation. Applied in Phase 2 — the
-// Phase 1 forward projection ignores `elevation` so the map stays flat for
-// initial wiring verification.
-export const ISO_ELEV_RATIO = 0.6;
+// Pixels of vertical lift per 1.0 of elevation. α36 bumped 0.6 → 1.0 so
+// the new mountain layer reads dramatically — hills are obvious mounds,
+// mountains lift a full tile-width above the plains, rare peaks are
+// commanding.
+export const ISO_ELEV_RATIO = 1.0;
 
 /**
  * Project a world (tile) point to screen pixels. `wx`, `wy` are floating

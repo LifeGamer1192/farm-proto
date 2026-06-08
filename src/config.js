@@ -34,12 +34,14 @@ export const CANVAS_H = 600;
 // so the player can fit a much larger area on the screen — XXS at 7 px
 // per tile shows the full 100×100 map in one frame. Default stays on
 // Medium (now index 3 after the two prepended levels).
+// α36: Large doubled from 30 → 60 to give players a near-zoom for
+// inspecting individual tiles + colonist detail. Other levels unchanged.
 export const ZOOM_LEVELS = [
   { label: 'XXS', tile: 7 },
   { label: 'XS', tile: 11 },
   { label: 'Small', tile: 15 },
   { label: 'Medium', tile: 20 },
-  { label: 'Large', tile: 30 },
+  { label: 'Large', tile: 60 },
 ];
 export const DEFAULT_ZOOM = 3;
 

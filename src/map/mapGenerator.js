@@ -190,8 +190,23 @@ export function generateMap(cols, rows, seed, biome = null) {
   const elevationNoise = makeFractalNoise(rand, 4, 3);
   const fertilityNoise = makeFractalNoise(rand, 3, 4);
   const sunlightNoise = makeFractalNoise(rand, 2, 2);
+  // α36: a sparse, higher-frequency noise field used to seed rare high
+  // peaks. Eight octaves at a tighter base = tight clusters where the
+  // sample is high, mostly mid elsewhere. Combined with a hard threshold
+  // below it produces "real" mountains spread thinly across the map
+  // rather than the all-rolling-hills look from a single fractal.
+  const peakNoise = makeFractalNoise(rand, 3, 5);
 
   // First pass: elevation.
+  // α36: each tile's final elevation = ridge-filtered base + peak boost.
+  //   1. base = elevationNoise(fx, fy)   (uniform 0..1, like before)
+  //   2. lifted = 1 − (1 − base)^2.2     (concave: high places climb higher,
+  //                                        low places nearly unchanged)
+  //   3. peak boost = max(0, peakNoise − 0.78) × 1.6    (rare sharp adds)
+  //   4. final = clamp01(lifted + boost)
+  // The result: hills where the base noise is mid-range, mountains where
+  // it's already high, and a sparse handful of headline peaks where both
+  // noises spike together.
   const tiles = new Array(rows);
   const elevations = new Float64Array(cols * rows);
   for (let y = 0; y < rows; y++) {
@@ -199,7 +214,11 @@ export function generateMap(cols, rows, seed, biome = null) {
     for (let x = 0; x < cols; x++) {
       const fx = cols > 1 ? x / (cols - 1) : 0;
       const fy = rows > 1 ? y / (rows - 1) : 0;
-      const elevation = elevationNoise(fx, fy);
+      const base = elevationNoise(fx, fy);
+      const lifted = 1 - Math.pow(1 - base, 2.2);
+      const peakSample = peakNoise(fx, fy);
+      const peakBoost = Math.max(0, peakSample - 0.78) * 1.6;
+      const elevation = Math.max(0, Math.min(1, lifted + peakBoost));
       elevations[y * cols + x] = elevation;
       tiles[y][x] = createTile({
         x,
