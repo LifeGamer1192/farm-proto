@@ -660,6 +660,9 @@ const STRINGS = {
     'stat.nutrition': 'Nutrition',
     'tip.nutrition': 'nutrition {n}%',
     'tip.category': '{name}',
+    // α34 followup — seafood-tile tooltip
+    'tip.fishableNow': 'catch this season ×{n}',
+    'tip.seasonalYield': 'seasonal catch:',
     // --- α30 malnutrition stages --------------------------------------
     'mal.0': 'Healthy',
     'mal.1': 'Mild malnutrition',
@@ -1332,6 +1335,9 @@ const STRINGS = {
     'stat.nutrition': '栄養価（えいようか）',
     'tip.nutrition': '栄養価 {n}%',
     'tip.category': '{name}',
+    // α34 followup — 海産物タイルのツールチップ
+    'tip.fishableNow': '今期の収穫量 ×{n}',
+    'tip.seasonalYield': '季節別の収穫量:',
     // --- α30 栄養失調の段階 -------------------------------------------
     'mal.0': '健康',
     'mal.1': '軽度栄養失調',

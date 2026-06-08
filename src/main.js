@@ -36,6 +36,8 @@ import { icon } from './icons.js';
 import { Game, STOCKPILE_ITEMS } from './game.js';
 import { nutrientsOf, isEdibleRaw as foodIsEdibleRaw } from './systems/foodSystem.js';
 import { isDish as recipesIsDish } from './recipes.js';
+import { SEAFOOD_TYPES, seafoodYield } from './seafood.js';
+import { SEASONS } from './season.js';
 import { GROUP_COLORS } from './groups.js';
 import { TIPS, randomTipIndex } from './tips.js';
 
@@ -1970,6 +1972,12 @@ function describePlant(plant) {
     const left = Math.max(0, Math.ceil(plant.regrowAt - game.clock));
     return `<br>${t('tip.plantStump', { n: left })}`;
   }
+  // α34 followup: a fishable seafood tile. Shows species, current-season
+  // catch size, nutrition, and the full yearly yield pattern so the
+  // player can see why a tile is rich or thin right now.
+  if (plant.kind === 'seafood') {
+    return describeSeafood(plant.seafoodId);
+  }
   let status;
   if (plant.withered) status = t('tip.withered');
   else if (isRipe(plant)) status = t('tip.ripe');
@@ -1989,6 +1997,28 @@ function describePlant(plant) {
     line += `<br>${t('tip.look', { desc: `${shape} · ${leaf} · ${surface}` })}`;
   }
   return `<br>${line}`;
+}
+
+// α34 followup: tooltip text for a seafood tile. Shows species, current
+// catch (baseYield × current-season multiplier), nutrition, and the full
+// 4-season pattern so the player can compare "now vs. peak".
+function describeSeafood(seafoodId) {
+  const sf = SEAFOOD_TYPES[seafoodId];
+  if (!sf) return `<br>${t('crop.' + seafoodId)}`;
+  const species = t('crop.' + seafoodId);
+  const season = game.environment.season;
+  const nowYield = seafoodYield(seafoodId, season);
+  // Format the per-season table — bold the current season for emphasis.
+  const cells = SEASONS.map((s) => {
+    const n = seafoodYield(seafoodId, s);
+    const label = t('season.' + s);
+    return s === season ? `<strong>${label}:${n}</strong>` : `${label}:${n}`;
+  }).join(' · ');
+  return (
+    `<br><strong>${species}</strong> · ${t('tip.fishableNow', { n: nowYield })}` +
+    `<br>${t('tip.nutrition', { n: Math.round(sf.nutrition * 100) })}` +
+    `<br>${t('tip.seasonalYield')} ${cells}`
+  );
 }
 
 // Short label for a stored item, reusing the crop / stat strings.
@@ -2101,9 +2131,16 @@ function showTooltip(clientX, clientY, pos) {
   const tl = game.map.tiles[pos.y][pos.x];
   const f = (v) => v.toFixed(3);
   const tilled = tl.tilled ? `<br>${t('tip.tilled')}` : '';
+  // α34 followup: water tiles show their sub-kind (ocean/river/lake)
+  // right next to the "Water" label so the player can tell which
+  // species the tile spawns.
+  let typeLabel = t('tile.' + tl.type);
+  if (tl.type === 'water' && tl.waterKind) {
+    typeLabel += ` · ${t('water.' + tl.waterKind)}`;
+  }
   tooltip.hidden = false;
   tooltip.innerHTML =
-    `<strong>(${pos.x}, ${pos.y})</strong> ${t('tile.' + tl.type)}<br>` +
+    `<strong>(${pos.x}, ${pos.y})</strong> ${typeLabel}<br>` +
     `${t('tip.elevation')} ${f(tl.elevation)}<br>${t('tip.fertility')} ${f(tl.fertility)}<br>` +
     `${t('tip.moisture')} ${f(tl.moisture)}<br>${t('tip.sunlight')} ${f(tl.sunlight)}` +
     `${tilled}${describePlant(tl.plant)}${structureHint(pos)}${entityHint(pos)}${growthHint(tl)}${sowHint(tl)}`;
