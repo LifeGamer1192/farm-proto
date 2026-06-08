@@ -7,7 +7,7 @@
 // α32 begins the post-prototype "α-version era". Versions alpha 4 through
 // alpha 31 (the prototype era) are preserved under /versions/ and remain
 // playable via the link in the header.
-export const ALPHA_VERSION = 'alpha 35';
+export const ALPHA_VERSION = 'alpha 36';
 
 // α33: seafood (fish / clams) on water tiles. Fraction of water tiles
 // that start with a fishable catch on them; regrows over time so the

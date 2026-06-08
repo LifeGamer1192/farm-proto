@@ -317,19 +317,17 @@ export class Renderer {
     };
 
     // --- structures (fences, huts, warehouses, hearths) ---
-    // α35: structure draw routines were written for a square ts×ts tile
-    // and position features relative to its top-left (px, py). To keep
-    // them working without rewriting each one, we feed them an anchor
-    // that places a virtual ts×ts square centred on the tile's iso
-    // centre — same draw code, structures land roughly inside the
-    // diamond. Phase 2 lifts the anchor by the tile's own elevation.
+    // α36: structure draws now receive the tile's iso ground centre
+    // directly. Each draw method paints a quarter-view building (visible
+    // front-left + front-right walls + hipped roof) anchored to that
+    // ground point. No more "fake square top-left" trick.
     for (let mapY = minY; mapY <= maxY; mapY++) {
       for (let mapX = minX; mapX <= maxX; mapX++) {
         const tile = map.tiles[mapY][mapX];
         const structure = tile.structure;
         if (structure) {
           const c = proj(mapX + 0.5, mapY + 0.5, tile.elevation || 0);
-          this._drawStructure(structure, c.x - ts / 2, c.y - ts / 2, hearthsLit);
+          this._drawStructure(structure, c.x, c.y, hearthsLit);
         }
       }
     }
@@ -465,54 +463,139 @@ export class Renderer {
     }
   }
 
-  // A built structure, drawn from the tile's top-left corner (px, py).
-  _drawStructure(structure, px, py, hearthsLit) {
+  // α36 helper: an iso quarter-view building shell with hipped roof.
+  // (cx, cy) is the iso ground centre. `w`/`d` are footprint in tile
+  // units (1.0 = a full tile diamond). `wallPx`/`roofPx` are screen
+  // pixels for the lift of the wall top and roof apex respectively.
+  // Returns the 9 key points (4 ground corners, 4 wall-top corners,
+  // and the roof apex) so callers can paint doors/windows on top.
+  _isoBox(cx, cy, w, d, wallPx, roofPx, palette) {
+    const ctx = this.ctx;
+    const ts = this.ts;
+    const hx = ts * w * 0.5;   // horizontal half-extent on screen
+    const hy = ts * d * 0.25;  // vertical half-extent (iso 2:1 → /4)
+    const back  = { x: cx,      y: cy - hy };
+    const right = { x: cx + hx, y: cy };
+    const front = { x: cx,      y: cy + hy };
+    const left  = { x: cx - hx, y: cy };
+    const tback  = { x: back.x,  y: back.y  - wallPx };
+    const tright = { x: right.x, y: right.y - wallPx };
+    const tfront = { x: front.x, y: front.y - wallPx };
+    const tleft  = { x: left.x,  y: left.y  - wallPx };
+    const apex   = { x: cx,      y: cy - wallPx - roofPx };
+
+    // Ground shadow (offset down-right per upper-left light source).
+    if (palette.shadow !== null) {
+      ctx.fillStyle = palette.shadow || 'rgba(0,0,0,0.28)';
+      ctx.beginPath();
+      ctx.ellipse(cx + ts * 0.04, cy + ts * 0.04, hx * 1.0, hy * 1.05, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    // SW wall (front-left, lit).
+    ctx.fillStyle = palette.wallLit;
+    ctx.beginPath();
+    ctx.moveTo(left.x, left.y);
+    ctx.lineTo(front.x, front.y);
+    ctx.lineTo(tfront.x, tfront.y);
+    ctx.lineTo(tleft.x, tleft.y);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = palette.outline;
+    ctx.lineWidth = 1.1;
+    ctx.stroke();
+    // SE wall (front-right, shaded).
+    ctx.fillStyle = palette.wallShaded;
+    ctx.beginPath();
+    ctx.moveTo(front.x, front.y);
+    ctx.lineTo(right.x, right.y);
+    ctx.lineTo(tright.x, tright.y);
+    ctx.lineTo(tfront.x, tfront.y);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    // SW roof (lit triangle).
+    ctx.fillStyle = palette.roofLit;
+    ctx.beginPath();
+    ctx.moveTo(tleft.x, tleft.y);
+    ctx.lineTo(tfront.x, tfront.y);
+    ctx.lineTo(apex.x, apex.y);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    // SE roof (shaded triangle).
+    ctx.fillStyle = palette.roofShaded;
+    ctx.beginPath();
+    ctx.moveTo(tfront.x, tfront.y);
+    ctx.lineTo(tright.x, tright.y);
+    ctx.lineTo(apex.x, apex.y);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+
+    return { back, right, front, left, tback, tright, tfront, tleft, apex };
+  }
+
+  // α36: a built structure, drawn around (cx, cy) — the tile's iso
+  // ground centre. Each branch paints a quarter-view shell with visible
+  // walls and roof.
+  _drawStructure(structure, cx, cy, hearthsLit) {
     const ctx = this.ctx;
     const ts = this.ts;
 
     if (structure === 'hearth') {
-      const mx = px + ts * 0.5;
-      const my = py + ts * 0.52;
+      // Iso hearth: an elliptical ring of stones on the ground, a small
+      // inner ash pit, crossed logs in the centre, and rising flames
+      // when lit. The whole thing sits flat on the tile's ground plane.
+      const mx = cx;
+      const my = cy + ts * 0.04;
+      const ringRx = ts * 0.30; // half-width  on screen (iso x)
+      const ringRy = ts * 0.16; // half-height on screen (iso y)
       if (hearthsLit) {
-        const glow = ctx.createRadialGradient(mx, my, ts * 0.08, mx, my, ts * 0.62);
-        glow.addColorStop(0, 'rgba(255,170,60,0.5)');
+        const glow = ctx.createRadialGradient(mx, my, ts * 0.08, mx, my, ts * 0.6);
+        glow.addColorStop(0, 'rgba(255,170,60,0.45)');
         glow.addColorStop(1, 'rgba(255,170,60,0)');
         ctx.fillStyle = glow;
-        ctx.fillRect(px - ts * 0.3, py - ts * 0.3, ts * 1.6, ts * 1.6);
+        ctx.fillRect(mx - ts * 0.6, my - ts * 0.6, ts * 1.2, ts * 1.2);
       }
-      // Ring of individual stones.
-      ctx.strokeStyle = '#4a4a4a';
+      // Ring of individual stones, positioned on the iso ellipse.
+      ctx.strokeStyle = '#3a3a3a';
       ctx.lineWidth = 1;
       for (let i = 0; i < 8; i++) {
         const ang = (i / 8) * Math.PI * 2;
-        ctx.fillStyle = i % 2 ? '#888' : '#6f6f6f';
+        ctx.fillStyle = i % 2 ? '#909090' : '#6f6f6f';
         ctx.beginPath();
-        ctx.arc(mx + Math.cos(ang) * ts * 0.32, my + Math.sin(ang) * ts * 0.32, ts * 0.1, 0, Math.PI * 2);
+        ctx.ellipse(
+          mx + Math.cos(ang) * ringRx,
+          my + Math.sin(ang) * ringRy,
+          ts * 0.10, ts * 0.06, 0, 0, Math.PI * 2,
+        );
         ctx.fill();
         ctx.stroke();
       }
-      ctx.fillStyle = '#221c18'; // ash pit
+      // Ash pit (centre, dark ellipse).
+      ctx.fillStyle = '#221c18';
       ctx.beginPath();
-      ctx.arc(mx, my, ts * 0.21, 0, Math.PI * 2);
+      ctx.ellipse(mx, my, ts * 0.18, ts * 0.10, 0, 0, Math.PI * 2);
       ctx.fill();
-      ctx.strokeStyle = '#7a5230'; // crossed logs
-      ctx.lineWidth = 2.5;
+      // Crossed logs (drawn at iso angles).
+      ctx.strokeStyle = '#7a5230';
+      ctx.lineWidth = 2.2;
       ctx.beginPath();
-      ctx.moveTo(mx - ts * 0.16, my + ts * 0.12);
-      ctx.lineTo(mx + ts * 0.16, my - ts * 0.12);
-      ctx.moveTo(mx - ts * 0.16, my - ts * 0.12);
-      ctx.lineTo(mx + ts * 0.16, my + ts * 0.12);
+      ctx.moveTo(mx - ts * 0.16, my + ts * 0.06);
+      ctx.lineTo(mx + ts * 0.16, my - ts * 0.06);
+      ctx.moveTo(mx - ts * 0.16, my - ts * 0.06);
+      ctx.lineTo(mx + ts * 0.16, my + ts * 0.06);
       ctx.stroke();
       if (hearthsLit) {
         for (const [w, h, col] of [
-          [0.2, 0.52, '#e8590f'],
-          [0.13, 0.38, '#f59a1e'],
-          [0.07, 0.22, '#ffd751'],
+          [0.18, 0.46, '#e8590f'],
+          [0.12, 0.34, '#f59a1e'],
+          [0.06, 0.20, '#ffd751'],
         ]) {
           ctx.fillStyle = col;
           ctx.beginPath();
           ctx.moveTo(mx, my - ts * h);
-          ctx.quadraticCurveTo(mx + ts * w, my - ts * h * 0.3, mx, my + ts * 0.04);
+          ctx.quadraticCurveTo(mx + ts * w, my - ts * h * 0.3, mx, my + ts * 0.02);
           ctx.quadraticCurveTo(mx - ts * w, my - ts * h * 0.3, mx, my - ts * h);
           ctx.fill();
         }
@@ -521,112 +604,119 @@ export class Renderer {
     }
 
     if (structure === 'workshop') {
-      // α31: workbench under a peaked canopy — distinguishes from hearth
-      // (stone ring + fire) at a glance. Brown timber palette, with a
-      // small barrel on top to hint at the brewing / processing role.
-      const cx = px + ts * 0.5;
-      const baseY = py + ts * 0.84;
-      // Bench top
+      // α36 iso workshop: open quarter-view canopy on 4 visible posts
+      // with a workbench + small barrel underneath. The canopy reads as
+      // a roof without walls so it doesn't look like a hut at a glance.
+      const wallPx = ts * 0.05;  // very low "walls" (just header beam)
+      const roofPx = ts * 0.20;
+      const w = 0.9, d = 0.9;
+      // Skeleton: ground shadow + roof only (no wall fills, so we draw
+      // the box with shadow + roof, then add posts and bench by hand).
+      const ground = this._isoBox(cx, cy, w, d, wallPx, roofPx, {
+        wallLit:    'rgba(0,0,0,0)',  // transparent: no wall fill
+        wallShaded: 'rgba(0,0,0,0)',
+        outline:    'rgba(0,0,0,0)',  // skip wall stroke
+        roofLit:    '#7d5424',
+        roofShaded: '#5b3f1c',
+        shadow:     'rgba(0,0,0,0.25)',
+      });
+      // Four corner posts (vertical strokes from ground to roof corner).
+      ctx.strokeStyle = '#5b3f1c';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(ground.left.x,  ground.left.y);  ctx.lineTo(ground.tleft.x,  ground.tleft.y);
+      ctx.moveTo(ground.front.x, ground.front.y); ctx.lineTo(ground.tfront.x, ground.tfront.y);
+      ctx.moveTo(ground.right.x, ground.right.y); ctx.lineTo(ground.tright.x, ground.tright.y);
+      ctx.stroke();
+      // Workbench: rectangle in iso, sitting low and centred.
+      const bx = cx, by = cy + ts * 0.08;
       ctx.fillStyle = '#8c6234';
-      ctx.fillRect(px + ts * 0.18, py + ts * 0.55, ts * 0.64, ts * 0.12);
+      ctx.beginPath();
+      ctx.ellipse(bx, by, ts * 0.22, ts * 0.10, 0, 0, Math.PI * 2);
+      ctx.fill();
       ctx.strokeStyle = '#3f2a12';
       ctx.lineWidth = 1;
-      ctx.strokeRect(px + ts * 0.18, py + ts * 0.55, ts * 0.64, ts * 0.12);
-      // Bench legs
-      ctx.fillStyle = '#6a4623';
-      ctx.fillRect(px + ts * 0.22, py + ts * 0.67, ts * 0.08, ts * 0.17);
-      ctx.fillRect(px + ts * 0.70, py + ts * 0.67, ts * 0.08, ts * 0.17);
-      // Canopy roof
-      ctx.fillStyle = '#5b3f1c';
-      ctx.beginPath();
-      ctx.moveTo(px + ts * 0.10, py + ts * 0.42);
-      ctx.lineTo(cx, py + ts * 0.18);
-      ctx.lineTo(px + ts * 0.90, py + ts * 0.42);
-      ctx.closePath();
-      ctx.fill();
-      ctx.strokeStyle = '#321e0a';
-      ctx.lineWidth = 1.2;
       ctx.stroke();
-      // Canopy support posts
-      ctx.strokeStyle = '#5b3f1c';
-      ctx.lineWidth = 1.4;
-      ctx.beginPath();
-      ctx.moveTo(px + ts * 0.16, py + ts * 0.42);
-      ctx.lineTo(px + ts * 0.16, py + ts * 0.62);
-      ctx.moveTo(px + ts * 0.84, py + ts * 0.42);
-      ctx.lineTo(px + ts * 0.84, py + ts * 0.62);
-      ctx.stroke();
-      // Small barrel sitting on the bench
+      // Barrel on the bench.
       ctx.fillStyle = '#9a6a35';
       ctx.beginPath();
-      ctx.ellipse(cx, py + ts * 0.49, ts * 0.13, ts * 0.16, 0, 0, Math.PI * 2);
+      ctx.ellipse(bx, by - ts * 0.06, ts * 0.10, ts * 0.13, 0, 0, Math.PI * 2);
       ctx.fill();
-      ctx.strokeStyle = '#5b3f1c';
-      ctx.lineWidth = 1;
       ctx.stroke();
-      // Two hoops on the barrel
+      // Hoops on the barrel.
+      ctx.lineWidth = 1;
       ctx.beginPath();
-      ctx.moveTo(cx - ts * 0.12, py + ts * 0.46);
-      ctx.lineTo(cx + ts * 0.12, py + ts * 0.46);
-      ctx.moveTo(cx - ts * 0.12, py + ts * 0.52);
-      ctx.lineTo(cx + ts * 0.12, py + ts * 0.52);
+      ctx.ellipse(bx, by - ts * 0.10, ts * 0.10, ts * 0.03, 0, 0, Math.PI * 2);
+      ctx.ellipse(bx, by - ts * 0.02, ts * 0.10, ts * 0.03, 0, 0, Math.PI * 2);
       ctx.stroke();
       return;
     }
 
     if (structure === 'stockpile' || structure === 'stockpile_med' || structure === 'stockpile_large') {
-      // A warehouse — a plank-walled barn with a gabled roof and a wide door.
-      // Tier-2 (medium / large) variants paint the same silhouette with a
-      // bright pennant on the ridge so the player can tell them apart.
-      const ix = px + ts * 0.5;
-      ctx.fillStyle = '#bd8e52';
-      ctx.fillRect(px + ts * 0.16, py + ts * 0.42, ts * 0.68, ts * 0.42);
-      ctx.strokeStyle = '#5e3f1c';
-      ctx.lineWidth = 1.4;
-      ctx.strokeRect(px + ts * 0.16, py + ts * 0.42, ts * 0.68, ts * 0.42);
-      ctx.strokeStyle = 'rgba(94,63,28,0.4)'; // plank lines
+      // α36 iso warehouse: tall plank-walled box, hipped roof, wide
+      // double door on the front-left face. Larger tiers raise the
+      // walls + roof and add a pennant on the apex.
+      const sizeMul = structure === 'stockpile_large' ? 1.18
+                    : structure === 'stockpile_med'   ? 1.08
+                    : 1.0;
+      const wallPx = ts * 0.42 * sizeMul;
+      const roofPx = ts * 0.20 * sizeMul;
+      const pts = this._isoBox(cx, cy, 0.95, 0.95, wallPx, roofPx, {
+        wallLit:    '#c8985a',
+        wallShaded: '#9c7340',
+        outline:    '#3f2a12',
+        roofLit:    '#9a6230',
+        roofShaded: '#6c4218',
+      });
+      // Plank lines on the SW (lit) wall — horizontal in world = follow
+      // the wall's bottom→top axis on screen.
+      ctx.strokeStyle = 'rgba(60,38,14,0.45)';
       ctx.lineWidth = 1;
+      for (const t of [0.33, 0.66]) {
+        const aL = { x: lerp(pts.left.x,  pts.tleft.x,  t), y: lerp(pts.left.y,  pts.tleft.y,  t) };
+        const aR = { x: lerp(pts.front.x, pts.tfront.x, t), y: lerp(pts.front.y, pts.tfront.y, t) };
+        ctx.beginPath();
+        ctx.moveTo(aL.x, aL.y);
+        ctx.lineTo(aR.x, aR.y);
+        ctx.stroke();
+      }
+      // Double door on the SW (front-left) wall — a vertical rectangle.
+      const doorH = wallPx * 0.7;
+      const doorBaseX = lerp(pts.left.x, pts.front.x, 0.55);
+      const doorBaseY = lerp(pts.left.y, pts.front.y, 0.55);
+      const doorTopX = doorBaseX;
+      const doorTopY = doorBaseY - doorH;
+      const doorHalfW = ts * 0.15 * sizeMul;
+      ctx.fillStyle = '#5d3a14';
       ctx.beginPath();
-      ctx.moveTo(px + ts * 0.16, py + ts * 0.56);
-      ctx.lineTo(px + ts * 0.84, py + ts * 0.56);
-      ctx.moveTo(px + ts * 0.16, py + ts * 0.7);
-      ctx.lineTo(px + ts * 0.84, py + ts * 0.7);
-      ctx.stroke();
-      ctx.fillStyle = '#7a4f24'; // gabled roof
-      ctx.beginPath();
-      ctx.moveTo(px + ts * 0.09, py + ts * 0.44);
-      ctx.lineTo(px + ts * 0.5, py + ts * 0.19);
-      ctx.lineTo(px + ts * 0.91, py + ts * 0.44);
+      ctx.moveTo(doorBaseX - doorHalfW * 0.6, doorBaseY + doorHalfW * 0.3);
+      ctx.lineTo(doorBaseX + doorHalfW * 0.6, doorBaseY - doorHalfW * 0.3);
+      ctx.lineTo(doorTopX + doorHalfW * 0.6, doorTopY - doorHalfW * 0.3);
+      ctx.lineTo(doorTopX - doorHalfW * 0.6, doorTopY + doorHalfW * 0.3);
       ctx.closePath();
       ctx.fill();
       ctx.strokeStyle = '#3f2a12';
-      ctx.lineWidth = 1.4;
-      ctx.stroke();
-      ctx.fillStyle = '#6e4a22'; // double door
-      ctx.fillRect(ix - ts * 0.15, py + ts * 0.54, ts * 0.3, ts * 0.3);
-      ctx.strokeStyle = '#3f2a12';
       ctx.lineWidth = 1;
-      ctx.strokeRect(ix - ts * 0.15, py + ts * 0.54, ts * 0.3, ts * 0.3);
-      ctx.beginPath();
-      ctx.moveTo(ix, py + ts * 0.54);
-      ctx.lineTo(ix, py + ts * 0.84);
       ctx.stroke();
+      // Vertical centre split on the door.
+      ctx.beginPath();
+      ctx.moveTo(doorBaseX, doorBaseY);
+      ctx.lineTo(doorTopX, doorTopY);
+      ctx.stroke();
+      // Pennant on the apex for med / large.
       if (structure !== 'stockpile') {
-        // Pennant on the gable. Medium = yellow, large = red triangle.
-        const pole_x = ix;
-        const pole_top = py + ts * 0.05;
-        const pole_bot = py + ts * 0.19;
+        const poleTop = { x: pts.apex.x, y: pts.apex.y - ts * 0.16 };
         ctx.strokeStyle = '#3f2a12';
         ctx.lineWidth = 1.2;
         ctx.beginPath();
-        ctx.moveTo(pole_x, pole_top);
-        ctx.lineTo(pole_x, pole_bot);
+        ctx.moveTo(pts.apex.x, pts.apex.y);
+        ctx.lineTo(poleTop.x, poleTop.y);
         ctx.stroke();
         ctx.fillStyle = structure === 'stockpile_large' ? '#cc3a2a' : '#e8c34a';
         ctx.beginPath();
-        ctx.moveTo(pole_x, pole_top);
-        ctx.lineTo(pole_x + ts * 0.18, pole_top + ts * 0.04);
-        ctx.lineTo(pole_x, pole_top + ts * 0.08);
+        ctx.moveTo(poleTop.x, poleTop.y);
+        ctx.lineTo(poleTop.x + ts * 0.18, poleTop.y + ts * 0.04);
+        ctx.lineTo(poleTop.x, poleTop.y + ts * 0.10);
         ctx.closePath();
         ctx.fill();
         ctx.stroke();
@@ -635,67 +725,110 @@ export class Renderer {
     }
 
     if (structure === 'hut' || structure === 'hut_med' || structure === 'hut_large') {
-      ctx.fillStyle = '#caa06a'; // body
-      ctx.fillRect(px + ts * 0.26, py + ts * 0.44, ts * 0.48, ts * 0.38);
-      ctx.lineWidth = 1.4;
-      ctx.strokeStyle = '#5a3a1e';
-      ctx.strokeRect(px + ts * 0.26, py + ts * 0.44, ts * 0.48, ts * 0.38);
-      ctx.fillStyle = '#8a4f2c'; // roof
+      // α36 iso hut: small wooden home with hipped roof, lit windows
+      // tucked under the eave on the visible SW wall. Larger tiers
+      // grow up + out + paint additional windows.
+      const sizeMul = structure === 'hut_large' ? 1.18
+                    : structure === 'hut_med'   ? 1.08
+                    : 1.0;
+      const wallPx = ts * 0.30 * sizeMul;
+      const roofPx = ts * 0.22 * sizeMul;
+      const pts = this._isoBox(cx, cy, 0.78, 0.78, wallPx, roofPx, {
+        wallLit:    '#caa06a',
+        wallShaded: '#9c7a48',
+        outline:    '#5a3a1e',
+        roofLit:    '#a05a30',
+        roofShaded: '#7a4220',
+      });
+      // Door on the SW wall (front-left), centred on the lower edge.
+      const doorH = wallPx * 0.7;
+      const doorBaseX = lerp(pts.left.x, pts.front.x, 0.55);
+      const doorBaseY = lerp(pts.left.y, pts.front.y, 0.55);
+      const doorHalfW = ts * 0.06 * sizeMul;
+      const doorTopX = doorBaseX;
+      const doorTopY = doorBaseY - doorH;
+      ctx.fillStyle = '#4a3018';
       ctx.beginPath();
-      ctx.moveTo(px + ts * 0.16, py + ts * 0.46);
-      ctx.lineTo(px + ts * 0.5, py + ts * 0.14);
-      ctx.lineTo(px + ts * 0.84, py + ts * 0.46);
+      ctx.moveTo(doorBaseX - doorHalfW * 0.6, doorBaseY + doorHalfW * 0.3);
+      ctx.lineTo(doorBaseX + doorHalfW * 0.6, doorBaseY - doorHalfW * 0.3);
+      ctx.lineTo(doorTopX + doorHalfW * 0.6, doorTopY - doorHalfW * 0.3);
+      ctx.lineTo(doorTopX - doorHalfW * 0.6, doorTopY + doorHalfW * 0.3);
       ctx.closePath();
       ctx.fill();
-      ctx.stroke();
-      ctx.strokeStyle = 'rgba(255,222,170,0.45)'; // roof highlight
+      ctx.strokeStyle = '#2a1808';
       ctx.lineWidth = 1;
-      ctx.beginPath();
-      ctx.moveTo(px + ts * 0.5, py + ts * 0.14);
-      ctx.lineTo(px + ts * 0.31, py + ts * 0.45);
       ctx.stroke();
-      ctx.fillStyle = '#4a3018'; // door
-      ctx.fillRect(px + ts * 0.43, py + ts * 0.58, ts * 0.14, ts * 0.24);
-      ctx.fillStyle = '#e8c873'; // lit window
-      ctx.fillRect(px + ts * 0.6, py + ts * 0.52, ts * 0.1, ts * 0.1);
+      // Lit window on the SE (front-right) wall.
+      const winFracX = 0.5; // mid of the wall edge from front to right
+      const winBaseX = lerp(pts.front.x, pts.right.x, winFracX);
+      const winBaseY = lerp(pts.front.y, pts.right.y, winFracX);
+      const winHalf = ts * 0.05 * sizeMul;
+      const winTopX = winBaseX;
+      const winTopY = winBaseY - wallPx * 0.55;
+      ctx.fillStyle = '#e8c873';
+      ctx.beginPath();
+      ctx.moveTo(winBaseX - winHalf * 0.6, winBaseY - winHalf);
+      ctx.lineTo(winBaseX + winHalf * 0.6, winBaseY - winHalf * 0.3);
+      ctx.lineTo(winTopX + winHalf * 0.6, winTopY - winHalf * 0.3);
+      ctx.lineTo(winTopX - winHalf * 0.6, winTopY - winHalf);
+      ctx.closePath();
+      ctx.fill();
       ctx.strokeStyle = '#5a3a1e';
-      ctx.strokeRect(px + ts * 0.6, py + ts * 0.52, ts * 0.1, ts * 0.1);
+      ctx.stroke();
+      // Extra windows under the eave on the SW wall (med + large).
       if (structure !== 'hut') {
-        // Tier-2 huts paint a row of extra lit windows along the eave so
-        // the bigger family hall reads at a glance. Medium = 2, large = 3.
         const dots = structure === 'hut_large' ? 3 : 2;
-        ctx.fillStyle = '#e8c873';
-        ctx.strokeStyle = '#5a3a1e';
         for (let i = 0; i < dots; i++) {
-          const wx = px + ts * (0.3 + i * 0.16);
-          const wy = py + ts * 0.7;
-          ctx.fillRect(wx, wy, ts * 0.1, ts * 0.08);
-          ctx.strokeRect(wx, wy, ts * 0.1, ts * 0.08);
+          const t = (i + 1) / (dots + 1);
+          const wBaseX = lerp(pts.left.x, pts.front.x, t);
+          const wBaseY = lerp(pts.left.y, pts.front.y, t);
+          const wTopX = wBaseX;
+          const wTopY = wBaseY - wallPx * 0.4;
+          const halfW = ts * 0.04 * sizeMul;
+          ctx.fillStyle = '#e8c873';
+          ctx.beginPath();
+          ctx.moveTo(wBaseX - halfW * 0.6, wBaseY - halfW);
+          ctx.lineTo(wBaseX + halfW * 0.6, wBaseY - halfW * 0.3);
+          ctx.lineTo(wTopX + halfW * 0.6, wTopY - halfW * 0.3);
+          ctx.lineTo(wTopX - halfW * 0.6, wTopY - halfW);
+          ctx.closePath();
+          ctx.fill();
+          ctx.stroke();
         }
       }
       return;
     }
 
-    // fence — corner posts joined by crossed rails.
+    // α36 iso fence — four posts at the diamond corners with crossed
+    // rails running along the diamond edges. The posts rise above
+    // ground; the rails connect their top mid-points.
+    const postH = ts * 0.22;
+    const hx = ts * 0.40;
+    const hy = ts * 0.20;
+    const corners = [
+      { x: cx,      y: cy - hy },  // back
+      { x: cx + hx, y: cy },        // right
+      { x: cx,      y: cy + hy },   // front
+      { x: cx - hx, y: cy },        // left
+    ];
+    const tops = corners.map((c) => ({ x: c.x, y: c.y - postH }));
+    // Rails along the SW and SE edges only (visible faces).
     ctx.strokeStyle = '#9a7042';
-    ctx.lineWidth = 2;
-    const a = ts * 0.18;
-    const b = ts * 0.82;
-    ctx.strokeRect(px + a, py + a, b - a, b - a);
+    ctx.lineWidth = 1.5;
     ctx.beginPath();
-    ctx.moveTo(px + a, py + a);
-    ctx.lineTo(px + b, py + b);
-    ctx.moveTo(px + b, py + a);
-    ctx.lineTo(px + a, py + b);
+    ctx.moveTo(tops[2].x, tops[2].y); ctx.lineTo(tops[3].x, tops[3].y);
+    ctx.moveTo(tops[2].x, tops[2].y); ctx.lineTo(tops[1].x, tops[1].y);
+    ctx.moveTo(corners[2].x, corners[2].y - postH * 0.5); ctx.lineTo(corners[3].x, corners[3].y - postH * 0.5);
+    ctx.moveTo(corners[2].x, corners[2].y - postH * 0.5); ctx.lineTo(corners[1].x, corners[1].y - postH * 0.5);
     ctx.stroke();
+    // Posts (small rectangles).
     ctx.fillStyle = '#6e4a26';
-    for (const [fx, fy] of [
-      [a, a],
-      [b, a],
-      [a, b],
-      [b, b],
-    ]) {
-      ctx.fillRect(px + fx - ts * 0.07, py + fy - ts * 0.07, ts * 0.14, ts * 0.14);
+    ctx.strokeStyle = '#3f2a12';
+    ctx.lineWidth = 1;
+    for (const c of corners) {
+      const w = ts * 0.05;
+      ctx.fillRect(c.x - w, c.y - postH, w * 2, postH);
+      ctx.strokeRect(c.x - w, c.y - postH, w * 2, postH);
     }
   }
 
@@ -1053,58 +1186,95 @@ export class Renderer {
     }
   }
 
-  // A tree: a brown trunk with a green leafy crown on top. Young trees
-  // (growth < 1) draw smaller — a fresh sprout that grows over time.
+  // α36 iso tree: trunk rises from the ground, canopy as a hemispherical
+  // volume above. Drop shadow at the base. Young trees scale down via
+  // plant.growth (0.25..1). Visible from upper-left, so the canopy
+  // shows lit top-left + shaded bottom-right.
   _drawTree(plant, cx, cy) {
     const ctx = this.ctx;
     const ts = this.ts;
     const g = Math.max(0.25, Math.min(1, plant.growth || 1));
-    const trunkH = ts * 0.32 * g;
-    const trunkW = Math.max(1.2, ts * 0.09 * g);
-    const baseY = cy + ts * 0.34;
-    // Trunk.
+    const trunkH = ts * 0.42 * g;
+    const trunkW = Math.max(1.5, ts * 0.10 * g);
+    const baseY = cy + ts * 0.06; // ground meet point
+    // Ground shadow (offset slightly right of trunk).
+    ctx.fillStyle = 'rgba(0,0,0,0.25)';
+    ctx.beginPath();
+    ctx.ellipse(cx + ts * 0.03, baseY + ts * 0.02, ts * 0.20 * g, ts * 0.08 * g, 0, 0, Math.PI * 2);
+    ctx.fill();
+    // Trunk (a tapered vertical column).
     ctx.fillStyle = '#5a3a20';
-    ctx.fillRect(cx - trunkW * 0.5, baseY - trunkH, trunkW, trunkH);
+    ctx.beginPath();
+    ctx.moveTo(cx - trunkW * 0.5, baseY);
+    ctx.lineTo(cx + trunkW * 0.5, baseY);
+    ctx.lineTo(cx + trunkW * 0.35, baseY - trunkH);
+    ctx.lineTo(cx - trunkW * 0.35, baseY - trunkH);
+    ctx.closePath();
+    ctx.fill();
     ctx.strokeStyle = '#3b2614';
     ctx.lineWidth = 1;
-    ctx.strokeRect(cx - trunkW * 0.5, baseY - trunkH, trunkW, trunkH);
-    // Leafy crown — three overlapping circles to suggest a canopy.
-    const cr = ts * 0.22 * g;
-    const crownY = baseY - trunkH - cr * 0.4;
-    ctx.fillStyle = '#2f6b34';
+    ctx.stroke();
+    // Canopy — large central blob + lit + shaded highlights.
+    const cr = ts * 0.30 * g;
+    const crownY = baseY - trunkH - cr * 0.25;
+    // Shaded back (drawn first so lit lobes overlap).
+    ctx.fillStyle = '#1f4d23';
+    ctx.beginPath();
+    ctx.arc(cx + cr * 0.32, crownY + cr * 0.20, cr * 0.78, 0, Math.PI * 2);
+    ctx.fill();
     ctx.strokeStyle = '#19401f';
-    for (const [ox, oy] of [
-      [-cr * 0.55, cr * 0.25],
-      [cr * 0.55, cr * 0.25],
-      [0, -cr * 0.45],
-    ]) {
-      ctx.beginPath();
-      ctx.arc(cx + ox, crownY + oy, cr * 0.75, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.stroke();
-    }
+    ctx.stroke();
+    // Main body.
+    ctx.fillStyle = '#2f6b34';
+    ctx.beginPath();
+    ctx.arc(cx, crownY, cr * 0.92, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    // Lit highlight (lobe up-left).
+    ctx.fillStyle = '#4f9248';
+    ctx.beginPath();
+    ctx.arc(cx - cr * 0.35, crownY - cr * 0.25, cr * 0.55, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
   }
 
-  // A stump: a low, flat brown ellipse where a tree used to stand.
+  // α36 iso stump: a short cylinder (top ellipse + side rectangle).
+  // Reads as "tree cut, base remains" from quarter view.
   _drawStump(cx, cy) {
     const ctx = this.ctx;
     const ts = this.ts;
-    const baseY = cy + ts * 0.3;
-    ctx.fillStyle = '#6b4a2d';
+    const baseY = cy + ts * 0.06;
+    const rx = ts * 0.13;
+    const ry = ts * 0.06;
+    const h = ts * 0.10;
+    // Ground shadow.
+    ctx.fillStyle = 'rgba(0,0,0,0.22)';
+    ctx.beginPath();
+    ctx.ellipse(cx + ts * 0.02, baseY + ts * 0.02, rx * 1.05, ry * 1.05, 0, 0, Math.PI * 2);
+    ctx.fill();
+    // Side (lower trapezoid).
+    ctx.fillStyle = '#5a3e22';
+    ctx.beginPath();
+    ctx.moveTo(cx - rx, baseY);
+    ctx.lineTo(cx + rx, baseY);
+    ctx.lineTo(cx + rx, baseY - h);
+    ctx.lineTo(cx - rx, baseY - h);
+    ctx.closePath();
+    ctx.fill();
     ctx.strokeStyle = '#3b2614';
     ctx.lineWidth = 1;
+    ctx.stroke();
+    // Top (lit ellipse).
+    ctx.fillStyle = '#8a5d35';
     ctx.beginPath();
-    ctx.ellipse(cx, baseY, ts * 0.16, ts * 0.08, 0, 0, Math.PI * 2);
+    ctx.ellipse(cx, baseY - h, rx, ry, 0, 0, Math.PI * 2);
     ctx.fill();
     ctx.stroke();
-    // A few growth rings.
+    // Growth ring (small inner ellipse).
     ctx.strokeStyle = '#4d3320';
     ctx.lineWidth = 0.8;
     ctx.beginPath();
-    ctx.ellipse(cx, baseY, ts * 0.1, ts * 0.05, 0, 0, Math.PI * 2);
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.ellipse(cx, baseY, ts * 0.05, ts * 0.025, 0, 0, Math.PI * 2);
+    ctx.ellipse(cx, baseY - h, rx * 0.55, ry * 0.55, 0, 0, Math.PI * 2);
     ctx.stroke();
   }
 
