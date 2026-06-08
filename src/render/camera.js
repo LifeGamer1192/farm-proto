@@ -19,6 +19,16 @@ export const ISO_TILE_H_RATIO = 0.5;   // diamond half-height = ts * 0.25
 // plains; gentle hills are now obvious mounds rather than subtle tints.
 export const ISO_ELEV_RATIO = 3.0;
 
+// α36 followup #2: non-linear lift curve. Linear elevation looked dull —
+// hills barely bumped up while "high mountains" only rose ~3 tiles.
+// f(e) = e + 4·e³ gives ~2× lift at e=0.5 (hill territory) and ~4-5× at
+// e≈0.95 (rare peaks), with the cubic term keeping plains (e<0.3) almost
+// flat. Storage keeps raw 0..1 elevation; only the visual projection
+// + hit-test apply this curve.
+export function elevationLift(e) {
+  return e + 4 * e * e * e;
+}
+
 /**
  * Project a world (tile) point to screen pixels. `wx`, `wy` are floating
  * tile coordinates (e.g. a tile corner is integer; a tile centre is +0.5).
@@ -36,7 +46,7 @@ export function worldToScreen(wx, wy, camera, ts, canvasW, canvasH, elevation = 
   const tw = ts * ISO_TILE_W_RATIO; // full tile width  (diamond w)
   const th = ts * ISO_TILE_H_RATIO; // full tile height (diamond h)
   const sx = (dx - dy) * (tw / 2) + canvasW / 2;
-  const sy = (dx + dy) * (th / 2) + canvasH / 2 - elevation * ts * ISO_ELEV_RATIO;
+  const sy = (dx + dy) * (th / 2) + canvasH / 2 - elevationLift(elevation) * ts * ISO_ELEV_RATIO;
   return { x: sx, y: sy };
 }
 

@@ -12,6 +12,7 @@ import {
   ISO_TILE_W_RATIO,
   ISO_TILE_H_RATIO,
   ISO_ELEV_RATIO,
+  elevationLift,
 } from './camera.js';
 
 const lerp = (a, b, t) => a + (b - a) * t;
@@ -250,7 +251,7 @@ export class Renderer {
         const dy = wy - camCy;
         const idx = cy * cxN + cx;
         cornerX[idx] = (dx - dy) * projTW2 + halfW;
-        cornerY[idx] = (dx + dy) * projTH2 + halfH - elev * elevPx;
+        cornerY[idx] = (dx + dy) * projTH2 + halfH - elevationLift(elev) * elevPx;
       }
     }
     // α36: slope shading runs at every zoom level — bucketed fills keep

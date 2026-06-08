@@ -35,7 +35,7 @@ import { t, setLang, getLang } from './i18n.js';
 import { icon } from './icons.js';
 import { Game, STOCKPILE_ITEMS } from './game.js';
 import { nutrientsOf, isEdibleRaw as foodIsEdibleRaw } from './systems/foodSystem.js';
-import { screenToWorld, ISO_ELEV_RATIO } from './render/camera.js';
+import { screenToWorld, ISO_ELEV_RATIO, elevationLift } from './render/camera.js';
 import { isDish as recipesIsDish } from './recipes.js';
 import { SEAFOOD_TYPES, SEAFOOD_IDS, seafoodYield } from './seafood.js';
 import { SEASONS } from './season.js';
@@ -2047,10 +2047,10 @@ function tileAt(clientX, clientY) {
     const cx = Math.max(0, Math.min(GRID_COLS - 1, x));
     const cy = Math.max(0, Math.min(GRID_ROWS - 1, y));
     const elev = game.map?.tiles?.[cy]?.[cx]?.elevation || 0;
-    // Compensate: the click was at the LIFTED screen Y; to find the
-    // ground tile the click visually points to, re-project as if the
-    // click were at (px, py + elev * elevPx).
-    adjY = py + elev * elevPx;
+    // Compensate: the click was at the LIFTED screen Y; the same
+    // non-linear curve used by worldToScreen applies here so the
+    // iteration stays in sync with the visual.
+    adjY = py + elevationLift(elev) * elevPx;
   }
   if (lastX < 0 || lastY < 0 || lastX >= GRID_COLS || lastY >= GRID_ROWS) return null;
   return { x: lastX, y: lastY };
