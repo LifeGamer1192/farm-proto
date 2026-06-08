@@ -10,8 +10,13 @@ export const BIOMES = {
   temperate: {
     id: 'temperate',
     // Terrain (overrides config defaults when set).
-    waterLevel: 0.4,
-    minWaterFraction: 0.08,
+    // α36 followup: temperate uses a piecewise elevation curve that
+    // splits the map into ~10% water / ~70% plains / ~20% hills+mountains
+    // for a more pronounced "flat farmland with the occasional hill"
+    // look. Other biomes keep the smoother ridge-filter default.
+    flatPlainsCurve: true,
+    waterLevel: 0.05,
+    minWaterFraction: 0.10,
     moistureRange: 6,
     fertilityBonus: 0,
     // Wildlife / vegetation density.

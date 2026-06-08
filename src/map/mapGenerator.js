@@ -90,7 +90,11 @@ function classifyWaterBodies(tiles, cols, rows, minOceanSize = 60) {
       if (tiles[y][x].type !== TileType.WATER) continue;
       if (bodyId[y][x] !== -1) continue;
       const id = bodies.length;
-      const body = { id, size: 0, touchesEdge: false, minX: x, maxX: x, minY: y, maxY: y };
+      const body = {
+        id, size: 0, touchesEdge: false,
+        minX: x, maxX: x, minY: y, maxY: y,
+        elevSum: 0,
+      };
       const queue = [x, y];
       bodyId[y][x] = id;
       let head = 0;
@@ -98,6 +102,7 @@ function classifyWaterBodies(tiles, cols, rows, minOceanSize = 60) {
         const cx = queue[head++];
         const cy = queue[head++];
         body.size++;
+        body.elevSum += tiles[cy][cx].elevation || 0;
         if (cx === 0 || cy === 0 || cx === cols - 1 || cy === rows - 1) body.touchesEdge = true;
         if (cx < body.minX) body.minX = cx;
         if (cx > body.maxX) body.maxX = cx;
@@ -113,6 +118,7 @@ function classifyWaterBodies(tiles, cols, rows, minOceanSize = 60) {
           queue.push(nx, ny);
         }
       }
+      body.avgElev = body.elevSum / body.size;
       bodies.push(body);
     }
   }
@@ -127,11 +133,19 @@ function classifyWaterBodies(tiles, cols, rows, minOceanSize = 60) {
     else if (aspect >= 3 || b.size <= 10) b.kind = WaterKind.RIVER;
     else b.kind = WaterKind.LAKE;
   }
-  // Write the kind onto each water tile.
+  // Write the kind onto each water tile. α36 followup: ocean and lake
+  // tiles in the same body get flattened to that body's average
+  // elevation so the iso renderer no longer shows a single sea surface
+  // bumping up and down across its own area. Rivers keep their raw
+  // per-tile elevation so they can still flow downhill.
   for (let y = 0; y < rows; y++) {
     for (let x = 0; x < cols; x++) {
       if (tiles[y][x].type !== TileType.WATER) continue;
-      tiles[y][x].waterKind = bodies[bodyId[y][x]].kind;
+      const body = bodies[bodyId[y][x]];
+      tiles[y][x].waterKind = body.kind;
+      if (body.kind === WaterKind.OCEAN || body.kind === WaterKind.LAKE) {
+        tiles[y][x].elevation = body.avgElev;
+      }
     }
   }
   return bodies;
@@ -198,27 +212,63 @@ export function generateMap(cols, rows, seed, biome = null) {
   const peakNoise = makeFractalNoise(rand, 3, 5);
 
   // First pass: elevation.
-  // α36: each tile's final elevation = ridge-filtered base + peak boost.
-  //   1. base = elevationNoise(fx, fy)   (uniform 0..1, like before)
-  //   2. lifted = 1 − (1 − base)^2.2     (concave: high places climb higher,
-  //                                        low places nearly unchanged)
-  //   3. peak boost = max(0, peakNoise − 0.78) × 1.6    (rare sharp adds)
-  //   4. final = clamp01(lifted + boost)
-  // The result: hills where the base noise is mid-range, mountains where
-  // it's already high, and a sparse handful of headline peaks where both
-  // noises spike together.
+  // α36: each tile's final elevation = curve(base) + peak boost.
+  //   - default curve: 1 − (1 − base)^2.2 (concave ridge filter; high
+  //     places climb higher, low places nearly unchanged).
+  //   - α36 followup: `flatPlainsCurve` biomes (temperate) use a
+  //     PERCENTILE-based piecewise curve: bottom 10% of the actual
+  //     noise distribution → water, next 70% → plains, top 20% →
+  //     hills + mountains. Percentile cutoffs guarantee the desired
+  //     ratios even though Perlin output isn't uniformly distributed.
+  //   - peak boost (sparse second fractal) always applies for the
+  //     occasional commanding summit.
+  const flatPlains = biome?.flatPlainsCurve === true;
+  // For flatPlains we need to sample every tile's base noise first to
+  // compute percentile cutoffs; for the default curve we can do it
+  // inline. Two near-identical loops, kept separate so the default
+  // path doesn't pay for the extra sample array.
   const tiles = new Array(rows);
   const elevations = new Float64Array(cols * rows);
+  let p10 = 0.10, p80 = 0.80; // cutoffs (only used when flatPlains)
+  let baseValues = null;
+  if (flatPlains) {
+    baseValues = new Float64Array(cols * rows);
+    for (let y = 0; y < rows; y++) {
+      for (let x = 0; x < cols; x++) {
+        const fx = cols > 1 ? x / (cols - 1) : 0;
+        const fy = rows > 1 ? y / (rows - 1) : 0;
+        baseValues[y * cols + x] = elevationNoise(fx, fy);
+      }
+    }
+    p10 = percentile(baseValues, 0.10);
+    p80 = percentile(baseValues, 0.80);
+  }
   for (let y = 0; y < rows; y++) {
     tiles[y] = new Array(cols);
     for (let x = 0; x < cols; x++) {
       const fx = cols > 1 ? x / (cols - 1) : 0;
       const fy = rows > 1 ? y / (rows - 1) : 0;
-      const base = elevationNoise(fx, fy);
-      const lifted = 1 - Math.pow(1 - base, 2.2);
+      const base = flatPlains ? baseValues[y * cols + x] : elevationNoise(fx, fy);
+      let curved;
+      if (flatPlains) {
+        if (base < p10) {
+          // Bottom 10% → water region (kept low so waterLevel = 0.05 catches it).
+          curved = (base / p10) * 0.05;
+        } else if (base < p80) {
+          // Middle 70% → plains. Capped at curved 0.18 so the visual
+          // lift stays under ~15 px at Medium zoom → reads as flat.
+          curved = 0.05 + ((base - p10) / (p80 - p10)) * 0.13;
+        } else {
+          // Top 20% → hills + mountains. Concave ramp puts the top
+          // sliver (the headline mountains) at elev 0.7+.
+          curved = 0.20 + Math.pow((base - p80) / (1 - p80), 1.5) * 0.80;
+        }
+      } else {
+        curved = 1 - Math.pow(1 - base, 2.2);
+      }
       const peakSample = peakNoise(fx, fy);
       const peakBoost = Math.max(0, peakSample - 0.78) * 1.6;
-      const elevation = Math.max(0, Math.min(1, lifted + peakBoost));
+      const elevation = Math.max(0, Math.min(1, curved + peakBoost));
       elevations[y * cols + x] = elevation;
       tiles[y][x] = createTile({
         x,

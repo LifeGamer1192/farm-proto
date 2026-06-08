@@ -1900,12 +1900,18 @@ export class Game {
   _runSelectiveBreedingCulls() { return runSelectiveBreedingCulls(this); }
 
   _panVector() {
+    // α36 followup: WASD pans in iso-screen directions to match the
+    // rotated view. W = screen up = world (-1, -1) normalised by 1/√2
+    // so cardinal keys still cover the same per-frame distance as
+    // before. Each key contributes its iso vector; combined presses
+    // (WD = north-east on screen) cancel components cleanly.
+    const k = 1 / Math.sqrt(2);
     let dx = this.panDir.x;
     let dy = this.panDir.y;
-    if (this.keys.has('a')) dx -= 1;
-    if (this.keys.has('d')) dx += 1;
-    if (this.keys.has('w')) dy -= 1;
-    if (this.keys.has('s')) dy += 1;
+    if (this.keys.has('w')) { dx -= k; dy -= k; }
+    if (this.keys.has('s')) { dx += k; dy += k; }
+    if (this.keys.has('a')) { dx -= k; dy += k; }
+    if (this.keys.has('d')) { dx += k; dy -= k; }
     return { dx, dy };
   }
 

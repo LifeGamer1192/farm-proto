@@ -91,7 +91,19 @@ const tipCatEl = $('tip-cat');
 const tipTextEl = $('tip-text');
 const tipNextEl = $('tip-next');
 
-const PAN_DIRS = { up: [0, -1], down: [0, 1], left: [-1, 0], right: [1, 0] };
+// α36 followup: iso projection rotates the world 45° on screen, so the
+// scroll arrows + WASD now move in the world directions that match the
+// arrow's visual orientation. Pressing "up" pans the world toward
+// upper-left+upper-right (negative on both world axes) so the camera
+// visually rises straight up on screen. Normalised by 1/√2 so cardinal
+// arrows still cover the same per-step distance as before.
+const ISO_PAN = 1 / Math.sqrt(2);
+const PAN_DIRS = {
+  up:    [-ISO_PAN, -ISO_PAN],
+  down:  [ ISO_PAN,  ISO_PAN],
+  left:  [-ISO_PAN,  ISO_PAN],
+  right: [ ISO_PAN, -ISO_PAN],
+};
 
 let tool = 'move';
 let cropId = null; // picked from this run's starting crops after newMap
@@ -2327,11 +2339,24 @@ canvas.addEventListener('pointermove', (ev) => {
       tooltip.hidden = true;
     }
     if (dragged) {
+      // α36 followup: drag-to-pan inverts the iso projection so a
+      // straight finger movement on screen produces the same straight
+      // visual scroll. Previously the camera moved along orthogonal
+      // world axes regardless of view rotation, so dragging right
+      // looked like the world drifted down-right (the iso direction
+      // of world +x).
       const { scaleX, scaleY } = canvasMetrics();
-      game.camera.pan(
-        -((ev.clientX - lastX) * scaleX) / game.tileSize,
-        -((ev.clientY - lastY) * scaleY) / game.tileSize,
-      );
+      const dxScreen = (ev.clientX - lastX) * scaleX;
+      const dyScreen = (ev.clientY - lastY) * scaleY;
+      const ts = game.tileSize;
+      // Inverse of worldToScreen for a delta (no canvas-centre offset
+      // needed). worldDeltaX = (dy/th + dx/tw); worldDeltaY = (dy/th - dx/tw)
+      // with tw=ts, th=ts*0.5.
+      const ax = dxScreen / (ts * 0.5);   // 2*dx/ts
+      const ay = dyScreen / (ts * 0.25);  // 4*dy/ts
+      const dWorldX = (ay + ax) * 0.5;
+      const dWorldY = (ay - ax) * 0.5;
+      game.camera.pan(-dWorldX, -dWorldY);
       lastX = ev.clientX;
       lastY = ev.clientY;
     }
