@@ -6,6 +6,12 @@ import { PlantKind } from '../world.js';
 import { TaskType, WORK_TYPES } from '../tasks.js';
 import { getCrop } from '../crops.js';
 import { phenotype, partIndex } from '../genetics.js';
+import {
+  worldToScreen,
+  screenToWorld,
+  ISO_TILE_W_RATIO,
+  ISO_TILE_H_RATIO,
+} from './camera.js';
 
 const lerp = (a, b, t) => a + (b - a) * t;
 
@@ -137,56 +143,147 @@ export class Renderer {
 
     ctx.clearRect(0, 0, cw, ch);
 
-    const sx = (wx) => (wx - camera.x) * ts;
-    const sy = (wy) => (wy - camera.y) * ts;
+    // α35: scalar sx/sy helpers were direction-decoupled in the orthogonal
+    // projection (sx only depends on wx, sy only on wy). The isometric
+    // projection couples them, so we use a `proj(wx, wy)` that returns
+    // both axes together. Most call sites moved from `sx(...), sy(...)`
+    // pairs to one `proj(...)` call destructured into `{ x, y }`.
+    const proj = (wx, wy, elev = 0) => worldToScreen(wx, wy, camera, ts, cw, ch, elev);
+    // Diamond tile dimensions used for vertex offsets.
+    const TW = ts * ISO_TILE_W_RATIO;
+    const TH = ts * ISO_TILE_H_RATIO;
+    this._proj = proj;
+    this._tileW = TW;
+    this._tileH = TH;
 
-    const startCol = Math.floor(camera.x);
-    const startRow = Math.floor(camera.y);
-    const offX = (camera.x - startCol) * ts;
-    const offY = (camera.y - startRow) * ts;
-    const visCols = camera.viewCols + 1;
-    const visRows = camera.viewRows + 1;
+    // α35: visible-tile bounding box. The canvas-visible area is a
+    // parallelogram in world coordinates; we conservatively enclose it
+    // in a rectangle by unprojecting the four canvas corners. Pad by 1
+    // tile to cover anything peeking in from the edge.
+    const corners = [
+      screenToWorld(0, 0, camera, ts, cw, ch),
+      screenToWorld(cw, 0, camera, ts, cw, ch),
+      screenToWorld(0, ch, camera, ts, cw, ch),
+      screenToWorld(cw, ch, camera, ts, cw, ch),
+    ];
+    const minX = Math.max(0, Math.floor(Math.min(...corners.map((c) => c.x))) - 1);
+    const maxX = Math.min(map.cols - 1, Math.ceil(Math.max(...corners.map((c) => c.x))) + 1);
+    const minY = Math.max(0, Math.floor(Math.min(...corners.map((c) => c.y))) - 1);
+    const maxY = Math.min(map.rows - 1, Math.ceil(Math.max(...corners.map((c) => c.y))) + 1);
+    this._visMinX = minX;
+    this._visMaxX = maxX;
+    this._visMinY = minY;
+    this._visMaxY = maxY;
 
     // --- tiles (with terrain texture and tilled-soil furrows) ---
-    for (let row = 0; row < visRows; row++) {
-      const mapY = startRow + row;
-      if (mapY < 0 || mapY >= map.rows) continue;
-      for (let col = 0; col < visCols; col++) {
-        const mapX = startCol + col;
-        if (mapX < 0 || mapX >= map.cols) continue;
+    // α35: tiles draw as 2:1 iso diamonds. Iteration stays row-major
+    // (mapY outer, mapX inner) — this naturally gives back-to-front order
+    // in iso so further tiles get covered by closer ones. Each tile's
+    // four diamond corners come from projecting its world corners.
+    //
+    // Phase 2: each corner's lift uses the *average elevation of the four
+    // tiles that share it* (clamped at the map edge). Adjacent diamonds
+    // therefore agree on shared corner positions — terrain looks like a
+    // continuous heightmap instead of mismatched plates.
+    const cornerElev = (cx, cy) => {
+      let sum = 0;
+      let n = 0;
+      for (const [dx, dy] of [[-1, -1], [0, -1], [-1, 0], [0, 0]]) {
+        const nx = cx + dx, ny = cy + dy;
+        if (nx >= 0 && nx < map.cols && ny >= 0 && ny < map.rows) {
+          sum += map.tiles[ny][nx].elevation || 0;
+          n++;
+        }
+      }
+      return n > 0 ? sum / n : 0;
+    };
+    // Phase 2: lit-vs-shaded multiplier from neighbour slope. Treat each
+    // tile as having a tilt deduced from (east − west) and (south − north)
+    // elevation deltas, dotted with a sunlight vector pointing into the
+    // upper-left. Multiplier clamped to [0.65, 1.15] to avoid flattening
+    // the palette in either direction.
+    const slopeShade = (mx, my) => {
+      const here = map.tiles[my][mx].elevation || 0;
+      const elev = (x, y) => {
+        if (x < 0 || x >= map.cols || y < 0 || y >= map.rows) return here;
+        return map.tiles[y][x].elevation || 0;
+      };
+      const dEdgeX = elev(mx + 1, my) - elev(mx - 1, my);
+      const dEdgeY = elev(mx, my + 1) - elev(mx, my - 1);
+      // Light from upper-left → favours tiles whose slope rises toward
+      // upper-left (negative dx, negative dy in world → "uphill toward
+      // viewer-upper-left"). Sign chosen so a north-west-facing slope
+      // brightens.
+      const slope = (-dEdgeX - dEdgeY) * 1.5;
+      return Math.max(0.65, Math.min(1.15, 1.0 + slope * 0.6));
+    };
+    for (let mapY = minY; mapY <= maxY; mapY++) {
+      for (let mapX = minX; mapX <= maxX; mapX++) {
         const tile = map.tiles[mapY][mapX];
-        const px = col * ts - offX;
-        const py = row * ts - offY;
-        ctx.fillStyle = colorOf(tile);
-        ctx.fillRect(px, py, ts, ts);
-        if (detailed) this._terrainDetail(tile, map, mapX, mapY, px, py);
+        const eTop    = cornerElev(mapX,     mapY);
+        const eRight  = cornerElev(mapX + 1, mapY);
+        const eBottom = cornerElev(mapX + 1, mapY + 1);
+        const eLeft   = cornerElev(mapX,     mapY + 1);
+        const top    = proj(mapX,     mapY,     eTop);
+        const right  = proj(mapX + 1, mapY,     eRight);
+        const bottom = proj(mapX + 1, mapY + 1, eBottom);
+        const left   = proj(mapX,     mapY + 1, eLeft);
+        const shade = slopeShade(mapX, mapY);
+        ctx.fillStyle = shade === 1.0 ? colorOf(tile) : shadeRGB(colorOf(tile), shade);
+        ctx.beginPath();
+        ctx.moveTo(top.x, top.y);
+        ctx.lineTo(right.x, right.y);
+        ctx.lineTo(bottom.x, bottom.y);
+        ctx.lineTo(left.x, left.y);
+        ctx.closePath();
+        ctx.fill();
+        if (detailed) {
+          // α35: feed the texture overlay a square anchor at the tile
+          // centre so its fillRect features sit roughly inside the diamond.
+          // Some pixels may extend slightly past the diamond outline — an
+          // acceptable trade-off for Phase 1 (proper iso-clipped textures
+          // are a Phase-3 polish item if needed).
+          const c = proj(mapX + 0.5, mapY + 0.5);
+          this._terrainDetail(tile, map, mapX, mapY, c.x - ts / 2, c.y - ts / 2);
+        }
         if (tile.tilled && tile.type === TileType.LAND) {
+          // Tilled-soil furrows: 3 parallel iso-aligned lines inside the
+          // diamond, running along the (mapX) world axis.
           ctx.strokeStyle = 'rgba(60,40,20,0.45)';
           ctx.lineWidth = 1;
           ctx.beginPath();
           for (let f = 1; f <= 3; f++) {
-            const fy = py + (ts * f) / 4;
-            ctx.moveTo(px + 2, fy);
-            ctx.lineTo(px + ts - 2, fy);
+            const t = f / 4;
+            const aL = { x: lerp(left.x, top.x, t), y: lerp(left.y, top.y, t) };
+            const aR = { x: lerp(bottom.x, right.x, t), y: lerp(bottom.y, right.y, t) };
+            ctx.moveTo(aL.x, aL.y);
+            ctx.lineTo(aR.x, aR.y);
           }
           ctx.stroke();
         }
       }
     }
 
-    // --- grid lines ---
+    // --- grid lines (iso diamond outlines) ---
+    // α35: thin diamond outlines, drawn after fills so they overlay all
+    // tiles uniformly. Pulled into a separate loop so the fill phase can
+    // stay a tight inner loop. Corners lift with the same elevation
+    // averaging so grid lines hug the terrain instead of floating.
     ctx.strokeStyle = 'rgba(0,0,0,0.10)';
     ctx.lineWidth = 1;
     ctx.beginPath();
-    for (let col = 0; col <= visCols; col++) {
-      const x = Math.round(col * ts - offX) + 0.5;
-      ctx.moveTo(x, 0);
-      ctx.lineTo(x, ch);
-    }
-    for (let row = 0; row <= visRows; row++) {
-      const y = Math.round(row * ts - offY) + 0.5;
-      ctx.moveTo(0, y);
-      ctx.lineTo(cw, y);
+    for (let mapY = minY; mapY <= maxY; mapY++) {
+      for (let mapX = minX; mapX <= maxX; mapX++) {
+        const top    = proj(mapX,     mapY,     cornerElev(mapX,     mapY));
+        const right  = proj(mapX + 1, mapY,     cornerElev(mapX + 1, mapY));
+        const bottom = proj(mapX + 1, mapY + 1, cornerElev(mapX + 1, mapY + 1));
+        const left   = proj(mapX,     mapY + 1, cornerElev(mapX,     mapY + 1));
+        ctx.moveTo(top.x, top.y);
+        ctx.lineTo(right.x, right.y);
+        ctx.lineTo(bottom.x, bottom.y);
+        ctx.lineTo(left.x, left.y);
+        ctx.closePath();
+      }
     }
     ctx.stroke();
 
@@ -200,46 +297,70 @@ export class Renderer {
       ctx.fillRect(0, 0, cw, ch);
     }
 
+    // α35 Phase 2: helper — read a tile's elevation safely (off-map = 0).
+    const tileElev = (mx, my) => {
+      if (mx < 0 || my < 0 || mx >= map.cols || my >= map.rows) return 0;
+      return map.tiles[my][mx].elevation || 0;
+    };
+    // Sub-tile interpolated elevation for an entity at fractional (wx, wy).
+    // Bilinear blend so a colonist walking up a slope rises smoothly.
+    const elevAt = (wx, wy) => {
+      const ix = Math.floor(wx);
+      const iy = Math.floor(wy);
+      const fx = wx - ix;
+      const fy = wy - iy;
+      const e00 = tileElev(ix,     iy);
+      const e10 = tileElev(ix + 1, iy);
+      const e01 = tileElev(ix,     iy + 1);
+      const e11 = tileElev(ix + 1, iy + 1);
+      return lerp(lerp(e00, e10, fx), lerp(e01, e11, fx), fy);
+    };
+
     // --- structures (fences, huts, warehouses, hearths) ---
-    for (let row = 0; row < visRows; row++) {
-      const mapY = startRow + row;
-      if (mapY < 0 || mapY >= map.rows) continue;
-      for (let col = 0; col < visCols; col++) {
-        const mapX = startCol + col;
-        if (mapX < 0 || mapX >= map.cols) continue;
-        const structure = map.tiles[mapY][mapX].structure;
+    // α35: structure draw routines were written for a square ts×ts tile
+    // and position features relative to its top-left (px, py). To keep
+    // them working without rewriting each one, we feed them an anchor
+    // that places a virtual ts×ts square centred on the tile's iso
+    // centre — same draw code, structures land roughly inside the
+    // diamond. Phase 2 lifts the anchor by the tile's own elevation.
+    for (let mapY = minY; mapY <= maxY; mapY++) {
+      for (let mapX = minX; mapX <= maxX; mapX++) {
+        const tile = map.tiles[mapY][mapX];
+        const structure = tile.structure;
         if (structure) {
-          this._drawStructure(structure, col * ts - offX, row * ts - offY, hearthsLit);
+          const c = proj(mapX + 0.5, mapY + 0.5, tile.elevation || 0);
+          this._drawStructure(structure, c.x - ts / 2, c.y - ts / 2, hearthsLit);
         }
       }
     }
 
     // --- plants & crops ---
-    for (let row = 0; row < visRows; row++) {
-      const mapY = startRow + row;
-      if (mapY < 0 || mapY >= map.rows) continue;
-      for (let col = 0; col < visCols; col++) {
-        const mapX = startCol + col;
-        if (mapX < 0 || mapX >= map.cols) continue;
-        const plant = map.tiles[mapY][mapX].plant;
+    for (let mapY = minY; mapY <= maxY; mapY++) {
+      for (let mapX = minX; mapX <= maxX; mapX++) {
+        const tile = map.tiles[mapY][mapX];
+        const plant = tile.plant;
         if (plant) {
-          const cx = col * ts - offX + ts / 2;
-          const cy = row * ts - offY + ts / 2;
+          const c = proj(mapX + 0.5, mapY + 0.5, tile.elevation || 0);
           const watered = plant.kind === PlantKind.CROP && scene.clock < plant.wateredUntil;
-          this._drawPlant(plant, cx, cy, watered);
+          this._drawPlant(plant, c.x, c.y, watered);
         }
       }
     }
 
     // --- task markers: queued tasks, then each colonist's active work ---
+    // α35: same square-anchor trick as structures — virtual ts×ts square
+    // centred on the tile's iso centre so existing _drawTaskMarker code
+    // (px/py top-left) keeps working.
     for (let i = 0; i < taskQueue.length; i++) {
       const task = taskQueue[i];
-      this._drawTaskMarker(task, sx(task.x), sy(task.y), false, i + 1);
+      const p = proj(task.x + 0.5, task.y + 0.5, tileElev(task.x, task.y));
+      this._drawTaskMarker(task, p.x - ts / 2, p.y - ts / 2, false, i + 1);
     }
     for (const c of colonists) {
       const task = c.currentTask;
       if (task && WORK_TYPES.includes(task.type)) {
-        this._drawTaskMarker(task, sx(task.x), sy(task.y), true, 0);
+        const p = proj(task.x + 0.5, task.y + 0.5, tileElev(task.x, task.y));
+        this._drawTaskMarker(task, p.x - ts / 2, p.y - ts / 2, true, 0);
       }
     }
 
@@ -262,23 +383,38 @@ export class Renderer {
       ctx.lineWidth = strolling ? 2 : 3;
       ctx.setLineDash(strolling ? [5, 5] : []);
       ctx.beginPath();
-      ctx.moveTo(sx(c.x + 0.5), sy(c.y + 0.5));
-      for (const wp of c.path) ctx.lineTo(sx(wp.x + 0.5), sy(wp.y + 0.5));
+      const start = proj(c.x + 0.5, c.y + 0.5, elevAt(c.x + 0.5, c.y + 0.5));
+      ctx.moveTo(start.x, start.y);
+      for (const wp of c.path) {
+        const p = proj(wp.x + 0.5, wp.y + 0.5, elevAt(wp.x + 0.5, wp.y + 0.5));
+        ctx.lineTo(p.x, p.y);
+      }
       ctx.stroke();
       ctx.setLineDash([]);
     }
 
-    // --- hovered tile ---
+    // --- hovered tile (diamond outline, honouring corner elevations) ---
     if (hover) {
+      const top    = proj(hover.x,     hover.y,     cornerElev(hover.x,     hover.y));
+      const right  = proj(hover.x + 1, hover.y,     cornerElev(hover.x + 1, hover.y));
+      const bottom = proj(hover.x + 1, hover.y + 1, cornerElev(hover.x + 1, hover.y + 1));
+      const left   = proj(hover.x,     hover.y + 1, cornerElev(hover.x,     hover.y + 1));
       ctx.strokeStyle = 'rgba(255,255,255,0.85)';
       ctx.lineWidth = 2;
-      ctx.strokeRect(sx(hover.x) + 1, sy(hover.y) + 1, ts - 2, ts - 2);
+      ctx.beginPath();
+      ctx.moveTo(top.x, top.y);
+      ctx.lineTo(right.x, right.y);
+      ctx.lineTo(bottom.x, bottom.y);
+      ctx.lineTo(left.x, left.y);
+      ctx.closePath();
+      ctx.stroke();
     }
 
     // --- wild animals ---
     if (animals) {
       for (const a of animals) {
-        this._drawAnimal(sx(a.x + 0.5), sy(a.y + 0.5), a.species || 'boar');
+        const p = proj(a.x + 0.5, a.y + 0.5, elevAt(a.x + 0.5, a.y + 0.5));
+        this._drawAnimal(p.x, p.y, a.species || 'boar');
       }
     }
 
@@ -286,7 +422,8 @@ export class Renderer {
     const groupColors = scene.groupColors || [];
     for (const c of colonists) {
       const color = groupColors[c.groupId || 0] || null;
-      this._drawColonist(c, sx(c.x + 0.5), sy(c.y + 0.5), c.name === selectedColonist, color);
+      const p = proj(c.x + 0.5, c.y + 0.5, elevAt(c.x + 0.5, c.y + 0.5));
+      this._drawColonist(c, p.x, p.y, c.name === selectedColonist, color);
     }
   }
 

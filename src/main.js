@@ -35,6 +35,7 @@ import { t, setLang, getLang } from './i18n.js';
 import { icon } from './icons.js';
 import { Game, STOCKPILE_ITEMS } from './game.js';
 import { nutrientsOf, isEdibleRaw as foodIsEdibleRaw } from './systems/foodSystem.js';
+import { screenToWorld } from './render/camera.js';
 import { isDish as recipesIsDish } from './recipes.js';
 import { SEAFOOD_TYPES, SEAFOOD_IDS, seafoodYield } from './seafood.js';
 import { SEASONS } from './season.js';
@@ -2017,8 +2018,12 @@ function tileAt(clientX, clientY) {
   const { rect, scaleX, scaleY } = canvasMetrics();
   const px = (clientX - rect.left) * scaleX;
   const py = (clientY - rect.top) * scaleY;
-  const x = Math.floor(game.camera.x + px / game.tileSize);
-  const y = Math.floor(game.camera.y + py / game.tileSize);
+  // α35: inverse of the iso projection in src/render/camera.js#worldToScreen.
+  // Ignores elevation — a click on a lifted tile resolves to the flat
+  // ground tile under it, which is intentional (cheap + predictable).
+  const w = screenToWorld(px, py, game.camera, game.tileSize, canvas.width, canvas.height);
+  const x = Math.floor(w.x);
+  const y = Math.floor(w.y);
   if (x < 0 || y < 0 || x >= GRID_COLS || y >= GRID_ROWS) return null;
   return { x, y };
 }
