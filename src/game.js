@@ -227,6 +227,7 @@ export class Game {
     this.fencePlan = null;
     this.fencePlanAt = -Infinity; // clock time of the last plan (for cooldown)
     this.stats = null;
+    this.fps = null; // α35 followup: smoothed render FPS, populated in _loop
     this.over = false;
     this.won = false; // the colony has survived its first full year
     this._winEvent = false;
@@ -2022,8 +2023,18 @@ export class Game {
   }
 
   _loop(time) {
-    const dt = Math.min((time - this._lastTime) / 1000, 0.05);
+    const rawDt = (time - this._lastTime) / 1000;
+    const dt = Math.min(rawDt, 0.05);
     this._lastTime = time;
+    // α35 followup: track the actual frame interval (raw, pre-clamp) so
+    // the FPS read-out reflects real hardware throughput rather than the
+    // dt clamp ceiling. Smoothed with a slow EMA to keep the panel value
+    // legible at 60 Hz (one updateEnvPanel every 150 ms = roughly 9
+    // frames per refresh).
+    if (rawDt > 0 && rawDt < 1) {
+      const instantFps = 1 / rawDt;
+      this.fps = this.fps == null ? instantFps : this.fps * 0.92 + instantFps * 0.08;
+    }
     this.update(dt);
     this.render();
     requestAnimationFrame(this._loop);

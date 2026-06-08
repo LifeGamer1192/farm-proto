@@ -1196,12 +1196,17 @@ function updateLog() {
 
 function updateEnvPanel() {
   const e = game.environment;
+  // α35 followup: FPS shown alongside season-growth — useful for spotting
+  // performance regressions (iso projection added some per-frame cost,
+  // so a live render-rate read-out helps future tuning).
+  const fpsTxt = game.fps != null ? `${Math.round(game.fps)}` : '—';
+  const growthTxt = `${Math.round(tempGrowthFactor(e.temperature) * 100)}%`;
   renderRows(envStatsEl, [
     [t('stat.year'), e.year],
     [t('stat.season'), `${t('season.' + e.season)} · ${t('val.day', { n: e.day })}`],
     [t('stat.temperature'), `${Math.round(e.temperature)}°C`],
     [t('stat.daylight'), `${Math.round(e.daylight * 100)}%`],
-    [t('stat.seasonGrowth'), `${Math.round(tempGrowthFactor(e.temperature) * 100)}%`],
+    [t('stat.seasonGrowth'), `${growthTxt} · ${t('stat.fps')} ${fpsTxt}`],
   ]);
 }
 
